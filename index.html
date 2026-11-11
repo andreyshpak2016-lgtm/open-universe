@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Open Universe — MMO-песочница в открытом космосе</title>
+  <meta name="description" content="Open Universe — единый живой космос, воксельная постройка, игрок-экономика и программируемые конструкции. План разработки с живым прогрессом." />
+  <link rel="icon" href="assets/blackhole.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+  <header class="topbar">
+    <div class="brand">
+      <img src="assets/blackhole.svg" alt="Open Universe" />
+      <span>Open&nbsp;<span class="ou">Universe</span></span>
+    </div>
+    <nav>
+      <a href="#about">Об игре</a>
+      <a href="#gallery">Галерея</a>
+      <a href="#tech">Технологии</a>
+      <a href="#architecture">Архитектура</a>
+      <a href="#code">Код</a>
+      <a href="#plan">План</a>
+      <a href="#progress">Прогресс</a>
+      <a href="#roadmap">Дорожная карта</a>
+      <a href="#download" class="nav-cta">⬇ Скачать</a>
+    </nav>
+  </header>
+
+  <section class="hero">
+    <div class="hero-bg"></div>
+    <div>
+      <span class="hero-badge"><span class="dot"></span> В разработке · Pre-Alpha</span>
+      <h1>Open Universe</h1>
+      <p class="tag">Один общий непрерывный космос. Всё — корабли, станции, города и экономику — строят сами игроки.</p>
+      <p class="tag" style="font-size:.98rem;color:var(--muted)">MMO-песочница в духе Dual Universe: воксели, single-shard, скриптинг и территориальные войны.</p>
+      <div class="hero-actions">
+        <a class="btn primary" href="#plan">Смотреть план разработки</a>
+        <a class="btn ghost" href="#gallery">Космос в картинках</a>
+      </div>
+    </div>
+  </section>
+
+  <main>
+    <section id="about">
+      <div class="wrap">
+        <h2>Что такое Open Universe</h2>
+        <p class="lead">Игра про свободу в бескрайнем космосе: от добычи руды в поясе астероидов до постройки орбитальных мегаполисов и войн за территории.</p>
+        <div class="grid3">
+          <div class="card"><div class="ico">🌌</div><h3>Единый шард</h3><p>Один непрерывный мир для всех игроков. Никаких «серверов-клонов» — только живая вселенная.</p></div>
+          <div class="card"><div class="ico">🧱</div><h3>Воксель без границ</h3><p>Стройте из вокселей что угодно: от ручного бура до целых городов и боевых флотов.</p></div>
+          <div class="card"><div class="ico">📈</div><h3>Игрок-экономика</h3><p>Ресурсы, производство и рынок формируют сами игроки. Цены рождаются в стакане ордеров.</p></div>
+          <div class="card"><div class="ico">🤖</div><h3>Программируемость</h3><p>Встроенный скриптинг для автопилотов, турелей и логистики. Ваши конструкции — ваш код.</p></div>
+          <div class="card"><div class="ico">⚔️</div><h3>Территории и война</h3><p>Захватывайте и удерживайте зоны, ведите орбитальные и планетарные сражения.</p></div>
+          <div class="card"><div class="ico">♾️</div><h3>Персистентность</h3><p>Мир живёт 24/7. Всё построенное сохраняется — ваша история остаётся в космосе.</p></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="gallery">
+      <div class="wrap">
+        <h2>Космос</h2>
+        <p class="lead">Концепт-арт проекта: туманности, чёрные дыры, пояса астероидов и обитаемые планеты.</p>
+        <div class="gallery">
+          <figure><img src="assets/space-nebula.jpg" alt="Туманность Киля, снимок телескопа Джеймса Уэбба" loading="lazy" /><figcaption>Туманность Киля (JWST)</figcaption></figure>
+          <figure><img src="assets/blackhole.jpg" alt="Чёрная дыра и релятивистский джет, художественная визуализация NASA" loading="lazy" /><figcaption>Чёрная дыра и джет</figcaption></figure>
+          <figure><img src="assets/asteroids.jpg" alt="Астероид Гаспра, снимок NASA" loading="lazy" /><figcaption>Астероид Гаспра (NASA)</figcaption></figure>
+          <figure><img src="assets/planet-ship.jpg" alt="Планета Земля из космоса, Blue Marble" loading="lazy" /><figcaption>Обитаемая планета (Blue Marble)</figcaption></figure>
+        </div>
+        <p class="lead" style="margin-top:16px;font-size:.84rem">Источник изображений: NASA / JPL-Caltech / STScI / ESA — материалы в открытом доступе (public domain).</p>
+      </div>
+    </section>
+
+    <section id="tech">
+      <div class="wrap">
+        <h2>Технологии и выбор движка</h2>
+        <p class="lead">Ключевое архитектурное решение проекта (ADR-0001): <b>клиент на Unreal Engine 5 (C++)</b>, а <b>единый шард — собственный сервер на Rust</b>. Для MMO движок — это в первую очередь клиентский рендер и инструменты; серверную симуляцию всё равно делают своими руками.</p>
+
+        <div class="grid3" style="margin-bottom:26px">
+          <div class="card"><div class="ico">🎮</div><h3>Клиент — Unreal Engine 5</h3><p>C++, доступ к исходникам, графика, World Partition и Iris. Воксель, планеты и floating origin — как собственный модуль.</p></div>
+          <div class="card"><div class="ico">🦀</div><h3>Сервер — Rust</h3><p>Авторитетная симуляция единого шарда, предсказуемая производительность и асинхронная сеть. Не заперт в движке.</p></div>
+          <div class="card"><div class="ico">🔗</div><h3>Протокол</h3><p>UDP + бинарные дельты по схемам FlatBuffers/protobuf — единый контракт между клиентом и сервером.</p></div>
+        </div>
+
+        <div class="panel" style="padding:20px 22px;overflow:auto">
+          <table id="cmp">
+            <thead>
+              <tr>
+                <th>Критерий (вес)</th>
+                <th class="win">Unreal Engine 5</th>
+                <th>Unity 6 + DOTS</th>
+                <th>Godot 4</th>
+                <th>Свой C++/Rust</th>
+                <th>Unigine</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr><td>Воксель / планетарный масштаб (25%)</td><td>4</td><td>5</td><td>2</td><td>5</td><td>4</td></tr>
+              <tr><td>Сеть / репликация MMO (20%)</td><td>4</td><td>3</td><td>2</td><td>5</td><td>4</td></tr>
+              <tr><td>Рендер и графика (15%)</td><td>5</td><td>4</td><td>3</td><td>4</td><td>5</td></tr>
+              <tr><td>Инструменты и редактор (15%)</td><td>5</td><td>4</td><td>3</td><td>1</td><td>3</td></tr>
+              <tr><td>Найм / экосистема (10%)</td><td>5</td><td>5</td><td>3</td><td>1</td><td>2</td></tr>
+              <tr><td>Время до первого плейбл (10%)</td><td>4</td><td>5</td><td>5</td><td>1</td><td>4</td></tr>
+              <tr><td>Стоимость / лицензия (5%)</td><td>4</td><td>4</td><td>5</td><td>5</td><td>2</td></tr>
+              <tr class="total"><td>Итого (взвешено)</td><td class="win">4.45</td><td>4.30</td><td>2.95</td><td>3.55</td><td>3.90</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="lead" style="margin-top:16px;font-size:.9rem">Оценки — экспертное соответствие требованиям (0–5), не бенчмарк. Полное обоснование и риски — в <code>docs/adr-0001-engine.md</code>.</p>
+      </div>
+    </section>
+
+    <section id="architecture">
+      <div class="wrap">
+        <h2>Архитектура системы</h2>
+        <p class="lead">Как устроен проект: слои системы, модель данных и жизненный цикл одного сетевого кадра. Переключайте вкладки.</p>
+
+        <div class="tabs" role="tablist">
+          <button class="tab active" role="tab" data-tab="tab-layers">🧱 Слои системы</button>
+          <button class="tab" role="tab" data-tab="tab-interactive">🖱️ Слои — интерактив</button>
+          <button class="tab" role="tab" data-tab="tab-er">🗄️ ER-диаграмма данных</button>
+          <button class="tab" role="tab" data-tab="tab-erd">🗂️ ER-схема — интерактив</button>
+          <button class="tab" role="tab" data-tab="tab-seq">🔁 Sequence одного кадра</button>
+        </div>
+
+        <div class="tab-panel active" id="tab-layers" role="tabpanel">
+          <figure class="diagram">
+            <img src="assets/architecture.svg" alt="Схема архитектуры Open Universe: клиент UE5, протокол, сервер Rust, сервисы, хранилище, инфраструктура" />
+          </figure>
+          <p class="lead" style="margin-top:14px;font-size:.88rem">Стрелки — потоки данных; сплошная линия между клиентом и сервером — бинарный сетевой протокол. Для разбора по слоям откройте вкладку «Интерактивная схема».</p>
+        </div>
+
+        <div class="tab-panel" id="tab-interactive" role="tabpanel">
+          <p class="lead" style="margin-bottom:20px">Наведите курсор на слой, чтобы подсветить его, и нажмите, чтобы раскрыть список компонентов и пояснение.</p>
+          <div id="layers-list" class="layers"></div>
+        </div>
+
+        <div class="tab-panel" id="tab-er" role="tabpanel">
+          <figure class="diagram">
+            <img src="assets/er-data.svg" alt="ER-диаграмма данных: таблицы accounts, characters, organizations, star_systems, blueprints, inventory_items, market_orders, territories, transactions, voxel_chunks и их связи" />
+          </figure>
+          <p class="lead" style="margin-top:14px;font-size:.88rem">Таблицы сгруппированы по смыслу: личность, мир, контент, экономика. Связи — типа 1&nbsp;→&nbsp;N по внешним ключам (FK).</p>
+        </div>
+
+        <div class="tab-panel" id="tab-erd" role="tabpanel">
+          <p class="lead" style="margin-bottom:20px">Нажмите на любую таблицу — подсветятся только её связи. Клик по таблице в списке справа тоже открывает карточку и подсвечивает связи.</p>
+          <div class="erd-layout">
+            <div class="erd-graph" id="erd-graph"></div>
+            <aside class="erd-side">
+              <h3 id="erd-title">Модель данных</h3>
+              <p id="erd-desc">Выберите таблицу, чтобы увидеть её поля и связи.</p>
+              <div class="erd-block">
+                <span class="erd-label">Поля</span>
+                <ul class="erd-cols" id="erd-cols"><li class="muted">— выберите таблицу —</li></ul>
+              </div>
+              <div class="erd-block">
+                <span class="erd-label">Связана с</span>
+                <div class="chips" id="erd-links"><span class="muted">—</span></div>
+              </div>
+              <button class="btn ghost erd-reset" id="erd-reset" type="button">Сбросить выделение</button>
+            </aside>
+          </div>
+        </div>
+
+        <div class="tab-panel" id="tab-seq" role="tabpanel">
+          <figure class="diagram">
+            <img src="assets/seq-frame.svg" alt="Sequence-диаграмма одного сетевого кадра: ввод игрока, клиентский предикт, отправка на сервер, авторитетный тик, реконсиляция" />
+          </figure>
+          <p class="lead" style="margin-top:14px;font-size:.88rem">Полный цикл: ввод → клиентский предикт → авторитетный сервер → дельта состояния → реконсиляция и интерполяция.</p>
+        </div>
+
+        <div class="grid3" style="margin-top:30px">
+          <div class="card"><div class="ico">🔄</div><h3>Поток кадра</h3><p>Ввод → клиентский предикт → отправка дельты → авторитетный тик на сервере → реконсиляция и интерполяция на клиенте. Только так игровой мир остаётся честным.</p></div>
+          <div class="card"><div class="ico">🧭</div><h3>Разделение ответственности</h3><p>Клиент отвечает за рендер и отзывчивость, сервер — за истину мира: движение, воксель, инвентарь, экономику и валидацию.</p></div>
+          <div class="card"><div class="ico">🧩</div><h3>Масштабирование</h3><p>Мир делится по звёздным системам и зонам; spatial-индекс и interest management держат нагрузку под контролем при тысячах игроков онлайн.</p></div>
+          <div class="card"><div class="ico">🗄️</div><h3>Персистентность</h3><p>Транзакционные данные — в PostgreSQL, тяжёлые воксель-чанки и шаблоны — в объектном хранилище. Всё построенное игроками сохраняется.</p></div>
+          <div class="card"><div class="ico">🔒</div><h3>Доверие</h3><p>Скриптинг игроков выполняется в песочнице с лимитами, а сервер перепроверяет каждое действие — основа античита.</p></div>
+          <div class="card"><div class="ico">☁️</div><h3>Инфраструктура</h3><p>Kubernetes, автомасштабирование по регионам, мониторинг и резервные копии. Мир работает 24/7 без остановок.</p></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="code">
+      <div class="wrap">
+        <h2>Код: серверное ядро</h2>
+        <p class="lead">Ядро единого шарда уже написано на Rust и работает: детерминированная симуляция, бинарный протокол, tick loop и interest management. Код собирается и покрыт тестами.</p>
+
+        <div class="grid3" style="margin-bottom:22px">
+          <div class="card"><div class="ico">🧭</div><h3>Детерминизм</h3><p>Своя тригонометрия и фиксированный шаг 30 Гц: сервер и клиент считают мир бит-в-бит одинаково. Проверяется контрольной суммой.</p></div>
+          <div class="card"><div class="ico">📡</div><h3>Дельта-репликация</h3><p>По сети летят только изменившиеся сущности. Пустая дельта с подтверждением — всего 29 байт.</p></div>
+          <div class="card"><div class="ico">👁️</div><h3>Interest management</h3><p>Клиент видит только то, что рядом. Зона видимости — радиус 2000 ед., вынесен в настройку.</p></div>
+        </div>
+
+        <div class="panel" style="padding:20px 22px;overflow:auto">
+          <table id="codestats">
+            <thead><tr><th>Показатель</th><th>Значение</th></tr></thead>
+            <tbody>
+              <tr><td>Тесты ядра</td><td class="ok">17 пройдено</td></tr>
+              <tr><td>Частота тика симуляции</td><td>30 Гц</td></tr>
+              <tr><td>Точность позиции по проводу</td><td>0.1 мм (i32, ±214 км)</td></tr>
+              <tr><td>Снапшот одной сущности</td><td>52 байта</td></tr>
+              <tr><td>Пустая дельта + ack (вне зоны видимости)</td><td class="ok">29 байт</td></tr>
+              <tr><td>Дельта при появлении соседа</td><td>65 байт</td></tr>
+              <tr><td>Средний трафик (демо, на игрока)</td><td>≈ 0.7 КБ/с</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <pre class="codeblock"><code>$ cargo test --workspace
+protocol  6 passed   sim  5 passed   server  4 passed   client  2 passed
+
+$ cargo run -p ou-server
+ tick |     видит |        id |     байт | дист.
+  220 |         1 |         1 |       29 | 2042
+  240 |         2 |       1,2 |       65 | 1828
+
+$ cargo run -p ou-client
+Идеальная сеть: предсказание совпало с сервером -> true
+После реконсиляции переиграно неподтверждённых кадров: 5
+После доставки вводов предсказание совпало с сервером -> true</code></pre>
+
+        <p class="lead" style="margin-top:16px;font-size:.88rem">Исходники: <code>server/crates/{protocol,sim,server,client}</code> · описание — <code>server/README.md</code>.</p>
+      </div>
+    </section>
+
+    <section id="plan">
+      <div class="wrap">
+        <h2>План разработки</h2>
+        <p class="lead">Полный план от концепта до live-ops. Нажмите на фазу, чтобы раскрыть задачи. Статусы обновляются в реальном времени из <code>data.js</code>/<code>plan.json</code>.</p>
+
+        <div id="plan-list"></div>
+      </div>
+    </section>
+
+    <section id="progress">
+      <div class="wrap">
+        <h2>Прогресс</h2>
+        <p class="lead">Общий процент готовности считается автоматически по всем задачам плана.</p>
+        <div class="panel big-progress">
+          <div class="ring" id="ring" style="--p:0"><span id="ring-pct">0%</span><small>готово</small></div>
+          <div>
+            <div class="stats" id="stats"></div>
+            <div class="legend" style="margin-top:18px">
+              <div><span class="chip done"></span> Готово</div>
+              <div><span class="chip wip"></span> В работе</div>
+              <div><span class="chip todo"></span> В планах</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="roadmap">
+      <div class="wrap">
+        <h2>Дорожная карта</h2>
+        <p class="lead">Краткая хронология фаз. Заголовок со статусом — по мере продвижения.</p>
+        <div class="timeline" id="timeline"></div>
+      </div>
+    </section>
+  </main>
+
+  <section id="download">
+    <div class="wrap">
+      <h2>Скачать</h2>
+      <p class="lead">Каждая версия игры публикуется как релиз на GitHub. Ссылки обновляются при выпуске новой версии.</p>
+
+      <div class="download-grid">
+        <div class="panel dl-card">
+          <div class="dl-head">
+            <span class="dl-ver" id="dl-version">v0.1.0</span>
+            <span class="hero-badge" style="font-size:.72rem"><span class="dot"></span> Последняя версия</span>
+          </div>
+          <h3>Ядро игры (Windows x64)</h3>
+          <p class="dl-desc">Исполняемые файлы сервера и клиента на Rust: детерминированная симуляция, tick loop 30 Гц, предсказание и реконсиляция.</p>
+          <ul class="dl-files">
+            <li><code>ou-server.exe</code> — авторитетный сервер единого шарда</li>
+            <li><code>ou-client.exe</code> — headless-клиент (предсказание)</li>
+          </ul>
+          <p class="dl-meta">Размер: <b id="dl-size">~0.2 МБ</b> · Платформа: Windows 10+ · Дата: <span id="dl-date">—</span></p>
+          <div class="dl-actions">
+            <a class="btn primary" id="dl-latest" href="https://github.com/andreyshpak2016-lgtm/open-universe/releases/latest" target="_blank" rel="noopener">⬇ Скачать последнюю версию</a>
+            <a class="btn ghost" href="https://github.com/andreyshpak2016-lgtm/open-universe/releases" target="_blank" rel="noopener">Все версии и changelog</a>
+          </div>
+        </div>
+
+        <aside class="panel dl-side">
+          <h3>Как запустить</h3>
+          <pre class="codeblock"><code># распакуйте архив и запустите
+ou-server.exe   # сервер: tick loop, дельты
+ou-client.exe   # клиент: предсказание</code></pre>
+          <h3 style="margin-top:18px">Из исходников</h3>
+          <pre class="codeblock"><code>git clone https://github.com/andreyshpak2016-lgtm/open-universe
+cd open-universe/server
+cargo test --workspace
+cargo build --release</code></pre>
+          <p class="dl-note">Сайт и план разработки открываются локально (файл <code>index.html</code>) — интернет не нужен.</p>
+        </aside>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <div class="wrap">
+      <span>© <span id="year"></span> Open Universe — концепт-проект.</span>
+      <span>Обновлено: <span id="updated">—</span> · План синхронизирован с <code>plan.md</code></span>
+    </div>
+  </footer>
+
+  <script src="data.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,18 @@
+[package]
+name = "ou-server"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Open Universe: авторитетный сервер единого шарда (tick loop, interest management)"
+
+[lib]
+name = "ou_server"
+path = "src/lib.rs"
+
+[[bin]]
+name = "ou-server"
+path = "src/main.rs"
+
+[dependencies]
+ou-protocol = { path = "../protocol" }
+ou-sim = { path = "../sim" }

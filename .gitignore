@@ -1,0 +1,20 @@
+# Rust
+server/target/
+**/*.rs.bk
+
+# Сборки и релизные артефакты
+dist/
+
+# Unreal Engine (для будущего клиента)
+*.uproject
+Binaries/
+Build/
+DerivedDataCache/
+Intermediate/
+Saved/
+
+# ОС и редакторы
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

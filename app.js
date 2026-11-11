@@ -1,0 +1,343 @@
+/* Open Universe — рендер плана и живого прогресса. */
+(function () {
+  "use strict";
+
+  var LABEL = {
+    done: "Готово",
+    in_progress: "В работе",
+    todo: "План"
+  };
+  var GLYPH = { done: "✓", in_progress: "…", todo: "" };
+
+  function pct(list) {
+    if (!list.length) return 0;
+    var done = list.filter(function (t) { return t.status === "done"; }).length;
+    var wip = list.filter(function (t) { return t.status === "in_progress"; }).length;
+    return Math.round(((done + wip * 0.5) / list.length) * 100);
+  }
+
+  function el(tag, cls, html) {
+    var n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (html != null) n.innerHTML = html;
+    return n;
+  }
+
+  function buildPhase(phase, index) {
+    var tasks = phase.tasks || [];
+    var p = pct(tasks);
+    var node = el("div", "panel phase" + (index === 0 ? " open" : ""));
+
+    var head = el("div", "phase-head");
+    head.innerHTML =
+      '<span class="caret">▶</span>' +
+      '<span class="num">Фаза ' + index + '</span>' +
+      '<div><h3>' + phase.title + '</h3></div>' +
+      '<span class="goal">' + (phase.goal || "") + '</span>' +
+      '<span class="bar"><i style="width:' + p + '%"></i></span>' +
+      '<span class="pct">' + p + '%</span>';
+    node.appendChild(head);
+
+    var ul = el("ul", "tasks");
+    tasks.forEach(function (t) {
+      var li = el("li", t.status);
+      li.innerHTML =
+        '<span class="check ' + t.status + '">' + (GLYPH[t.status] || "") + '</span>' +
+        '<span class="t">' + t.title + '</span>' +
+        '<span class="badge ' + t.status + '">' + (LABEL[t.status] || t.status) + '</span>';
+      ul.appendChild(li);
+    });
+    node.appendChild(ul);
+
+    head.addEventListener("click", function () { node.classList.toggle("open"); });
+    // Задачи видны только у раскрытой фазы
+    ul.style.display = node.classList.contains("open") ? "" : "none";
+    new MutationObserver(function () {
+      ul.style.display = node.classList.contains("open") ? "" : "none";
+    }).observe(node, { attributes: true, attributeFilter: ["class"] });
+
+    return node;
+  }
+
+  function render() {
+    var plan = window.PLAN;
+    if (!plan) return;
+
+    // Plan list
+    var list = document.getElementById("plan-list");
+    list.innerHTML = "";
+    plan.phases.forEach(function (ph, i) { list.appendChild(buildPhase(ph, i)); });
+
+    // Overall stats
+    var all = plan.phases.reduce(function (acc, ph) { return acc.concat(ph.tasks || []); }, []);
+    var done = all.filter(function (t) { return t.status === "done"; }).length;
+    var wip = all.filter(function (t) { return t.status === "in_progress"; }).length;
+    var todo = all.length - done - wip;
+    var overall = pct(all);
+
+    document.getElementById("ring-pct").textContent = overall + "%";
+    document.getElementById("ring").style.setProperty("--p", overall);
+    document.getElementById("stats").innerHTML =
+      '<div><b style="color:var(--done)">' + done + '</b><span>готово</span></div>' +
+      '<div><b style="color:var(--wip)">' + wip + '</b><span>в работе</span></div>' +
+      '<div><b style="color:var(--todo)">' + todo + '</b><span>в планах</span></div>' +
+      '<div><b>' + plan.phases.length + '</b><span>фаз</span></div>';
+
+    // Timeline
+    var tl = document.getElementById("timeline");
+    tl.innerHTML = "";
+    plan.phases.forEach(function (ph, i) {
+      var tasks = ph.tasks || [];
+      var p = pct(tasks);
+      var state = tasks.length && tasks.every(function (t) { return t.status === "done"; })
+        ? "done"
+        : (tasks.some(function (t) { return t.status !== "todo"; }) ? "in_progress" : "");
+      var item = el("div", "tl-item " + state);
+      item.innerHTML = '<b>Фаза ' + i + ' — ' + ph.title + '</b>' +
+        '<span style="color:var(--muted);font-size:.88rem">' + (ph.goal || "") +
+        ' · <span style="color:var(--txt)">' + p + '%</span></span>';
+      tl.appendChild(item);
+    });
+
+    document.getElementById("updated").textContent = plan.updated || "—";
+  }
+
+  /* ---------- Вкладки ---------- */
+  function initTabs() {
+    var tabs = Array.prototype.slice.call(document.querySelectorAll(".tab"));
+    tabs.forEach(function (tab) {
+      tab.addEventListener("click", function () {
+        tabs.forEach(function (t) { t.classList.remove("active"); });
+        tab.classList.add("active");
+        document.querySelectorAll(".tab-panel").forEach(function (p) { p.classList.remove("active"); });
+        var panel = document.getElementById(tab.getAttribute("data-tab"));
+        if (panel) panel.classList.add("active");
+        // Пересчёт интерактивных схем после показа вкладки
+        window.dispatchEvent(new Event("resize"));
+      });
+    });
+  }
+
+  /* ---------- Интерактивная схема слоёв ---------- */
+  var LAYERS = [
+    { name: "Клиент — Unreal Engine 5 (C++)", tag: "Рендер и отзывчивость", color: "#6a8bff",
+      chips: ["Воксельный рендер + LOD", "Планеты и небесные тела", "Floating origin", "Клиентский предикт", "Ввод и камера"],
+      text: "Отвечает за картинку и мгновенный отклик. Не решает, что истинно в мире, — только предсказывает и красиво рисует." },
+    { name: "Сеть — UDP, бинарные дельты", tag: "Единый контракт", color: "#00e6d0",
+      chips: ["UDP + дельты", "FlatBuffers / protobuf", "Сжатие и надёжность", "Интерполяция и ack"],
+      text: "Клиент и сервер общаются бинарными дельтами по общей схеме, чтобы не разрастаться в монолит и развиваться параллельно." },
+    { name: "Сервер — Rust, единый шард", tag: "Авторитетная симуляция", color: "#00e6d0",
+      chips: ["Tick loop 20–30 Гц", "Своя кинематика", "Interest management", "Власть над контентом", "Lua-скриптинг"],
+      text: "Истина мира: движение, воксель, инвентарь и правила. Живёт независимо от клиента и масштабируется по зонам." },
+    { name: "Сервисы", tag: "Микросервисы", color: "#a78bfa",
+      chips: ["Auth и сессии", "Чат и голос", "Рынок и экономика", "Логистика и инвентарь"],
+      text: "Вспомогательные сервисы, работающие рядом с игровой симуляцией и не нагружающие её тик." },
+    { name: "Хранилище данных", tag: "Персистентность 24/7", color: "#ffc24b",
+      chips: ["PostgreSQL — транзакции", "Объектное хранилище — воксель, blueprints", "Spatial-индекс"],
+      text: "Транзакционные данные — в PostgreSQL, тяжёлые воксель-чанки и шаблоны — в объектном хранилище." },
+    { name: "Инфраструктура", tag: "Kubernetes", color: "#8ea3d8",
+      chips: ["Автомасштабирование по регионам", "CI/CD (Perforce + Git LFS)", "Мониторинг и логи", "Резервные копии"],
+      text: "Обёртка вокруг всего: масштабирование, наблюдаемость и отказоустойчивость единого живого мира." }
+  ];
+
+  function initLayers() {
+    var host = document.getElementById("layers-list");
+    if (!host) return;
+    LAYERS.forEach(function (l, i) {
+      var node = el("div", "layer" + (i === 0 ? " open" : ""));
+      var chips = l.chips.map(function (c) { return "<span>" + c + "</span>"; }).join("");
+      node.innerHTML =
+        '<div class="layer-head">' +
+          '<span class="swatch" style="background:linear-gradient(180deg,' + l.color + ',' + l.color + '55)"></span>' +
+          '<div><h3>' + l.name + '</h3><span class="tag">' + l.tag + '</span></div>' +
+          '<span class="caret2">▶</span>' +
+        '</div>' +
+        '<div class="layer-body"><div class="chips">' + chips + '</div><p>' + l.text + '</p></div>';
+      node.addEventListener("click", function () {
+        var wasOpen = node.classList.contains("open");
+        host.querySelectorAll(".layer").forEach(function (x) { x.classList.remove("open"); });
+        if (!wasOpen) node.classList.add("open");
+      });
+      host.appendChild(node);
+    });
+  }
+
+  /* ---------- Интерактивная ER-схема ---------- */
+  var ER_W = 1500, ER_H = 1020, ER_BW = 250, ER_HDR = 40, ER_RH = 26;
+  var ER_COLOR = { identity: "#6a8bff", world: "#00e6d0", content: "#a78bfa", economy: "#ffc24b" };
+
+  var ER_TABLES = {
+    accounts:        { x: 40,   y: 70,  group: "identity", desc: "Аккаунты игроков и статус доступа.", cols: [["id","PK"],["email"],["status"],["created_at"]] },
+    characters:      { x: 370,  y: 70,  group: "identity", desc: "Игровые персонажи: привязаны к аккаунту и организации.", cols: [["id","PK"],["account_id","FK"],["org_id","FK"],["name"],["credits"]] },
+    star_systems:    { x: 1080, y: 70,  group: "world",    desc: "Звёздные системы единого мира.", cols: [["id","PK"],["name"],["seed"],["coords"]] },
+    organizations:   { x: 40,   y: 700, group: "identity", desc: "Организации игроков, владеющие пространством.", cols: [["id","PK"],["name"],["tag"],["owner_id","FK"]] },
+    blueprints:      { x: 370,  y: 700, group: "content",  desc: "Шаблоны конструкций; данные лежат в объектном хранилище.", cols: [["id","PK"],["owner_id","FK"],["name"],["price"],["data_oid"]] },
+    market_orders:   { x: 700,  y: 640, group: "economy",  desc: "Ордера рынка внутри звёздных систем.", cols: [["id","PK"],["system_id","FK"],["item_id","FK"],["seller_id","FK"],["side"],["price"],["qty"]] },
+    territories:     { x: 1080, y: 700, group: "world",    desc: "Территории, контроль и налоги.", cols: [["id","PK"],["system_id","FK"],["owner_id","FK"],["status"],["tax"]] },
+    inventory_items: { x: 370,  y: 930, group: "content",  desc: "Предметы во владении персонажей.", cols: [["id","PK"],["owner_id","FK"],["blueprint_id","FK"],["qty"],["location"]] },
+    transactions:    { x: 700,  y: 930, group: "economy",  desc: "История сделок по ордерам.", cols: [["id","PK"],["order_id","FK"],["buyer_id","FK"],["total"],["ts"]] },
+    voxel_chunks:    { x: 1080, y: 930, group: "world",    desc: "Воксельные чанки мира; данные — в объектном хранилище.", cols: [["id","PK"],["system_id","FK"],["coords"],["data_oid"],["version"]] }
+  };
+
+  var ER_LINKS = [
+    ["accounts","characters","регистрирует"],
+    ["organizations","characters","состоит в"],
+    ["accounts","organizations","владеет"],
+    ["characters","blueprints","создаёт"],
+    ["blueprints","inventory_items","экземпляры"],
+    ["characters","market_orders","продаёт"],
+    ["blueprints","market_orders","лот"],
+    ["market_orders","transactions","исполняется"],
+    ["star_systems","market_orders","рынок"],
+    ["star_systems","territories","делится на"],
+    ["characters","territories","контролирует"],
+    ["star_systems","voxel_chunks","содержит"]
+  ];
+
+  function erEdges() {
+    var out = {};
+    Object.keys(ER_TABLES).forEach(function (k) { out[k] = []; });
+    ER_LINKS.forEach(function (l) { out[l[0]].push(l[1]); out[l[1]].push(l[0]); });
+    return out;
+  }
+
+  function erAnchor(a, b) {
+    var ah = ER_HDR + ER_RH * a.cols.length, bh = ER_HDR + ER_RH * b.cols.length;
+    var acx = a.x + ER_BW / 2, acy = a.y + ah / 2, bcx = b.x + ER_BW / 2, bcy = b.y + bh / 2;
+    var dx = bcx - acx, dy = bcy - acy;
+    var tx = dx !== 0 ? (ER_BW / 2) / Math.abs(dx) : 1e9;
+    var ty = dy !== 0 ? (ah / 2) / Math.abs(dy) : 1e9;
+    var t1 = Math.min(tx, ty);
+    var ty2 = dy !== 0 ? (bh / 2) / Math.abs(dy) : 1e9;
+    var tx2 = dx !== 0 ? (ER_BW / 2) / Math.abs(dx) : 1e9;
+    var t2 = Math.min(tx2, ty2);
+    return [acx + dx * t1, acy + dy * t1, bcx - dx * t2, bcy - dy * t2];
+  }
+
+  function initERD() {
+    var graph = document.getElementById("erd-graph");
+    if (!graph) return;
+    var edges = erEdges();
+
+    var sizer = el("div", "erd-sizer");
+    var stage = el("div", "erd-stage");
+    var svgNS = "http://www.w3.org/2000/svg";
+    var svg = document.createElementNS(svgNS, "svg");
+    svg.setAttribute("class", "erd-edges");
+    svg.setAttribute("viewBox", "0 0 " + ER_W + " " + ER_H);
+
+    var linkEls = [];
+    ER_LINKS.forEach(function (l) {
+      var p = erAnchor(ER_TABLES[l[0]], ER_TABLES[l[1]]);
+      var path = document.createElementNS(svgNS, "path");
+      path.setAttribute("d", "M " + p[0].toFixed(1) + " " + p[1].toFixed(1) + " L " + p[2].toFixed(1) + " " + p[3].toFixed(1));
+      path.setAttribute("fill", "none");
+      path.setAttribute("stroke", "#5b6ea8");
+      path.setAttribute("stroke-opacity", "0.5");
+      path.setAttribute("stroke-width", "1.6");
+      svg.appendChild(path);
+      var mid = document.createElementNS(svgNS, "text");
+      mid.setAttribute("class", "lbl");
+      mid.setAttribute("x", ((p[0] + p[2]) / 2).toFixed(1));
+      mid.setAttribute("y", ((p[1] + p[3]) / 2 - 5).toFixed(1));
+      mid.setAttribute("text-anchor", "middle");
+      mid.setAttribute("font-size", "11");
+      mid.setAttribute("fill", "#93a0c4");
+      mid.setAttribute("opacity", "0");
+      mid.textContent = l[2];
+      svg.appendChild(mid);
+      linkEls.push({ a: l[0], b: l[1], path: path, label: mid });
+    });
+
+    stage.appendChild(svg);
+
+    var nodeEls = {};
+    Object.keys(ER_TABLES).forEach(function (key) {
+      var t = ER_TABLES[key];
+      var c = ER_COLOR[t.group];
+      var node = el("div", "tnode");
+      node.style.left = t.x + "px";
+      node.style.top = t.y + "px";
+      node.style.width = ER_BW + "px";
+      node.style.setProperty("--rd-accent", c);
+      var rows = t.cols.map(function (col) {
+        return '<div class="tnode-row"><span>' + col[0] + '</span>' +
+          (col[1] ? '<span class="k ' + col[1] + '">' + col[1] + '</span>' : '') + '</div>';
+      }).join("");
+      node.innerHTML =
+        '<div class="tnode-head" style="background:linear-gradient(90deg,' + c + '2e,' + c + '0a);border-bottom:1px solid ' + c + '40">' + key + '</div>' +
+        '<div class="tnode-body">' + rows + '</div>';
+      node.addEventListener("click", function (e) { e.stopPropagation(); select(key); });
+      stage.appendChild(node);
+      nodeEls[key] = node;
+    });
+
+    sizer.appendChild(stage);
+    graph.appendChild(sizer);
+
+    function fit() {
+      var avail = graph.clientWidth;
+      var s = Math.min(1, avail / ER_W);
+      stage.style.transform = "scale(" + s + ")";
+      sizer.style.height = (ER_H * s) + "px";
+    }
+    window.addEventListener("resize", fit);
+
+    function clear() {
+      Object.keys(nodeEls).forEach(function (k) { nodeEls[k].classList.remove("sel", "rel", "dim"); });
+      linkEls.forEach(function (le) {
+        le.path.setAttribute("stroke", "#5b6ea8");
+        le.path.setAttribute("stroke-opacity", "0.5");
+        le.path.setAttribute("stroke-width", "1.6");
+        le.label.setAttribute("opacity", "0");
+      });
+      document.getElementById("erd-title").textContent = "Модель данных";
+      document.getElementById("erd-desc").textContent = "Выберите таблицу, чтобы увидеть её поля и связи.";
+      document.getElementById("erd-cols").innerHTML = '<li class="muted">— выберите таблицу —</li>';
+      document.getElementById("erd-links").innerHTML = '<span class="muted">—</span>';
+    }
+
+    function select(key) {
+      var t = ER_TABLES[key];
+      var c = ER_COLOR[t.group];
+      var related = edges[key] || [];
+      Object.keys(nodeEls).forEach(function (k) {
+        var n = nodeEls[k];
+        n.classList.remove("sel", "rel", "dim");
+        if (k === key) n.classList.add("sel");
+        else if (related.indexOf(k) >= 0) n.classList.add("rel");
+        else n.classList.add("dim");
+      });
+      linkEls.forEach(function (le) {
+        var on = le.a === key || le.b === key;
+        le.path.setAttribute("stroke", on ? c : "#5b6ea8");
+        le.path.setAttribute("stroke-opacity", on ? "1" : "0.12");
+        le.path.setAttribute("stroke-width", on ? "2.6" : "1.4");
+        le.label.setAttribute("opacity", on ? "1" : "0");
+      });
+      document.getElementById("erd-title").textContent = key;
+      document.getElementById("erd-desc").textContent = t.desc;
+      document.getElementById("erd-cols").innerHTML = t.cols.map(function (col) {
+        return '<li><span>' + col[0] + '</span>' + (col[1] ? '<span class="k ' + col[1] + '">' + col[1] + '</span>' : '') + '</li>';
+      }).join("");
+      var links = related.map(function (k) { return '<span data-go="' + k + '">' + k + '</span>'; }).join("");
+      document.getElementById("erd-links").innerHTML = links || '<span class="muted">нет связей</span>';
+    }
+
+    document.getElementById("erd-links").addEventListener("click", function (e) {
+      var g = e.target.getAttribute("data-go");
+      if (g) select(g);
+    });
+    document.getElementById("erd-reset").addEventListener("click", clear);
+    graph.addEventListener("click", function (e) { if (e.target === graph || e.target === sizer) clear(); });
+
+    clear();
+    requestAnimationFrame(fit);
+    window.addEventListener("resize", function () { requestAnimationFrame(fit); });
+  }
+
+  document.getElementById("year").textContent = new Date().getFullYear();
+  function boot() { render(); initTabs(); initLayers(); initERD(); }
+  if (document.readyState !== "loading") boot();
+  else document.addEventListener("DOMContentLoaded", boot);
+})();

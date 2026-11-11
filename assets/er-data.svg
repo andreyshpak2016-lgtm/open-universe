@@ -1,0 +1,232 @@
+﻿<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1580 1250' font-family='Segoe UI, Roboto, sans-serif'>
+<defs>
+<linearGradient id='t' x1='0' y1='0' x2='1' y2='0'><stop offset='0%' stop-color='#a9c0ff'/><stop offset='100%' stop-color='#00e6d0'/></linearGradient>
+</defs>
+<rect width='1580' height='1250' rx='20' fill='#06080f'/>
+<text x='790' y='48' text-anchor='middle' font-size='30' font-weight='700' fill='url(#t)'>ER-диаграмма данных Open Universe</text>
+<text x='790' y='76' text-anchor='middle' font-size='14' fill='#93a0c4'>Таблицы PostgreSQL и объектного хранилища, их ключи и связи (1 -&gt; N)</text>
+<g font-size='13'>
+<rect x='60' y='1198' width='16' height='16' rx='4' fill='#6a8bff' fill-opacity='0.5'/><text x='84' y='1211' fill='#cdd8ff'>личность</text>
+<rect x='200' y='1198' width='16' height='16' rx='4' fill='#00e6d0' fill-opacity='0.5'/><text x='224' y='1211' fill='#cdd8ff'>мир</text>
+<rect x='310' y='1198' width='16' height='16' rx='4' fill='#a78bfa' fill-opacity='0.5'/><text x='334' y='1211' fill='#cdd8ff'>контент</text>
+<rect x='440' y='1198' width='16' height='16' rx='4' fill='#ffc24b' fill-opacity='0.5'/><text x='464' y='1211' fill='#cdd8ff'>экономика</text>
+<text x='640' y='1211' fill='#6b7695'>PK — первичный ключ, FK — внешний ключ</text>
+</g>
+<path d='M 360 180.3 L 440 183.2' fill='none' stroke='#5b6ea8' stroke-opacity='0.55' stroke-width='1.6'/>
+<circle cx='360' cy='180.3' r='3.5' fill='#8ea3d8'/>
+<circle cx='440' cy='183.2' r='3.5' fill='#8ea3d8'/>
+<rect x='354' y='170.8' width='92' height='20' rx='6' fill='#0a0e1c' fill-opacity='0.94' stroke='#2a3350'/>
+<text x='400' y='184.8' text-anchor='middle' font-size='11' fill='#93a0c4'>регистрирует</text>
+<path d='M 532.7 277 L 258.6 700' fill='none' stroke='#5b6ea8' stroke-opacity='0.55' stroke-width='1.6'/>
+<circle cx='532.7' cy='277' r='3.5' fill='#8ea3d8'/>
+<circle cx='258.6' cy='700' r='3.5' fill='#8ea3d8'/>
+<rect x='349.6' y='477.5' width='92' height='20' rx='6' fill='#0a0e1c' fill-opacity='0.94' stroke='#2a3350'/>
+<text x='395.6' y='491.5' text-anchor='middle' font-size='11' fill='#93a0c4'>состоит в</text>
+<path d='M 210 250 L 210 700' fill='none' stroke='#5b6ea8' stroke-opacity='0.55' stroke-width='1.6'/>
+<circle cx='210' cy='250' r='3.5' fill='#8ea3d8'/>
+<circle cx='210' cy='700' r='3.5' fill='#8ea3d8'/>
+<rect x='164' y='464' width='92' height='20' rx='6' fill='#0a0e1c' fill-opacity='0.94' stroke='#2a3350'/>
+<text x='210' y='478' text-anchor='middle' font-size='11' fill='#93a0c4'>владеет</text>
+<path d='M 590 277 L 590 700' fill='none' stroke='#5b6ea8' stroke-opacity='0.55' stroke-width='1.6'/>
+<circle cx='590' cy='277' r='3.5' fill='#8ea3d8'/>
+<circle cx='590' cy='700' r='3.5' fill='#8ea3d8'/>
+<rect x='544' y='477.5' width='92' height='20' rx='6' fill='#0a0e1c' fill-opacity='0.94' stroke='#2a3350'/>
+<text x='590' y='491.5' text-anchor='middle' font-size='11' fill='#93a0c4'>создаёт</text>
+<path d='M 590 877 L 590 980' fill='none' stroke='#5b6ea8' stroke-opacity='0.55' stroke-width='1.6'/>
+<circle cx='590' cy='877' r='3.5' fill='#8ea3d8'/>
+<circle cx='590' cy='980' r='3.5' fill='#8ea3d8'/>
+<rect x='544' y='917.5' width='92' height='20' rx='6' fill='#0a0e1c' fill-opacity='0.94' stroke='#2a3350'/>
+<text x='590' y='931.5' text-anchor='middle' font-size='11' fill='#93a0c4'>экземпляры</text>
+<path d='M 643.6 277 L 900 700' fill='none' stroke='#5b6ea8' stroke-opacity='0.55' stroke-width='1.6'/>
+<circle cx='643.6' cy='277' r='3.5' fill='#8ea3d8'/>
+<circle cx='900' cy='700' r='3.5' fill='#8ea3d8'/>
+<rect x='725.8' y='477.5' width='92' height='20' rx='6' fill='#0a0e1c' fill-opacity='0.94' stroke='#2a3350'/>
+<text x='771.8' y='491.5' text-anchor='middle' font-size='11' fill='#93a0c4'>продаёт</text>
+<path d='M 740 799.2 L 820 804.8' fill='none' stroke='#5b6ea8' stroke-opacity='0.55' stroke-width='1.6'/>
+<circle cx='740' cy='799.2' r='3.5' fill='#8ea3d8'/>
+<circle cx='820' cy='804.8' r='3.5' fill='#8ea3d8'/>
+<rect x='734' y='791' width='92' height='20' rx='6' fill='#0a0e1c' fill-opacity='0.94' stroke='#2a3350'/>
+<text x='780' y='805' text-anchor='middle' font-size='11' fill='#93a0c4'>лот</text>
+<path d='M 970 931 L 970 980' fill='none' stroke='#5b6ea8' stroke-opacity='0.55' stroke-width='1.6'/>
+<circle cx='970' cy='931' r='3.5' fill='#8ea3d8'/>
+<circle cx='970' cy='980' r='3.5' fill='#8ea3d8'/>
+<rect x='924' y='944.5' width='92' height='20' rx='6' fill='#0a0e1c' fill-opacity='0.94' stroke='#2a3350'/>
+<text x='970' y='958.5' text-anchor='middle' font-size='11' fill='#93a0c4'>исполняется</text>
+<path d='M 1305.5 250 L 1038.5 700' fill='none' stroke='#5b6ea8' stroke-opacity='0.55' stroke-width='1.6'/>
+<circle cx='1305.5' cy='250' r='3.5' fill='#8ea3d8'/>
+<circle cx='1038.5' cy='700' r='3.5' fill='#8ea3d8'/>
+<rect x='1126' y='464' width='92' height='20' rx='6' fill='#0a0e1c' fill-opacity='0.94' stroke='#2a3350'/>
+<text x='1172' y='478' text-anchor='middle' font-size='11' fill='#93a0c4'>рынок</text>
+<path d='M 1350 250 L 1350 700' fill='none' stroke='#5b6ea8' stroke-opacity='0.55' stroke-width='1.6'/>
+<circle cx='1350' cy='250' r='3.5' fill='#8ea3d8'/>
+<circle cx='1350' cy='700' r='3.5' fill='#8ea3d8'/>
+<rect x='1304' y='464' width='92' height='20' rx='6' fill='#0a0e1c' fill-opacity='0.94' stroke='#2a3350'/>
+<text x='1350' y='478' text-anchor='middle' font-size='11' fill='#93a0c4'>делится на</text>
+<path d='M 702.1 277 L 1237.9 700' fill='none' stroke='#5b6ea8' stroke-opacity='0.55' stroke-width='1.6'/>
+<circle cx='702.1' cy='277' r='3.5' fill='#8ea3d8'/>
+<circle cx='1237.9' cy='700' r='3.5' fill='#8ea3d8'/>
+<rect x='924' y='477.5' width='92' height='20' rx='6' fill='#0a0e1c' fill-opacity='0.94' stroke='#2a3350'/>
+<text x='970' y='491.5' text-anchor='middle' font-size='11' fill='#93a0c4'>контролирует</text>
+<path d='M 1200 170 L 1160 170 L 1160 1060 L 1200 1060' fill='none' stroke='#5b6ea8' stroke-opacity='0.55' stroke-width='1.6'/>
+<circle cx='1200' cy='170' r='3.5' fill='#8ea3d8'/>
+<circle cx='1200' cy='1060' r='3.5' fill='#8ea3d8'/>
+<rect x='1114' y='605' width='92' height='20' rx='6' fill='#0a0e1c' fill-opacity='0.94' stroke='#2a3350'/>
+<text x='1160' y='619' text-anchor='middle' font-size='11' fill='#93a0c4'>содержит</text>
+<g>
+<rect x='60' y='100' width='300' height='150' rx='12' fill='#0b1122' stroke='#6a8bff' stroke-opacity='0.5'/>
+<path d='M 60 112 a12 12 0 0 1 12 -12 h 276 a12 12 0 0 1 12 12 v 30 h -300 z' fill='#6a8bff' fill-opacity='0.18'/>
+<text x='76' y='127' font-size='15' font-weight='700' fill='#e7ecff'>accounts</text>
+<line x1='60' y1='142' x2='360' y2='142' stroke='#6a8bff' stroke-opacity='0.3'/>
+<text x='76' y='160' font-size='13' fill='#cdd8ff'>id</text>
+<rect x='308' y='146' width='38' height='18' rx='5' fill='none' stroke='#2fe08a' stroke-opacity='0.6'/>
+<text x='327' y='159' text-anchor='middle' font-size='10.5' fill='#2fe08a'>PK</text>
+<text x='76' y='187' font-size='13' fill='#cdd8ff'>email</text>
+<text x='76' y='214' font-size='13' fill='#cdd8ff'>status</text>
+<text x='76' y='241' font-size='13' fill='#cdd8ff'>created_at</text>
+</g>
+<g>
+<rect x='440' y='100' width='300' height='177' rx='12' fill='#0b1122' stroke='#6a8bff' stroke-opacity='0.5'/>
+<path d='M 440 112 a12 12 0 0 1 12 -12 h 276 a12 12 0 0 1 12 12 v 30 h -300 z' fill='#6a8bff' fill-opacity='0.18'/>
+<text x='456' y='127' font-size='15' font-weight='700' fill='#e7ecff'>characters</text>
+<line x1='440' y1='142' x2='740' y2='142' stroke='#6a8bff' stroke-opacity='0.3'/>
+<text x='456' y='160' font-size='13' fill='#cdd8ff'>id</text>
+<rect x='688' y='146' width='38' height='18' rx='5' fill='none' stroke='#2fe08a' stroke-opacity='0.6'/>
+<text x='707' y='159' text-anchor='middle' font-size='10.5' fill='#2fe08a'>PK</text>
+<text x='456' y='187' font-size='13' fill='#cdd8ff'>account_id</text>
+<rect x='688' y='173' width='38' height='18' rx='5' fill='none' stroke='#ffc24b' stroke-opacity='0.6'/>
+<text x='707' y='186' text-anchor='middle' font-size='10.5' fill='#ffc24b'>FK</text>
+<text x='456' y='214' font-size='13' fill='#cdd8ff'>org_id</text>
+<rect x='688' y='200' width='38' height='18' rx='5' fill='none' stroke='#ffc24b' stroke-opacity='0.6'/>
+<text x='707' y='213' text-anchor='middle' font-size='10.5' fill='#ffc24b'>FK</text>
+<text x='456' y='241' font-size='13' fill='#cdd8ff'>name</text>
+<text x='456' y='268' font-size='13' fill='#cdd8ff'>credits</text>
+</g>
+<g>
+<rect x='1200' y='100' width='300' height='150' rx='12' fill='#0b1122' stroke='#00e6d0' stroke-opacity='0.5'/>
+<path d='M 1200 112 a12 12 0 0 1 12 -12 h 276 a12 12 0 0 1 12 12 v 30 h -300 z' fill='#00e6d0' fill-opacity='0.18'/>
+<text x='1216' y='127' font-size='15' font-weight='700' fill='#e7ecff'>star_systems</text>
+<line x1='1200' y1='142' x2='1500' y2='142' stroke='#00e6d0' stroke-opacity='0.3'/>
+<text x='1216' y='160' font-size='13' fill='#cdd8ff'>id</text>
+<rect x='1448' y='146' width='38' height='18' rx='5' fill='none' stroke='#2fe08a' stroke-opacity='0.6'/>
+<text x='1467' y='159' text-anchor='middle' font-size='10.5' fill='#2fe08a'>PK</text>
+<text x='1216' y='187' font-size='13' fill='#cdd8ff'>name</text>
+<text x='1216' y='214' font-size='13' fill='#cdd8ff'>seed</text>
+<text x='1216' y='241' font-size='13' fill='#cdd8ff'>coords</text>
+</g>
+<g>
+<rect x='60' y='700' width='300' height='150' rx='12' fill='#0b1122' stroke='#6a8bff' stroke-opacity='0.5'/>
+<path d='M 60 712 a12 12 0 0 1 12 -12 h 276 a12 12 0 0 1 12 12 v 30 h -300 z' fill='#6a8bff' fill-opacity='0.18'/>
+<text x='76' y='727' font-size='15' font-weight='700' fill='#e7ecff'>organizations</text>
+<line x1='60' y1='742' x2='360' y2='742' stroke='#6a8bff' stroke-opacity='0.3'/>
+<text x='76' y='760' font-size='13' fill='#cdd8ff'>id</text>
+<rect x='308' y='746' width='38' height='18' rx='5' fill='none' stroke='#2fe08a' stroke-opacity='0.6'/>
+<text x='327' y='759' text-anchor='middle' font-size='10.5' fill='#2fe08a'>PK</text>
+<text x='76' y='787' font-size='13' fill='#cdd8ff'>name</text>
+<text x='76' y='814' font-size='13' fill='#cdd8ff'>tag</text>
+<text x='76' y='841' font-size='13' fill='#cdd8ff'>owner_id</text>
+<rect x='308' y='827' width='38' height='18' rx='5' fill='none' stroke='#ffc24b' stroke-opacity='0.6'/>
+<text x='327' y='840' text-anchor='middle' font-size='10.5' fill='#ffc24b'>FK</text>
+</g>
+<g>
+<rect x='440' y='700' width='300' height='177' rx='12' fill='#0b1122' stroke='#a78bfa' stroke-opacity='0.5'/>
+<path d='M 440 712 a12 12 0 0 1 12 -12 h 276 a12 12 0 0 1 12 12 v 30 h -300 z' fill='#a78bfa' fill-opacity='0.18'/>
+<text x='456' y='727' font-size='15' font-weight='700' fill='#e7ecff'>blueprints</text>
+<line x1='440' y1='742' x2='740' y2='742' stroke='#a78bfa' stroke-opacity='0.3'/>
+<text x='456' y='760' font-size='13' fill='#cdd8ff'>id</text>
+<rect x='688' y='746' width='38' height='18' rx='5' fill='none' stroke='#2fe08a' stroke-opacity='0.6'/>
+<text x='707' y='759' text-anchor='middle' font-size='10.5' fill='#2fe08a'>PK</text>
+<text x='456' y='787' font-size='13' fill='#cdd8ff'>owner_id</text>
+<rect x='688' y='773' width='38' height='18' rx='5' fill='none' stroke='#ffc24b' stroke-opacity='0.6'/>
+<text x='707' y='786' text-anchor='middle' font-size='10.5' fill='#ffc24b'>FK</text>
+<text x='456' y='814' font-size='13' fill='#cdd8ff'>name</text>
+<text x='456' y='841' font-size='13' fill='#cdd8ff'>price</text>
+<text x='456' y='868' font-size='13' fill='#cdd8ff'>data_oid</text>
+</g>
+<g>
+<rect x='820' y='700' width='300' height='231' rx='12' fill='#0b1122' stroke='#ffc24b' stroke-opacity='0.5'/>
+<path d='M 820 712 a12 12 0 0 1 12 -12 h 276 a12 12 0 0 1 12 12 v 30 h -300 z' fill='#ffc24b' fill-opacity='0.18'/>
+<text x='836' y='727' font-size='15' font-weight='700' fill='#e7ecff'>market_orders</text>
+<line x1='820' y1='742' x2='1120' y2='742' stroke='#ffc24b' stroke-opacity='0.3'/>
+<text x='836' y='760' font-size='13' fill='#cdd8ff'>id</text>
+<rect x='1068' y='746' width='38' height='18' rx='5' fill='none' stroke='#2fe08a' stroke-opacity='0.6'/>
+<text x='1087' y='759' text-anchor='middle' font-size='10.5' fill='#2fe08a'>PK</text>
+<text x='836' y='787' font-size='13' fill='#cdd8ff'>system_id</text>
+<rect x='1068' y='773' width='38' height='18' rx='5' fill='none' stroke='#ffc24b' stroke-opacity='0.6'/>
+<text x='1087' y='786' text-anchor='middle' font-size='10.5' fill='#ffc24b'>FK</text>
+<text x='836' y='814' font-size='13' fill='#cdd8ff'>item_id</text>
+<rect x='1068' y='800' width='38' height='18' rx='5' fill='none' stroke='#ffc24b' stroke-opacity='0.6'/>
+<text x='1087' y='813' text-anchor='middle' font-size='10.5' fill='#ffc24b'>FK</text>
+<text x='836' y='841' font-size='13' fill='#cdd8ff'>seller_id</text>
+<rect x='1068' y='827' width='38' height='18' rx='5' fill='none' stroke='#ffc24b' stroke-opacity='0.6'/>
+<text x='1087' y='840' text-anchor='middle' font-size='10.5' fill='#ffc24b'>FK</text>
+<text x='836' y='868' font-size='13' fill='#cdd8ff'>side</text>
+<text x='836' y='895' font-size='13' fill='#cdd8ff'>price</text>
+<text x='836' y='922' font-size='13' fill='#cdd8ff'>qty</text>
+</g>
+<g>
+<rect x='1200' y='700' width='300' height='177' rx='12' fill='#0b1122' stroke='#00e6d0' stroke-opacity='0.5'/>
+<path d='M 1200 712 a12 12 0 0 1 12 -12 h 276 a12 12 0 0 1 12 12 v 30 h -300 z' fill='#00e6d0' fill-opacity='0.18'/>
+<text x='1216' y='727' font-size='15' font-weight='700' fill='#e7ecff'>territories</text>
+<line x1='1200' y1='742' x2='1500' y2='742' stroke='#00e6d0' stroke-opacity='0.3'/>
+<text x='1216' y='760' font-size='13' fill='#cdd8ff'>id</text>
+<rect x='1448' y='746' width='38' height='18' rx='5' fill='none' stroke='#2fe08a' stroke-opacity='0.6'/>
+<text x='1467' y='759' text-anchor='middle' font-size='10.5' fill='#2fe08a'>PK</text>
+<text x='1216' y='787' font-size='13' fill='#cdd8ff'>system_id</text>
+<rect x='1448' y='773' width='38' height='18' rx='5' fill='none' stroke='#ffc24b' stroke-opacity='0.6'/>
+<text x='1467' y='786' text-anchor='middle' font-size='10.5' fill='#ffc24b'>FK</text>
+<text x='1216' y='814' font-size='13' fill='#cdd8ff'>owner_id</text>
+<rect x='1448' y='800' width='38' height='18' rx='5' fill='none' stroke='#ffc24b' stroke-opacity='0.6'/>
+<text x='1467' y='813' text-anchor='middle' font-size='10.5' fill='#ffc24b'>FK</text>
+<text x='1216' y='841' font-size='13' fill='#cdd8ff'>status</text>
+<text x='1216' y='868' font-size='13' fill='#cdd8ff'>tax</text>
+</g>
+<g>
+<rect x='440' y='980' width='300' height='177' rx='12' fill='#0b1122' stroke='#a78bfa' stroke-opacity='0.5'/>
+<path d='M 440 992 a12 12 0 0 1 12 -12 h 276 a12 12 0 0 1 12 12 v 30 h -300 z' fill='#a78bfa' fill-opacity='0.18'/>
+<text x='456' y='1007' font-size='15' font-weight='700' fill='#e7ecff'>inventory_items</text>
+<line x1='440' y1='1022' x2='740' y2='1022' stroke='#a78bfa' stroke-opacity='0.3'/>
+<text x='456' y='1040' font-size='13' fill='#cdd8ff'>id</text>
+<rect x='688' y='1026' width='38' height='18' rx='5' fill='none' stroke='#2fe08a' stroke-opacity='0.6'/>
+<text x='707' y='1039' text-anchor='middle' font-size='10.5' fill='#2fe08a'>PK</text>
+<text x='456' y='1067' font-size='13' fill='#cdd8ff'>owner_id</text>
+<rect x='688' y='1053' width='38' height='18' rx='5' fill='none' stroke='#ffc24b' stroke-opacity='0.6'/>
+<text x='707' y='1066' text-anchor='middle' font-size='10.5' fill='#ffc24b'>FK</text>
+<text x='456' y='1094' font-size='13' fill='#cdd8ff'>blueprint_id</text>
+<rect x='688' y='1080' width='38' height='18' rx='5' fill='none' stroke='#ffc24b' stroke-opacity='0.6'/>
+<text x='707' y='1093' text-anchor='middle' font-size='10.5' fill='#ffc24b'>FK</text>
+<text x='456' y='1121' font-size='13' fill='#cdd8ff'>qty</text>
+<text x='456' y='1148' font-size='13' fill='#cdd8ff'>location</text>
+</g>
+<g>
+<rect x='820' y='980' width='300' height='177' rx='12' fill='#0b1122' stroke='#ffc24b' stroke-opacity='0.5'/>
+<path d='M 820 992 a12 12 0 0 1 12 -12 h 276 a12 12 0 0 1 12 12 v 30 h -300 z' fill='#ffc24b' fill-opacity='0.18'/>
+<text x='836' y='1007' font-size='15' font-weight='700' fill='#e7ecff'>transactions</text>
+<line x1='820' y1='1022' x2='1120' y2='1022' stroke='#ffc24b' stroke-opacity='0.3'/>
+<text x='836' y='1040' font-size='13' fill='#cdd8ff'>id</text>
+<rect x='1068' y='1026' width='38' height='18' rx='5' fill='none' stroke='#2fe08a' stroke-opacity='0.6'/>
+<text x='1087' y='1039' text-anchor='middle' font-size='10.5' fill='#2fe08a'>PK</text>
+<text x='836' y='1067' font-size='13' fill='#cdd8ff'>order_id</text>
+<rect x='1068' y='1053' width='38' height='18' rx='5' fill='none' stroke='#ffc24b' stroke-opacity='0.6'/>
+<text x='1087' y='1066' text-anchor='middle' font-size='10.5' fill='#ffc24b'>FK</text>
+<text x='836' y='1094' font-size='13' fill='#cdd8ff'>buyer_id</text>
+<rect x='1068' y='1080' width='38' height='18' rx='5' fill='none' stroke='#ffc24b' stroke-opacity='0.6'/>
+<text x='1087' y='1093' text-anchor='middle' font-size='10.5' fill='#ffc24b'>FK</text>
+<text x='836' y='1121' font-size='13' fill='#cdd8ff'>total</text>
+<text x='836' y='1148' font-size='13' fill='#cdd8ff'>ts</text>
+</g>
+<g>
+<rect x='1200' y='980' width='300' height='177' rx='12' fill='#0b1122' stroke='#00e6d0' stroke-opacity='0.5'/>
+<path d='M 1200 992 a12 12 0 0 1 12 -12 h 276 a12 12 0 0 1 12 12 v 30 h -300 z' fill='#00e6d0' fill-opacity='0.18'/>
+<text x='1216' y='1007' font-size='15' font-weight='700' fill='#e7ecff'>voxel_chunks</text>
+<line x1='1200' y1='1022' x2='1500' y2='1022' stroke='#00e6d0' stroke-opacity='0.3'/>
+<text x='1216' y='1040' font-size='13' fill='#cdd8ff'>id</text>
+<rect x='1448' y='1026' width='38' height='18' rx='5' fill='none' stroke='#2fe08a' stroke-opacity='0.6'/>
+<text x='1467' y='1039' text-anchor='middle' font-size='10.5' fill='#2fe08a'>PK</text>
+<text x='1216' y='1067' font-size='13' fill='#cdd8ff'>system_id</text>
+<rect x='1448' y='1053' width='38' height='18' rx='5' fill='none' stroke='#ffc24b' stroke-opacity='0.6'/>
+<text x='1467' y='1066' text-anchor='middle' font-size='10.5' fill='#ffc24b'>FK</text>
+<text x='1216' y='1094' font-size='13' fill='#cdd8ff'>coords</text>
+<text x='1216' y='1121' font-size='13' fill='#cdd8ff'>data_oid</text>
+<text x='1216' y='1148' font-size='13' fill='#cdd8ff'>version</text>
+</g>
+</svg>

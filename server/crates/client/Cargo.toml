@@ -1,0 +1,18 @@
+[package]
+name = "ou-client"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Open Universe: headless-клиент (предсказание и реконсиляция)"
+
+[lib]
+name = "ou_client"
+path = "src/lib.rs"
+
+[[bin]]
+name = "ou-client"
+path = "src/main.rs"
+
+[dependencies]
+ou-protocol = { path = "../protocol" }
+ou-sim = { path = "../sim" }

@@ -1,0 +1,54 @@
+name: ci
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    name: Тесты и сборка ядра
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Установка Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Кэш cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            server/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('server/**/Cargo.toml') }}
+
+      - name: Тесты
+        working-directory: server
+        run: cargo test --workspace
+
+      - name: Сборка (release)
+        working-directory: server
+        run: cargo build --release --workspace
+
+      - name: Упаковка артефакта
+        shell: pwsh
+        run: |
+          $v = (Get-Content VERSION -Raw).Trim()
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Compress-Archive -Path server/target/release/ou-server.exe, server/target/release/ou-client.exe `
+            -DestinationPath "dist/open-universe-$v-windows-x64.zip" -Force
+
+      - name: Приложить сборку к релизу
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.zip
+          generate_release_notes: true

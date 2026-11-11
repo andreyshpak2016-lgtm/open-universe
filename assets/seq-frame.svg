@@ -1,0 +1,58 @@
+﻿<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1520 1010' font-family='Segoe UI, Roboto, sans-serif'>
+<defs>
+<linearGradient id='t' x1='0' y1='0' x2='1' y2='0'><stop offset='0%' stop-color='#a9c0ff'/><stop offset='100%' stop-color='#00e6d0'/></linearGradient>
+<marker id='a_player' viewBox='0 0 10 10' refX='8' refY='5' markerWidth='7' markerHeight='7' orient='auto-start-reverse'><path d='M0,0 L10,5 L0,10 z' fill='#6a8bff'/></marker>
+<marker id='a_client' viewBox='0 0 10 10' refX='8' refY='5' markerWidth='7' markerHeight='7' orient='auto-start-reverse'><path d='M0,0 L10,5 L0,10 z' fill='#6a8bff'/></marker>
+<marker id='a_net' viewBox='0 0 10 10' refX='8' refY='5' markerWidth='7' markerHeight='7' orient='auto-start-reverse'><path d='M0,0 L10,5 L0,10 z' fill='#00e6d0'/></marker>
+<marker id='a_server' viewBox='0 0 10 10' refX='8' refY='5' markerWidth='7' markerHeight='7' orient='auto-start-reverse'><path d='M0,0 L10,5 L0,10 z' fill='#00e6d0'/></marker>
+<marker id='a_db' viewBox='0 0 10 10' refX='8' refY='5' markerWidth='7' markerHeight='7' orient='auto-start-reverse'><path d='M0,0 L10,5 L0,10 z' fill='#ffc24b'/></marker>
+</defs>
+<rect width='1520' height='1010' rx='20' fill='#06080f'/>
+<text x='760' y='52' text-anchor='middle' font-size='30' font-weight='700' fill='url(#t)'>Sequence-диаграмма: один сетевой кадр</text>
+<text x='760' y='80' text-anchor='middle' font-size='14' fill='#93a0c4'>Ввод игрока -&gt; клиентский предикт -&gt; авторитетный сервер -&gt; отклик и реконсиляция</text>
+<rect x='45' y='120' width='190' height='46' rx='12' fill='#6a8bff' fill-opacity='0.16' stroke='#6a8bff' stroke-opacity='0.5'/>
+<text x='140' y='149' text-anchor='middle' font-size='15' font-weight='700' fill='#e7ecff'>Игрок</text>
+<line x1='140' y1='166' x2='140' y2='940' stroke='#6a8bff' stroke-opacity='0.3' stroke-width='1.6' stroke-dasharray='5 6'/>
+<rect x='335' y='120' width='190' height='46' rx='12' fill='#6a8bff' fill-opacity='0.16' stroke='#6a8bff' stroke-opacity='0.5'/>
+<text x='430' y='149' text-anchor='middle' font-size='15' font-weight='700' fill='#e7ecff'>Клиент (UE5)</text>
+<line x1='430' y1='166' x2='430' y2='940' stroke='#6a8bff' stroke-opacity='0.3' stroke-width='1.6' stroke-dasharray='5 6'/>
+<rect x='625' y='120' width='190' height='46' rx='12' fill='#00e6d0' fill-opacity='0.16' stroke='#00e6d0' stroke-opacity='0.5'/>
+<text x='720' y='149' text-anchor='middle' font-size='15' font-weight='700' fill='#e7ecff'>Сеть (UDP)</text>
+<line x1='720' y1='166' x2='720' y2='940' stroke='#00e6d0' stroke-opacity='0.3' stroke-width='1.6' stroke-dasharray='5 6'/>
+<rect x='915' y='120' width='190' height='46' rx='12' fill='#00e6d0' fill-opacity='0.16' stroke='#00e6d0' stroke-opacity='0.5'/>
+<text x='1010' y='149' text-anchor='middle' font-size='15' font-weight='700' fill='#e7ecff'>Сервер (Rust)</text>
+<line x1='1010' y1='166' x2='1010' y2='940' stroke='#00e6d0' stroke-opacity='0.3' stroke-width='1.6' stroke-dasharray='5 6'/>
+<rect x='1205' y='120' width='190' height='46' rx='12' fill='#ffc24b' fill-opacity='0.16' stroke='#ffc24b' stroke-opacity='0.5'/>
+<text x='1300' y='149' text-anchor='middle' font-size='15' font-weight='700' fill='#e7ecff'>Хранилище</text>
+<line x1='1300' y1='166' x2='1300' y2='940' stroke='#ffc24b' stroke-opacity='0.3' stroke-width='1.6' stroke-dasharray='5 6'/>
+<line x1='140' y1='250' x2='430' y2='250' stroke='#8ea3d8' stroke-opacity='0.85' stroke-width='1.8' stroke-linecap='round' marker-end='url(#a_client)'/>
+<text x='285' y='241' text-anchor='middle' font-size='12.5' fill='#cdd8ff'>1. Нажатие: тяга, поворот, огонь</text>
+<path d='M 430 310 h 46 v 26 h -46' fill='none' stroke='#a78bfa' stroke-opacity='0.8' stroke-width='1.8' marker-end='url(#a_client)'/>
+<text x='488' y='326' font-size='12.5' fill='#cdd8ff'>2. Клиентский предикт: сразу двигаем корабль и камеру</text>
+<line x1='430' y1='378' x2='720' y2='378' stroke='#8ea3d8' stroke-opacity='0.85' stroke-width='1.8' stroke-linecap='round' marker-end='url(#a_net)'/>
+<text x='575' y='369' text-anchor='middle' font-size='12.5' fill='#cdd8ff'>3. Input frame: управление + номер тика + последний ack</text>
+<line x1='720' y1='440' x2='1010' y2='440' stroke='#8ea3d8' stroke-opacity='0.85' stroke-width='1.8' stroke-linecap='round' marker-end='url(#a_server)'/>
+<text x='865' y='431' text-anchor='middle' font-size='12.5' fill='#cdd8ff'>4. Доставка по UDP (может потеряться или прийти дважды)</text>
+<path d='M 1010 500 h 46 v 26 h -46' fill='none' stroke='#a78bfa' stroke-opacity='0.8' stroke-width='1.8' marker-end='url(#a_server)'/>
+<text x='1068' y='516' font-size='12.5' fill='#cdd8ff'>5. Авторитетный tick: своя кинематика, пересчёт мира 20–30 Гц</text>
+<line x1='1010' y1='560' x2='1300' y2='560' stroke='#ffc24b' stroke-opacity='0.85' stroke-width='1.8' stroke-linecap='round' stroke-dasharray='7 6' marker-end='url(#a_db)'/>
+<text x='1155' y='551' text-anchor='middle' font-size='12.5' fill='#cdd8ff'>6. Чтение/запись состояния: воксель, инвентарь, сделки</text>
+<line x1='1300' y1='612' x2='1010' y2='612' stroke='#ffc24b' stroke-opacity='0.85' stroke-width='1.8' stroke-linecap='round' stroke-dasharray='7 6' marker-end='url(#a_server)'/>
+<text x='1155' y='603' text-anchor='middle' font-size='12.5' fill='#cdd8ff'>7. Подтверждённое состояние</text>
+<path d='M 1010 668 h 46 v 26 h -46' fill='none' stroke='#a78bfa' stroke-opacity='0.8' stroke-width='1.8' marker-end='url(#a_server)'/>
+<text x='1068' y='684' font-size='12.5' fill='#cdd8ff'>8. Interest management: что реплицировать этому игроку</text>
+<line x1='1010' y1='728' x2='720' y2='728' stroke='#8ea3d8' stroke-opacity='0.85' stroke-width='1.8' stroke-linecap='round' marker-end='url(#a_net)'/>
+<text x='865' y='719' text-anchor='middle' font-size='12.5' fill='#cdd8ff'>9. Дельта состояния: изменения + серверный тик + ack</text>
+<line x1='720' y1='790' x2='430' y2='790' stroke='#8ea3d8' stroke-opacity='0.85' stroke-width='1.8' stroke-linecap='round' marker-end='url(#a_client)'/>
+<text x='575' y='781' text-anchor='middle' font-size='12.5' fill='#cdd8ff'>10. Доставка дельты (сжатая, по схеме FlatBuffers)</text>
+<path d='M 430 850 h 46 v 26 h -46' fill='none' stroke='#a78bfa' stroke-opacity='0.8' stroke-width='1.8' marker-end='url(#a_client)'/>
+<text x='488' y='866' font-size='12.5' fill='#cdd8ff'>11. Реконсиляция и интерполяция: сглаживаем расхождение</text>
+<line x1='140' y1='905' x2='430' y2='905' stroke='#8ea3d8' stroke-opacity='0.85' stroke-width='1.8' stroke-linecap='round' marker-end='url(#a_client)'/>
+<text x='285' y='896' text-anchor='middle' font-size='12.5' fill='#cdd8ff'>12. Плавная картинка на экране игрока</text>
+<rect x='70' y='230' width='1380' height='205' rx='14' fill='#6a8bff' fill-opacity='0.05' stroke='#6a8bff' stroke-opacity='0.18' stroke-dasharray='8 7'/>
+<text x='92' y='250' font-size='12' font-weight='700' fill='#8fb0ff'>КЛИЕНТСКАЯ СТОРОНА (немедленный отклик)</text>
+<rect x='70' y='452' width='1380' height='312' rx='14' fill='#00e6d0' fill-opacity='0.05' stroke='#00e6d0' stroke-opacity='0.18' stroke-dasharray='8 7'/>
+<text x='92' y='472' font-size='12' font-weight='700' fill='#5fe9d6'>СЕРВЕРНАЯ СТОРОНА (истина мира)</text>
+<rect x='70' y='760' width='1380' height='185' rx='14' fill='#a78bfa' fill-opacity='0.05' stroke='#a78bfa' stroke-opacity='0.18' stroke-dasharray='8 7'/>
+<text x='92' y='780' font-size='12' font-weight='700' fill='#c4b1ff'>ОТКЛИК: РЕКОНСИЛЯЦИЯ И ИНТЕРПОЛЯЦИЯ</text>
+</svg>

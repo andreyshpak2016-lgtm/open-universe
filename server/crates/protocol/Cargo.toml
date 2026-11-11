@@ -1,0 +1,12 @@
+[package]
+name = "ou-protocol"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Open Universe: бинарный сетевой протокол клиент↔сервер"
+
+[lib]
+name = "ou_protocol"
+path = "src/lib.rs"
+
+[dependencies]
