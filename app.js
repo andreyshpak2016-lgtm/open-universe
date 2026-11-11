@@ -384,6 +384,102 @@
 
   document.getElementById("year").textContent = new Date().getFullYear();
 
+  /* ---------- Регистрация пилота (открывает скачивание) ---------- */
+  // Аккаунт хранится в браузере (localStorage) — без серверов и сбора данных.
+  var REG_KEY = "ou.pilot";
+
+  function getPilot() {
+    try { return JSON.parse(localStorage.getItem(REG_KEY) || "null"); }
+    catch (e) { return null; }
+  }
+  function setPilot(p) {
+    try { localStorage.setItem(REG_KEY, JSON.stringify(p)); } catch (e) {}
+  }
+  function clearPilot() {
+    try { localStorage.removeItem(REG_KEY); } catch (e) {}
+  }
+
+  function applyRegistration() {
+    var pilot = getPilot();
+    var gate = document.getElementById("dl-unlocked");
+    var note = document.getElementById("dl-gate-note");
+    var reg = document.getElementById("dl-register");
+    var welcome = document.getElementById("dl-welcome");
+    var registered = !!pilot;
+    if (gate) gate.hidden = !registered;
+    if (note) note.hidden = registered;
+    if (reg) reg.hidden = registered;
+    if (welcome && pilot) {
+      welcome.textContent = "Профиль создан: " + pilot.name +
+        (pilot.email ? " · " + pilot.email : "") + ". Скачивание открыто.";
+    }
+  }
+
+  function openModal() {
+    var m = document.getElementById("register-modal");
+    if (!m) return;
+    m.hidden = false;
+    var name = document.getElementById("reg-name");
+    if (name) name.focus();
+  }
+  function closeModal() {
+    var m = document.getElementById("register-modal");
+    if (m) m.hidden = true;
+  }
+
+  function initRegister() {
+    var m = document.getElementById("register-modal");
+    var reg = document.getElementById("dl-register");
+    if (reg) {
+      reg.addEventListener("click", function (e) {
+        e.preventDefault();
+        openModal();
+      });
+    }
+    // Закрытие по фону/крестику/«Отмена».
+    document.querySelectorAll("[data-close-modal]").forEach(function (el) {
+      el.addEventListener("click", closeModal);
+    });
+    document.addEventListener("keydown", function (e) {
+      if (e.key === "Escape") closeModal();
+    });
+    // Открытие по #register (например, из навигации или ссылки).
+    if (location.hash === "#register") openModal();
+
+    var form = document.getElementById("register-form");
+    if (form) {
+      form.addEventListener("submit", function (e) {
+        e.preventDefault();
+        var nameEl = document.getElementById("reg-name");
+        var emailEl = document.getElementById("reg-email");
+        var rulesEl = document.getElementById("reg-rules");
+        var errEl = document.getElementById("reg-error");
+        var name = (nameEl.value || "").trim();
+        function fail(msg) { errEl.textContent = msg; errEl.hidden = false; }
+        if (name.length < 2) { fail("Позывной — минимум 2 символа."); return; }
+        if (!rulesEl.checked) { fail("Нужно принять правила сообщества."); return; }
+        errEl.hidden = true;
+        setPilot({ name: name, email: (emailEl.value || "").trim(),
+                   at: new Date().toISOString() });
+        applyRegistration();
+        closeModal();
+        // Сразу ведём к скачиванию.
+        var dl = document.getElementById("download");
+        if (dl) dl.scrollIntoView({ behavior: "smooth", block: "center" });
+      });
+    }
+    var logout = document.getElementById("dl-logout");
+    if (logout) {
+      logout.addEventListener("click", function () {
+        clearPilot();
+        applyRegistration();
+      });
+    }
+    applyRegistration();
+  }
+
+  function boot() { render(); initTabs(); initLayers(); initERD(); loadLatestRelease(); loadVersions(); initRegister(); }
+
   /* ---------- Все версии игры (из releases.json, без GitHub API) ---------- */
   // Статический файл рядом с сайтом: не зависит от лимита GitHub API (60/час)
   // и работает на любом хостинге, включая GitHub Pages.
@@ -460,8 +556,6 @@
           .catch(function () { renderVersions(FALLBACK_VERSIONS); });
       });
   }
-
-  function boot() { render(); initTabs(); initLayers(); initERD(); loadLatestRelease(); loadVersions(); }
   if (document.readyState !== "loading") boot();
   else document.addEventListener("DOMContentLoaded", boot);
 })();

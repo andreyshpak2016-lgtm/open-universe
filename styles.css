@@ -353,6 +353,33 @@ section .lead { color: var(--muted); max-width: 760px; margin: 0 0 34px; }
   .version-actions { justify-content: flex-start; }
 }
 
+/* Заблокированное скачивание и форма регистрации */
+.dl-unlocked { border-top: 1px dashed rgba(255,255,255,.12); margin-top: 14px; }
+.modal { position: fixed; inset: 0; z-index: 100; display: flex; align-items: center; justify-content: center; padding: 20px; }
+.modal[hidden] { display: none; }
+.modal-backdrop { position: absolute; inset: 0; background: rgba(2, 5, 16, .72); backdrop-filter: blur(3px); }
+.modal-card { position: relative; width: 100%; max-width: 440px; padding: 26px; }
+.modal-card h3 { margin: 0 0 6px; font-size: 1.25rem; }
+.modal-close {
+  position: absolute; top: 12px; right: 14px; width: 32px; height: 32px; border-radius: 8px;
+  background: rgba(255,255,255,.05); border: 1px solid var(--panel-brd); color: var(--txt);
+  font-size: 1.2rem; line-height: 1; cursor: pointer;
+}
+.modal-close:hover { background: rgba(30,40,80,.7); }
+.field { display: block; margin: 0 0 14px; }
+.field > span { display: block; font-size: .82rem; color: var(--muted); margin: 0 0 6px; }
+.field em { font-style: normal; opacity: .7; }
+.field input[type="text"], .field input[type="email"] {
+  width: 100%; box-sizing: border-box; padding: 11px 13px; border-radius: 9px;
+  background: rgba(4, 8, 22, .7); border: 1px solid var(--panel-brd); color: var(--txt); font-size: .95rem;
+}
+.field input:focus { outline: none; border-color: rgba(106,139,255,.7); }
+.field.checkbox { display: flex; align-items: flex-start; gap: 10px; }
+.field.checkbox input { margin-top: 3px; }
+.field.checkbox span { margin: 0; color: #cdd8ff; font-size: .86rem; }
+.field-error { color: #ff8a8a; font-size: .85rem; margin: 0 0 12px; }
+#dl-welcome { color: var(--accent2); }
+
 footer { padding: 40px 0 60px; color: var(--muted); font-size: .86rem; border-top: 1px solid var(--panel-brd); }
 footer .wrap { display: flex; justify-content: space-between; gap: 20px; flex-wrap: wrap; }
 
