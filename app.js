@@ -336,87 +336,129 @@
     window.addEventListener("resize", function () { requestAnimationFrame(fit); });
   }
 
-  /* ---------- Скачивание: данные последнего релиза с GitHub ---------- */
+  /* ---------- Скачивание: данные последнего релиза ---------- */
   function loadLatestRelease() {
     var repo = "andreyshpak2016-lgtm/open-universe";
-    var endpoints = [
-      "https://api.github.com/repos/" + repo + "/releases/latest",
-      "https://api.github.com/repos/" + repo + "/releases?per_page=1"
-    ];
     function apply(rel) {
       if (!rel) return;
       var verEl = document.getElementById("dl-version");
-      if (verEl && rel.tag_name) verEl.textContent = rel.tag_name;
+      if (verEl && rel.tag) verEl.textContent = rel.tag;
       var sizeEl = document.getElementById("dl-size");
-      if (sizeEl && rel.assets && rel.assets.length) {
-        var bytes = rel.assets[0].size || 0;
-        sizeEl.textContent = "~" + (bytes / 1048576).toFixed(2).replace(".", ",") + " МБ";
+      if (sizeEl && rel.size) {
+        sizeEl.textContent = "~" + (rel.size / 1048576).toFixed(2).replace(".", ",") + " МБ";
       }
       var dateEl = document.getElementById("dl-date");
-      if (dateEl && rel.published_at) {
-        dateEl.textContent = new Date(rel.published_at).toLocaleDateString("ru-RU");
-      }
+      if (dateEl && rel.date) dateEl.textContent = new Date(rel.date).toLocaleDateString("ru-RU");
       var linkEl = document.getElementById("dl-latest");
-      if (linkEl && rel.assets && rel.assets.length) linkEl.href = rel.assets[0].browser_download_url;
+      if (linkEl && (rel.zip || rel.client)) linkEl.href = rel.zip || rel.client;
     }
-    function tryNext(i) {
-      if (i >= endpoints.length) return; // остаёмся на значениях по умолчанию из HTML
-      fetch(endpoints[i], { headers: { Accept: "application/vnd.github+json" }, cache: "no-store" })
-        .then(function (r) { return r.ok ? r.json() : null; })
-        .then(function (data) {
-          var rel = Array.isArray(data) ? data[0] : data;
-          if (rel && rel.tag_name) apply(rel);
-        })
-        .catch(function () {});
-    }
-    tryNext(0);
+    // 1) releases.json рядом с сайтом (без GitHub API).
+    fetch("releases.json", { cache: "no-store" })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (doc) {
+        if (doc && doc.releases && doc.releases.length) {
+          var latest = doc.releases.filter(function (x) { return x.latest; })[0] || doc.releases[0];
+          apply(latest);
+          return;
+        }
+        throw new Error("empty");
+      })
+      .catch(function () {
+        // 2) Запасной путь — GitHub API.
+        fetch("https://api.github.com/repos/" + repo + "/releases/latest",
+          { headers: { Accept: "application/vnd.github+json" }, cache: "no-store" })
+          .then(function (r) { return r.ok ? r.json() : null; })
+          .then(function (rel) {
+            if (!rel || !rel.tag_name) return;
+            var a = (rel.assets || [])[0];
+            apply({
+              tag: rel.tag_name,
+              date: rel.published_at,
+              size: a ? a.size : 0,
+              zip: a ? a.browser_download_url : null
+            });
+          })
+          .catch(function () {});
+      });
   }
 
   document.getElementById("year").textContent = new Date().getFullYear();
 
-  /* ---------- Все версии игры (список релизов с GitHub) ---------- */
-  function loadVersions() {
-    var repo = "andreyshpak2016-lgtm/open-universe";
+  /* ---------- Все версии игры (из releases.json, без GitHub API) ---------- */
+  // Статический файл рядом с сайтом: не зависит от лимита GitHub API (60/час)
+  // и работает на любом хостинге, включая GitHub Pages.
+  var FALLBACK_VERSIONS = [
+    { tag: "v0.21.0", date: "2026-11-12T09:00:00Z", latest: true, size: 0,
+      client: "https://github.com/andreyshpak2016-lgtm/open-universe/releases/download/v0.21.0/ou-netclient.exe",
+      zip: "https://github.com/andreyshpak2016-lgtm/open-universe/releases/download/v0.21.0/open-universe-0.21.0-windows-x64.zip",
+      page: "https://github.com/andreyshpak2016-lgtm/open-universe/releases/tag/v0.21.0" }
+  ];
+
+  function renderVersions(rels) {
     var box = document.getElementById("versions");
-    var status = document.getElementById("versions-status");
     if (!box) return;
-    fetch("https://api.github.com/repos/" + repo + "/releases?per_page=30",
-      { headers: { Accept: "application/vnd.github+json" }, cache: "no-store" })
+    if (!rels || !rels.length) { 
+      var st = document.getElementById("versions-status");
+      if (st) st.textContent = "Список версий недоступен — откройте релизы на GitHub.";
+      return;
+    }
+    var html = "";
+    rels.forEach(function (rel) {
+      var tag = rel.tag || rel.name || "—";
+      var size = rel.size ? (rel.size / 1048576).toFixed(2).replace(".", ",") + " МБ" : "";
+      var date = rel.date ? new Date(rel.date).toLocaleDateString("ru-RU") : "";
+      var links = "";
+      if (rel.client) {
+        links += '<a class="version-btn primary" href="' + rel.client + '" target="_blank" rel="noopener">⬇ клиент (exe)</a>';
+      }
+      if (rel.zip) {
+        links += '<a class="version-btn" href="' + rel.zip + '" target="_blank" rel="noopener">всё (zip)</a>';
+      }
+      if (!links) {
+        links = '<a class="version-btn" href="' + (rel.page || "#") + '" target="_blank" rel="noopener">на GitHub</a>';
+      }
+      html += '<div class="version">' +
+        '<span class="version-tag">' + tag + (rel.latest ? ' <span class="version-latest">последняя</span>' : '') + '</span>' +
+        '<span class="version-meta">' + [date, size].filter(Boolean).join(" · ") + '</span>' +
+        '<span class="version-actions">' + links + '</span></div>';
+    });
+    box.innerHTML = html;
+  }
+
+  function loadVersions() {
+    // 1) Статический releases.json рядом с сайтом (основной путь).
+    // 2) Если его нет — пробуем GitHub API (на случай свежего деплоя).
+    // 3) Если и он недоступен — показываем встроенный список последней версии.
+    fetch("releases.json", { cache: "no-store" })
       .then(function (r) { return r.ok ? r.json() : null; })
-      .then(function (rels) {
-        if (!rels || !rels.length) { if (status) status.textContent = "Список версий недоступен — откройте релизы на GitHub."; return; }
-        var html = "";
-        rels.forEach(function (rel) {
-          var assets = rel.assets || [];
-          // Клиент: отдельный .exe, если он приложен; иначе архив.
-          var clientExe = assets.filter(function (a) { return /ou-netclient.*\.exe$/i.test(a.name); })[0]
-                       || assets.filter(function (a) { return /\.exe$/i.test(a.name); })[0];
-          var zip = assets.filter(function (a) { return /\.zip$/i.test(a.name); })[0];
-          var primary = clientExe || zip;
-          var size = primary ? (primary.size / 1048576).toFixed(2).replace(".", ",") + " МБ" : "";
-          var date = rel.published_at ? new Date(rel.published_at).toLocaleDateString("ru-RU") : "";
-          var latest = rel.tag_name === (rels[0].tag_name);
-          var tag = rel.tag_name || rel.name || "—";
-
-          var links = "";
-          if (clientExe) {
-            links += '<a class="version-btn primary" href="' + clientExe.browser_download_url + '" target="_blank" rel="noopener">⬇ клиент (exe)</a>';
-          }
-          if (zip) {
-            links += '<a class="version-btn" href="' + zip.browser_download_url + '" target="_blank" rel="noopener">всё (zip)</a>';
-          }
-          if (!links) {
-            links = '<a class="version-btn" href="https://github.com/' + repo + '/releases/tag/' + tag + '" target="_blank" rel="noopener">на GitHub</a>';
-          }
-
-          html += '<div class="version">' +
-            '<span class="version-tag">' + tag + (latest ? ' <span class="version-latest">последняя</span>' : '') + '</span>' +
-            '<span class="version-meta">' + [date, size].filter(Boolean).join(" · ") + '</span>' +
-            '<span class="version-actions">' + links + '</span></div>';
-        });
-        box.innerHTML = html;
+      .then(function (doc) {
+        if (doc && doc.releases && doc.releases.length) { renderVersions(doc.releases); return; }
+        throw new Error("empty releases.json");
       })
-      .catch(function () { if (status) status.textContent = "Список версий недоступен — откройте релизы на GitHub."; });
+      .catch(function () {
+        fetch("https://api.github.com/repos/andreyshpak2016-lgtm/open-universe/releases?per_page=30",
+          { headers: { Accept: "application/vnd.github+json" }, cache: "no-store" })
+          .then(function (r) { return r.ok ? r.json() : null; })
+          .then(function (rels) {
+            if (!rels || !rels.length) { renderVersions(FALLBACK_VERSIONS); return; }
+            renderVersions(rels.map(function (rel) {
+              var assets = rel.assets || [];
+              var client = assets.filter(function (a) { return /ou-netclient.*\.exe$/i.test(a.name); })[0]
+                        || assets.filter(function (a) { return /\.exe$/i.test(a.name); })[0];
+              var zip = assets.filter(function (a) { return /\.zip$/i.test(a.name); })[0];
+              var primary = client || zip;
+              return {
+                tag: rel.tag_name, date: rel.published_at,
+                latest: rel.tag_name === rels[0].tag_name,
+                size: primary ? primary.size : 0,
+                client: client ? client.browser_download_url : null,
+                zip: zip ? zip.browser_download_url : null,
+                page: "https://github.com/andreyshpak2016-lgtm/open-universe/releases/tag/" + rel.tag_name
+              };
+            }));
+          })
+          .catch(function () { renderVersions(FALLBACK_VERSIONS); });
+      });
   }
 
   function boot() { render(); initTabs(); initLayers(); initERD(); loadLatestRelease(); loadVersions(); }
