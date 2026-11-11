@@ -11,6 +11,9 @@ on:
 env:
   CARGO_TERM_COLOR: always
 
+permissions:
+  contents: write
+
 jobs:
   test:
     name: Тесты и сборка ядра
@@ -51,4 +54,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: dist/*.zip
-          generate_release_notes: true
+          # Заметки не генерируем автоматически: релиз создаётся с CHANGELOG,
+          # а этот шаг лишь догружает артефакт (идемпотентно).
+          generate_release_notes: false
+          draft: false
