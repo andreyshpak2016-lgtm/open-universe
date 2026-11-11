@@ -17,6 +17,7 @@ client/Build/
 client/DerivedDataCache/
 client/Intermediate/
 client/Saved/
+client/Packaged/
 
 # ОС и редакторы
 .DS_Store

@@ -98,6 +98,19 @@ if ($iscc) {
   } else {
     Write-Host "Установщик не собран (проверьте ISCC)" -ForegroundColor DarkYellow
   }
+
+  # 3b. Установщик ГРАФИЧЕСКОЙ игры — если готова сборка клиента UE5.
+  $gameSetup = Join-Path $dist "OpenUniverse-Game-Setup-$Version.exe"
+  $gamePkg = Join-Path $root 'client\Packaged\Windows\OpenUniverse'
+  if (Test-Path (Join-Path $gamePkg '..\OpenUniverse.exe')) {
+    Write-Host "--> установщик графической игры (Inno Setup)" -ForegroundColor Yellow
+    & $iscc "/DMyVersion=$Version" "/DSourceRoot=$root" (Join-Path $root 'tools\installer-game.iss') | Out-Null
+    if (Test-Path $gameSetup) {
+      Write-Host ("Игра-установщик: {0} ({1:N1} МБ)" -f $gameSetup, ((Get-Item $gameSetup).Length / 1MB)) -ForegroundColor Green
+    }
+  } else {
+    Write-Host "Сборки графической игры нет — пропускаю (tools/package-game.ps1)" -ForegroundColor DarkYellow
+  }
 } else {
   Write-Host "Inno Setup не найден — установщик пропущен (winget install JRSoftware.InnoSetup)" -ForegroundColor DarkYellow
 }
