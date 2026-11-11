@@ -27,10 +27,10 @@ window.PLAN = {
       "tasks": [
         { "title": "Каркас проекта на Unreal Engine 5 (C++) и сборка", "status": "in_progress" },
         { "title": "Floating origin / double-precision (серверная часть)", "status": "done" },
-        { "title": "Воксельный рендер с LOD (рабочий CPU-рендерер)", "status": "in_progress" },
-        { "title": "Планеты как сферы с рельефом и атмосферой", "status": "done" },
+        { "title": "Воксельный рендер с LOD (cube-to-sphere)", "status": "done" },
+        { "title": "Планеты как сферы с искривлением воксель-сетки", "status": "done" },
         { "title": "Система небесных тел (звёзды, луны, чёрные дыры)", "status": "done" },
-        { "title": "Атмосферы, скайбокс и постобработка", "status": "in_progress" },
+        { "title": "Атмосферы, скайбокс и постобработка", "status": "done" },
         { "title": "Клиентский каркас приложения и ввод", "status": "in_progress" }
       ]
     },

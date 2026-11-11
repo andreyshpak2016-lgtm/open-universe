@@ -7,6 +7,9 @@ dist/
 # Каталог сохранённого мира
 world/
 **/world.snapshot*
+# Кадры, отрендеренные в рабочую директорию (нужные лежат в assets/)
+server/render-*.png
+render-*.png
 
 # Unreal Engine (для будущего клиента)
 *.uproject

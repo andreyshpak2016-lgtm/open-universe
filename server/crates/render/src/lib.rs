@@ -24,6 +24,7 @@
 //! РєР°РґСЂР°РјРё РІ СЃРµРєСѓРЅРґСѓ. РћРЅ РґР°С‘С‚ **СЂРµС„РµСЂРµРЅСЃРЅС‹Р№ РєР°РґСЂ** РґР»СЏ СЃРІРµСЂРєРё Рё СЃРєСЂРёРЅС€РѕС‚.
 
 pub mod png;
+pub mod voxel;
 
 use ou_protocol::Vec3;
 use ou_sim::{det_cos, det_sin};
@@ -33,7 +34,7 @@ use ou_sim::{det_cos, det_sin};
 // ---------------------------------------------------------------------------
 
 /// РќРѕСЂРјР°Р»РёР·РѕРІР°С‚СЊ РІРµРєС‚РѕСЂ.
-fn norm(v: Vec3) -> Vec3 {
+pub(crate) fn norm(v: Vec3) -> Vec3 {
     let l = v.length();
     if l == 0.0 {
         Vec3::ZERO
@@ -42,7 +43,7 @@ fn norm(v: Vec3) -> Vec3 {
     }
 }
 
-fn dot(a: Vec3, b: Vec3) -> f64 {
+pub(crate) fn dot(a: Vec3, b: Vec3) -> f64 {
     a.x * b.x + a.y * b.y + a.z * b.z
 }
 
@@ -61,12 +62,12 @@ fn lerp3(a: Vec3, b: Vec3, t: f64) -> Vec3 {
 }
 
 /// РЎРјРµС€Р°С‚СЊ РґРІР° С†РІРµС‚Р°.
-fn lerp_color(a: Color, b: Color, t: f64) -> Color {
+pub(crate) fn lerp_color(a: Color, b: Color, t: f64) -> Color {
     a.add(b.add(a.scale(-1.0)).scale(t))
 }
 
 /// РҐРµС€ СЂРµС€С‘С‚РєРё РІ [0,1).
-fn lattice_hash(x: i64, y: i64, z: i64, seed: u64) -> f64 {
+pub(crate) fn lattice_hash(x: i64, y: i64, z: i64, seed: u64) -> f64 {
     let mut h = seed;
     for c in [x, y, z] {
         h ^= (c as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15);
@@ -77,12 +78,12 @@ fn lattice_hash(x: i64, y: i64, z: i64, seed: u64) -> f64 {
 }
 
 /// РџР»Р°РІРЅР°СЏ РёРЅС‚РµСЂРїРѕР»СЏС†РёСЏ (smoothstep).
-fn smooth(t: f64) -> f64 {
+pub(crate) fn smooth(t: f64) -> f64 {
     t * t * (3.0 - 2.0 * t)
 }
 
 /// РўСЂРёР»РёРЅРµР№РЅС‹Р№ value noise: СѓР·Р»С‹ СЂРµС€С‘С‚РєРё СЃРіР»Р°Р¶РёРІР°СЋС‚СЃСЏ, РїРѕСЌС‚РѕРјСѓ РЅРµС‚ В«РєР»РµС‚РѕРєВ».
-fn value_noise(p: Vec3, freq: f64, seed: u64) -> f64 {
+pub(crate) fn value_noise(p: Vec3, freq: f64, seed: u64) -> f64 {
     let x = p.x * freq;
     let y = p.y * freq;
     let z = p.z * freq;
@@ -103,7 +104,7 @@ fn value_noise(p: Vec3, freq: f64, seed: u64) -> f64 {
 }
 
 /// Р¤СЂР°РєС‚Р°Р»СЊРЅС‹Р№ С€СѓРј (РЅРµСЃРєРѕР»СЊРєРѕ РѕРєС‚Р°РІ) вЂ” РїРѕС…РѕР¶Рµ РЅР° РїРѕРІРµСЂС…РЅРѕСЃС‚СЊ РїР»Р°РЅРµС‚С‹.
-fn fbm(p: Vec3, seed: u64) -> f64 {
+pub(crate) fn fbm(p: Vec3, seed: u64) -> f64 {
     let mut sum = 0.0;
     let mut amp = 1.0;
     let mut freq = 1.5;
@@ -133,17 +134,17 @@ impl Color {
     pub const fn rgb(r: f64, g: f64, b: f64) -> Self {
         Color { r, g, b }
     }
-    fn scale(self, k: f64) -> Self {
+    pub fn scale(self, k: f64) -> Self {
         Color::rgb(self.r * k, self.g * k, self.b * k)
     }
-    fn add(self, o: Color) -> Self {
+    pub fn add(self, o: Color) -> Self {
         Color::rgb(self.r + o.r, self.g + o.g, self.b + o.b)
     }
     #[allow(dead_code)]
-    fn mul(self, o: Color) -> Self {
+    pub fn mul(self, o: Color) -> Self {
         Color::rgb(self.r * o.r, self.g * o.g, self.b * o.b)
     }
-    fn to_rgb8(self) -> [u8; 3] {
+    pub fn to_rgb8(self) -> [u8; 3] {
         // Р“Р°РјРјР°-РєРѕСЂСЂРµРєС†РёСЏ Рё РѕРіСЂР°РЅРёС‡РµРЅРёРµ.
         let g = |v: f64| (v.clamp(0.0, 1.0).powf(1.0 / 2.2) * 255.0).round() as u8;
         [g(self.r), g(self.g), g(self.b)]
@@ -895,6 +896,71 @@ pub fn scene_from_states(states: &[ou_protocol::EntityState], focus_id: u32) -> 
 // Анимация
 // ---------------------------------------------------------------------------
 
+/// Сцена «воксельная планета»: поверхность из вокселей, видно искривление
+/// кубической сетки в сферу и уровни рельефа (океан, суша, горы, снег).
+pub fn scene_voxel_planet() -> Scene {
+    use crate::voxel::{Lod, VoxelPlanet};
+    let mut s = Scene::new();
+    let radius = 1600.0;
+    // Генерируем планету среднего LOD (видно отдельные воксели).
+    let vp = VoxelPlanet::generate(Vec3::ZERO, radius, 0xC0FFEE, Lod::Near);
+
+    // Твёрдое ядро планеты: плотная сфера чуть ниже воксельного слоя.
+    // Физически это «тело планеты» под корой, а технически — гарантия, что
+    // между вокселями соседних граней куба не будет щелей в космос.
+    s.spheres.push(Sphere {
+        center: vp.center,
+        radius: radius - radius * 0.025,
+        color: Color::rgb(0.06, 0.14, 0.30),
+        terrain: false,
+        emissive: 0.0,
+        seed: 0,
+        atmosphere: 1.3,
+    });
+
+    // Воксельные блоки поверхности (и суша, и вода).
+    s.blocks.extend(vp.to_blocks());
+
+    // Свет — звезда сверху-слева.
+    let star_pos = Vec3::new(-9000.0, 7000.0, 6000.0);
+    s.spheres.push(star(star_pos, 420.0));
+    s.light.direction = norm(star_pos);
+    s.light.intensity = 1.25;
+    s.star_density = 0.08;
+
+    // Камера: видно шарообразный горизонт и искривление сетки.
+    let distance = radius * 2.4;
+    let cam_dir = norm(Vec3::new(-0.35, 0.30, 1.0));
+    s.camera.origin = cam_dir.scale(distance);
+    s.camera.forward = norm(Vec3::ZERO.sub(s.camera.origin));
+    s.camera.fov = 1.0;
+    s
+}
+
+/// Сцена сравнения LOD: слева грубая планета, справа детальная.
+pub fn scene_voxel_lod_compare() -> Scene {
+    use crate::voxel::{Lod, VoxelPlanet};
+    let mut s = Scene::new();
+    let radius = 900.0;
+
+    // Грубая (далеко) — слева.
+    let far = VoxelPlanet::generate(Vec3::new(-1500.0, 0.0, 3500.0), radius, 0xC0FFEE, Lod::Far);
+    s.blocks.extend(far.to_blocks());
+    // Детальная (близко) — справа.
+    let near = VoxelPlanet::generate(Vec3::new(1500.0, 0.0, 3500.0), radius, 0xC0FFEE, Lod::Close);
+    s.blocks.extend(near.to_blocks());
+
+    let star_pos = Vec3::new(-6000.0, 5000.0, 4000.0);
+    s.spheres.push(star(star_pos, 300.0));
+    s.light.direction = norm(star_pos);
+    s.light.intensity = 1.2;
+    s.star_density = 0.08;
+
+    s.camera.origin = Vec3::new(0.0, 200.0, -1800.0);
+    s.camera.forward = Vec3::new(0.0, 0.05, 1.0);
+    s.camera.fov = 1.2;
+    s
+}
 /// Собрать APNG-подобную последовательность кадров в одно изображение-лист
 /// (контактный лист), чтобы показать движение одним файлом.
 pub fn contact_sheet(frames: &[(u32, u32, Vec<u8>)], cols: usize) -> Option<(u32, u32, Vec<u8>)> {

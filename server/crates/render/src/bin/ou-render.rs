@@ -9,7 +9,7 @@
 
 use ou_render::{
     render, scene_asteroids, scene_black_hole, scene_from_states, scene_ship_and_planet, png,
-    contact_sheet,
+    contact_sheet, scene_voxel_planet, scene_voxel_lod_compare,
 };
 use ou_protocol::{EntityState, InputFrame, Vec3};
 use ou_sim::{det_cos, det_sin, World};
@@ -84,6 +84,8 @@ fn render_scene(name: &str, w: u32, h: u32, path: &str) {
         "ship" => scene_ship_and_planet(),
         "blackhole" => scene_black_hole(),
         "asteroids" => scene_asteroids(),
+        "voxel" => scene_voxel_planet(),
+        "lod" => scene_voxel_lod_compare(),
         _ => {
             eprintln!("неизвестная сцена: {name}");
             return;
