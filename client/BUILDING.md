@@ -1,0 +1,115 @@
+# Сборка клиента Open Universe (UE5)
+
+Практическое руководство: как собрать C++-модуль, чтобы Unreal перестал писать
+**«Не удалось найти игровой модуль 'OpenUniverse'»**.
+
+## Почему возникает эта ошибка
+
+Unreal загружает игровой код из
+`client/Binaries/Win64/UnrealEditor-OpenUniverse.dll`.
+Пока файла нет, редактор отвечает: «Не удалось найти игровой модуль».
+
+Это не поломка проекта, а признак того, что **C++-модуль не скомпилирован**.
+
+## Что нужно установить
+
+| Компонент | Зачем | Проверка |
+|---|---|---|
+| **Unreal Engine 5.5+** | сам движок | `D:\UE_5.5\Engine\Build\BatchFiles\Build.bat` |
+| **Visual Studio 2022** с C++ | компилятор | MSVC 14.4x |
+| **.NET Framework SDK 4.6+** | нужен UnrealBuildTool | `C:\Program Files (x86)\Windows Kits\NETFXSDK` |
+
+> **Важно про .NET Framework SDK.** Без него UBT падает с
+> `Could not find NetFxSDK install dir`. Устанавливается так:
+> ```powershell
+> winget install Microsoft.DotNet.Framework.DeveloperPack_4
+> ```
+
+## Сборка
+
+```powershell
+cd D:\Pro\open-universe
+powershell -ExecutionPolicy Bypass -File tools\build-client.ps1
+```
+
+Скрипт сам:
+1. находит движок (`D:\UE_5.5`, `D:\UE_5.8` и др.);
+2. подставляет .NET, встроенный в UE (`Engine\Binaries\ThirdParty\DotNet`);
+3. собирает цель `OpenUniverseEditor`;
+4. печатает путь к собранному модулю.
+
+Явно указать движок:
+
+```powershell
+powershell -File tools\build-client.ps1 -EngineRoot "D:\UE_5.5"
+```
+
+Только сборка без генерации файлов проекта:
+
+```powershell
+powershell -File tools\build-client.ps1 -Build
+```
+
+## Запуск редактора
+
+```powershell
+& "D:\UE_5.5\Engine\Binaries\Win64\UnrealEditor.exe" "D:\Pro\open-universe\client\OpenUniverse.uproject"
+```
+
+Если Unreal предложит **Rebuild** — соглашайтесь: это нормальное поведение для
+C++-проекта с изменённым кодом.
+
+## Известные ошибки и решения
+
+### `Could not find NetFxSDK install dir`
+Не хватает .NET Framework SDK. Установите Developer Pack (см. выше).
+
+### `Type 'uint64' is not supported by blueprint`
+Unreal не поддерживает `uint64` в `UPROPERTY`. Замените на `int64`:
+```cpp
+UPROPERTY(BlueprintReadOnly) int64 Tick = 0;   // правильно
+```
+
+### `FInternetAddr: cannot instantiate abstract class`
+Класс абстрактный. Адрес создаётся фабрикой:
+```cpp
+ISocketSubsystem* S = ISocketSubsystem::Get(PLATFORM_SOCKETSUBSYSTEM);
+TSharedRef<FInternetAddr> From = S->CreateInternetAddr();
+Socket->RecvFrom(Buf, Len, Read, *From);
+```
+
+### `CreateMeshSection_LinearColor: cannot convert FColor to FLinearColor`
+Используйте именно **LinearColor**:
+```cpp
+TArray<FLinearColor> Colors;   // а не TArray<FColor>
+Mesh->CreateMeshSection_LinearColor(Idx, Verts, Tris, Normals, UVs, Colors, Tangents, false);
+```
+
+### `Visual Studio compiler version ... is not a preferred version`
+Предупреждение, а не ошибка. Сборка продолжается.
+
+### Не хватает памяти (`Delaying N processes due to memory pressure`)
+UE просит ~1.5 ГБ на задачу. Закройте тяжёлые программы (игры, LLM-серверы)
+или увеличьте файл подкачки. Сборка не падает — только замедляется.
+
+## Что собирается
+
+| Файл | Что делает |
+|---|---|
+| `OpenUniverse.cpp` | точка входа модуля |
+| `OUWire.h` | разбор протокола сервера (проверен стендом) |
+| `OUClientNet.cpp` | UDP-клиент к Rust-серверу |
+| `OUShipPawn.cpp` | корабль: предсказание, реконсиляция |
+| `OUOriginManager.cpp` | floating origin |
+| `OUVoxelPlanet.cpp` | воксельная планета (cube-to-sphere) |
+| `OUGameMode.cpp` | режим игры |
+
+## Проверка без движка
+
+Логику протокола можно проверить, не имея UE — стендом на C++:
+
+```powershell
+powershell -File tools\test-client.ps1
+```
+
+Он берёт **реальный пакет Rust-сервера** и разбирает его тем же кодом `OUWire.h`.

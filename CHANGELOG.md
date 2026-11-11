@@ -3,6 +3,29 @@
 Все значимые изменения проекта. Формат близок к [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/),
 версии — [SemVer](https://semver.org/lang/ru/).
 
+## [0.19.0] — 2026-11-11
+
+Клиент на UE5 **собран и запускается**: ошибка «не найден игровой модуль» устранена.
+
+### Исправлено
+- **`uint64` в `UPROPERTY`** не поддерживается Unreal — заменён на `int64`.
+- **`FInternetAddr` — абстрактный класс**: адрес создаётся через
+  `ISocketSubsystem::CreateInternetAddr()`.
+- **`CreateMeshSection_LinearColor`** ждёт `TArray<FLinearColor>`, а не `FColor`.
+
+### Добавлено
+- **`client/BUILDING.md`** — практическое руководство со всеми встреченными
+  ошибками и их решениями.
+- `tools/build-client.ps1` переписан: сам находит движок (`D:\UE_5.5`, `D:\UE_5.8`),
+  подставляет .NET из UE, собирает и печатает путь к модулю.
+
+### Проверено
+- Модуль `UnrealEditor-OpenUniverse.dll` (275 КБ) собран.
+- Редактор загружается, окно — `OpenUniverse - Unreal Editor`,
+  в логе строка нашего кода: `LogOpenUniverse: Open Universe: модуль запущен`.
+- Выяснено требование: без **.NET Framework SDK** UBT не собирает модули
+  (`Could not find NetFxSDK install dir`) — установлен Developer Pack 4.8.1.
+
 ## [0.18.0] — 2026-11-11
 
 Понятный запуск игры: скрипт `play.ps1`, инструкция и раздел на сайте.

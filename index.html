@@ -301,7 +301,15 @@ VWAP = 26 · Всего сделок в журнале: 2</code></pre>
         <p class="lead" style="margin-top:14px;font-size:.88rem">Состояния: <code>Flying</code> / <code>Landed</code> / <code>Crashed</code>. Рельеф детерминирован (octahedral mapping + value noise) — один и тот же на сервере, клиенте и в тестах.</p>
 
         <h3>Каркас UE5-клиента (C++)</h3>
-        <p class="lead" style="margin-bottom:18px">Движок Unreal Engine 5 не установлен, но <b>каркас клиента готов</b>: проект, Build-скрипты и C++-классы, которые повторяют серверную логику. Откроется в UE сразу после установки движка.</p>
+        <p class="lead" style="margin-bottom:18px">Движок Unreal Engine 5 установлен, <b>модуль собран и загружается в редакторе</b> — окно проекта открывается как <code>OpenUniverse - Unreal Editor</code>. Сборка воспроизводится одной командой.</p>
+        <pre class="codeblock"><code>$ powershell -File tools/build-client.ps1        # находит движок, собирает модуль
+[1/5] Compile [x64] OUVoxelPlanet.cpp
+[4/5] Link [x64] UnrealEditor-OpenUniverse.dll    # игровой модуль
+Сборка завершена успешно
+
+$ & "D:\UE_5.5\Engine\Binaries\Win64\UnrealEditor.exe" "...\OpenUniverse.uproject"
+LogOpenUniverse: Open Universe: модуль запущен</code></pre>
+        <p class="lead" style="margin-top:14px;font-size:.9rem">Ошибки, которые пришлось исправить по пути (все описаны в <code>client/BUILDING.md</code>): <code>uint64</code> в <code>UPROPERTY</code> → <code>int64</code>; <code>FInternetAddr</code> абстрактный → через <code>CreateInternetAddr()</code>; <code>FColor</code> → <code>FLinearColor</code> для процедурного меша. Плюс потребовался <b>.NET Framework SDK</b>.</p>
         <div class="grid3" style="margin-bottom:20px">
           <div class="card"><div class="ico">🌍</div><h3>Floating origin</h3><p>Мир живёт в <code>double</code>, акторы — в локальных <code>float</code>. Начало переносится, когда игрок улетает далеко: точность не теряется на планетарных масштабах.</p></div>
           <div class="card"><div class="ico">📡</div><h3>Сеть как на сервере</h3><p><code>OUClientNet</code> говорит с Rust-сервером тем же бинарным протоколом: varint, zigzag, токен сессии, снапшоты.</p></div>
@@ -507,9 +515,13 @@ powershell -File tools/test-client.ps1</code></pre>
 cd open-universe/server
 cargo build --release</code></pre>
           <h3 style="margin-top:18px">Клиент на Unreal Engine 5</h3>
-          <pre class="codeblock"><code># после установки UE 5.5+ и VS 2022 (C++)
-powershell -File tools/build-client.ps1</code></pre>
-          <p class="dl-note">Графику сейчас заменяет собственный рендерер на Rust — настоящие кадры в разделе «Движок».</p>
+          <pre class="codeblock"><code># сборка модуля (находит движок сам)
+powershell -File tools/build-client.ps1
+
+# запуск редактора
+& "D:\UE_5.5\Engine\Binaries\Win64\UnrealEditor.exe" `
+  "client\OpenUniverse.uproject"</code></pre>
+          <p class="dl-note">Нужны UE 5.5+, Visual Studio 2022 (C++) и .NET Framework SDK. Подробности — <code>client/BUILDING.md</code>.</p>
         </aside>
       </div>
     </div>

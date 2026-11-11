@@ -147,7 +147,7 @@ void AOUVoxelPlanet::BuildPlanet()
 		TArray<int32> Tris;
 		TArray<FVector> Normals;
 		TArray<FVector2D> UVs;
-		TArray<FColor> Colors;
+		TArray<FLinearColor> Colors;
 		TArray<struct FProcMeshTangent> Tangents;
 
 		// Углы грани (сетка (Seg+1)×(Seg+1)).
@@ -172,21 +172,22 @@ void AOUVoxelPlanet::BuildPlanet()
 				UVs.Add(FVector2D(U * 0.5f + 0.5f, Vv * 0.5f + 0.5f));
 
 				// Цвет по высоте: вода (синяя) → песок → трава → снег.
-				FColor Color;
+				// Используем FLinearColor: CreateMeshSection_LinearColor ждёт его.
+				FLinearColor Color;
 				if (Height <= 0.f)
 				{
-					Color = FColor(30, 90, 170); // океан
+					Color = FLinearColor(0.03f, 0.12f, 0.42f); // океан
 				}
 				else
 				{
 					const float T = FMath::Clamp(Height / (Amplitude * 2.f), 0.f, 1.f);
 					if (T < 0.35f)
 					{
-						Color = FLinearColor::LerpUsingHSV(FLinearColor(0.8f, 0.72f, 0.45f), FLinearColor(0.13f, 0.4f, 0.13f), T / 0.35f).ToFColor(true);
+						Color = FLinearColor::LerpUsingHSV(FLinearColor(0.8f, 0.72f, 0.45f), FLinearColor(0.13f, 0.4f, 0.13f), T / 0.35f);
 					}
 					else
 					{
-						Color = FLinearColor::LerpUsingHSV(FLinearColor(0.13f, 0.4f, 0.13f), FLinearColor(0.95f, 0.96f, 0.99f), (T - 0.35f) / 0.65f).ToFColor(true);
+						Color = FLinearColor::LerpUsingHSV(FLinearColor(0.13f, 0.4f, 0.13f), FLinearColor(0.95f, 0.96f, 0.99f), (T - 0.35f) / 0.65f);
 					}
 				}
 				Colors.Add(Color);

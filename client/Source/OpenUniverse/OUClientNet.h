@@ -24,7 +24,7 @@ struct FOUSnapshot
 	GENERATED_BODY()
 
 	UPROPERTY(BlueprintReadOnly, Category = "Open Universe")
-	uint64 Tick = 0;
+	int64 Tick = 0;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Open Universe")
 	int32 AckInputSeq = 0;

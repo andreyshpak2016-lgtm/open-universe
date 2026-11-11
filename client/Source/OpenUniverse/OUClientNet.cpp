@@ -166,14 +166,17 @@ void UOUClientNet::Poll()
 	{
 		return;
 	}
+	// Адрес отправителя создаём через фабрику: FInternetAddr абстрактный.
+	ISocketSubsystem* SocketSub = ISocketSubsystem::Get(PLATFORM_SOCKETSUBSYSTEM);
+	TSharedRef<FInternetAddr> From = SocketSub->CreateInternetAddr();
+
 	// Читаем все доступные пакеты за кадр.
 	TArray<uint8> Buffer;
 	Buffer.SetNumUninitialized(1500);
 	for (;;)
 	{
 		int32 BytesRead = 0;
-		FInternetAddr From;
-		if (!Socket->RecvFrom(Buffer.GetData(), Buffer.Num(), BytesRead, From) || BytesRead <= 0)
+		if (!Socket->RecvFrom(Buffer.GetData(), Buffer.Num(), BytesRead, *From) || BytesRead <= 0)
 		{
 			break;
 		}

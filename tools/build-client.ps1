@@ -2,10 +2,12 @@
 #
 # Использование:
 #   powershell -ExecutionPolicy Bypass -File tools/build-client.ps1
-#   powershell -ExecutionPolicy Bypass -File tools/build-client.ps1 -EngineRoot "D:\UE_5.5"
+#   powershell -File tools/build-client.ps1 -EngineRoot "D:\UE_5.5"
+#   powershell -File tools/build-client.ps1 -Generate     # только файлы проекта
+#   powershell -File tools/build-client.ps1 -Build        # только сборка
 #
 # Скрипт находит движок, генерирует файлы проекта и собирает цель Editor.
-# Требуется: установленный Unreal Engine 5.5+ и Visual Studio 2022 с C++.
+# Требуется: Unreal Engine 5.5+ и Visual Studio 2022 с C++.
 
 param(
   [string]$EngineRoot = "",
@@ -23,12 +25,13 @@ function Find-Engine
 {
   # Ищем движок по стандартным местам и по реестру.
   $candidates = @()
-  foreach ($base in @('C:\Program Files\Epic Games', 'D:\Epic Games', 'E:\Epic Games', 'D:\UnrealEngine', 'C:\UnrealEngine'))
+  foreach ($base in @('C:\Program Files\Epic Games', 'D:\Epic Games', 'E:\Epic Games',
+                      'D:\', 'E:\', 'C:\'))
   {
     if (Test-Path $base)
     {
       Get-ChildItem $base -Directory -ErrorAction SilentlyContinue |
-        Where-Object { $_.Name -match '^UE_' } |
+        Where-Object { $_.Name -match '^UE_5\.' } |
         ForEach-Object { $candidates += $_.FullName }
     }
   }
@@ -37,12 +40,18 @@ function Find-Engine
     $dir = (Get-ItemProperty $k.PSPath).InstalledDirectory
     if ($dir) { $candidates += $dir }
   }
+
+  # Нужен Build.bat: по нему понимаем, что движок полный, а не заглушка.
+  $valid = @()
   foreach ($c in $candidates)
   {
-    $ubt = Join-Path $c 'Engine\Binaries\DotNET\UnrealBuildTool\UnrealBuildTool.exe'
-    if (Test-Path $ubt) { return $c }
+    $buildBat = Join-Path $c 'Engine\Build\BatchFiles\Build.bat'
+    if (Test-Path $buildBat) { $valid += [PSCustomObject]@{ Path = $c; Build = $buildBat } }
   }
-  return $null
+  if ($valid.Count -eq 0) { return $null }
+
+  # Выбираем самую новую версию (по имени папки).
+  return ($valid | Sort-Object { [version]($_.Path -replace '.*UE_','') } -Descending)[0]
 }
 
 Write-Host "== Сборка клиента Open Universe ==" -ForegroundColor Cyan
@@ -54,49 +63,70 @@ if (-not (Test-Path $uproject))
 
 if ($EngineRoot -and (Test-Path $EngineRoot))
 {
-  $engine = $EngineRoot
+  $engine = [PSCustomObject]@{
+    Path = $EngineRoot
+    Build = (Join-Path $EngineRoot 'Engine\Build\BatchFiles\Build.bat')
+  }
 }
 else
 {
   $engine = Find-Engine
 }
-if (-not $engine)
+if (-not $engine -or -not (Test-Path $engine.Build))
 {
   Write-Host "Unreal Engine не найден." -ForegroundColor Red
-  Write-Host "Установите UE 5.5+ через Epic Games Launcher и повторите:" -ForegroundColor Yellow
-  Write-Host "  powershell -File tools/build-client.ps1 -EngineRoot ""D:\Epic Games\UE_5.5""" -ForegroundColor Yellow
+  Write-Host "Установите UE 5.5+ и повторите:" -ForegroundColor Yellow
+  Write-Host '  powershell -File tools/build-client.ps1 -EngineRoot "D:\UE_5.5"' -ForegroundColor Yellow
   exit 1
 }
-Write-Host "Движок: $engine" -ForegroundColor Green
+Write-Host "Движок: $($engine.Path)" -ForegroundColor Green
 
-$ubt = Join-Path $engine 'Engine\Binaries\DotNET\UnrealBuildTool\UnrealBuildTool.exe'
-$genScript = Join-Path $engine 'Engine\Build\BatchFiles\GenerateProjectFiles.bat'
+# Дочерним процессам (UnrealBuildTool) нужен .NET. Используем тот, что идёт с UE.
+$bundledDotnet = Get-ChildItem (Join-Path $engine.Path 'Engine\Binaries\ThirdParty\DotNet') -Directory -ErrorAction SilentlyContinue |
+  Sort-Object Name -Descending | Select-Object -First 1
+if ($bundledDotnet)
+{
+  $dn = Join-Path $bundledDotnet.FullName 'win-x64'
+  if (Test-Path (Join-Path $dn 'dotnet.exe'))
+  {
+    $env:DOTNET_ROOT = $dn
+    Write-Host ".NET из движка: $dn" -ForegroundColor DarkGray
+  }
+}
 
-# По умолчанию: сгенерировать проект и собрать.
 if (-not $Generate -and -not $Build) { $Generate = $true; $Build = $true }
 
+# --- Генерация файлов проекта (для IDE и корректных путей) ---
 if ($Generate)
 {
-  if (-not (Test-Path $genScript))
+  $genBat = Join-Path $engine.Path 'Engine\Build\BatchFiles\GenerateProjectFiles.bat'
+  if (Test-Path $genBat)
   {
-    Write-Host "Не найден GenerateProjectFiles.bat — генерирую через UBT" -ForegroundColor Yellow
-    & $ubt -projectfiles -project="$uproject" -game -rocket -progress
+    Write-Host "--> генерация файлов проекта" -ForegroundColor Yellow
+    & $genBat -project="$uproject" -game
   }
   else
   {
-    & $genScript -project="$uproject" -game -engine
+    Write-Host "GenerateProjectFiles.bat не найден — пропускаю (UBT соберёт и так)" -ForegroundColor DarkYellow
   }
-  Write-Host "Файлы проекта сгенерированы" -ForegroundColor Green
 }
 
+# --- Сборка ---
 if ($Build)
 {
   Write-Host "--> сборка цели OpenUniverseEditor ($Config)" -ForegroundColor Yellow
-  & $ubt OpenUniverseEditor Win64 $Config -Project="$uproject" -WaitMutex -FromMsBuild
+  & $engine.Build OpenUniverseEditor Win64 $Config -Project="$uproject" -WaitMutex
   if ($LASTEXITCODE -ne 0) { throw "Сборка не удалась (код $LASTEXITCODE)" }
+
+  $dll = Join-Path $client "Binaries\Win64\UnrealEditor-OpenUniverse.dll"
+  if (Test-Path $dll)
+  {
+    Write-Host "Модуль собран: $dll" -ForegroundColor Green
+  }
   Write-Host "Сборка завершена успешно" -ForegroundColor Green
 }
 
+$editor = Join-Path $engine.Path 'Engine\Binaries\Win64\UnrealEditor.exe'
 Write-Host ""
-Write-Host "Готово. Открыть редактор:" -ForegroundColor Cyan
-Write-Host "  & ""$(Join-Path $engine 'Engine\Binaries\Win64\UnrealEditor.exe')"" ""$uproject"""
+Write-Host "Открыть редактор:" -ForegroundColor Cyan
+Write-Host "  & `"$editor`" `"$uproject`""
