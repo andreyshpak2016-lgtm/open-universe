@@ -150,9 +150,12 @@ if ($Publish) {
 
   Write-Host "--> gh release create $tag" -ForegroundColor Yellow
   $notesFile = Join-Path $root 'CHANGELOG.md'
-  # Прикладываем установщик, отдельные .exe (клиент/сервер поштучно) и архив.
+  # Прикладываем установщик игры, установщик ядра, лаунчер, exe и архив.
   $upload = @($exes)
+  $launcherExe = Join-Path $root 'launcher\OpenUniverseLauncher.exe'
+  if (Test-Path $launcherExe) { $upload = @($launcherExe) + $upload }
   if (Test-Path $setup) { $upload = @($setup) + $upload }
+  if ($gameSetup -and (Test-Path $gameSetup)) { $upload = @($gameSetup) + $upload }
   $upload = $upload + @($zip)
   & $gh release create $tag @upload `
     --repo andreyshpak2016-lgtm/open-universe `
