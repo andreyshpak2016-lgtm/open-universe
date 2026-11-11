@@ -361,7 +361,7 @@
     }
     function tryNext(i) {
       if (i >= endpoints.length) return; // остаёмся на значениях по умолчанию из HTML
-      fetch(endpoints[i], { headers: { Accept: "application/vnd.github+json" } })
+      fetch(endpoints[i], { headers: { Accept: "application/vnd.github+json" }, cache: "no-store" })
         .then(function (r) { return r.ok ? r.json() : null; })
         .then(function (data) {
           var rel = Array.isArray(data) ? data[0] : data;
