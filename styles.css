@@ -355,6 +355,12 @@ section .lead { color: var(--muted); max-width: 760px; margin: 0 0 34px; }
 
 /* Заблокированное скачивание и форма регистрации */
 .dl-unlocked { border-top: 1px dashed rgba(255,255,255,.12); margin-top: 14px; }
+.reg-inline { border-top: 1px dashed rgba(255,255,255,.12); padding-top: 16px; margin-top: 4px; }
+.reg-title { font-weight: 700; color: var(--accent2); margin: 0 0 12px; font-size: .95rem; }
+.reg-inline .field { margin: 0 0 12px; }
+.reg-inline .field input[type="text"], .reg-inline .field input[type="email"] {
+  max-width: 320px;
+}
 .modal { position: fixed; inset: 0; z-index: 100; display: flex; align-items: center; justify-content: center; padding: 20px; }
 .modal[hidden] { display: none; }
 .modal-backdrop { position: absolute; inset: 0; background: rgba(2, 5, 16, .72); backdrop-filter: blur(3px); }

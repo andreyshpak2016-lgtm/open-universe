@@ -1,12 +1,23 @@
 {
-    "generated":  "2026-11-11T21:54:52Z",
+    "generated":  "2026-11-11T22:04:47Z",
     "repo":  "andreyshpak2016-lgtm/open-universe",
     "releases":  [
+                     {
+                         "tag":  "v0.22.0",
+                         "name":  "Open Universe 0.22.0",
+                         "date":  "2026-11-11T21:55:01Z",
+                         "latest":  true,
+                         "prerelease":  false,
+                         "size":  233984,
+                         "client":  "https://github.com/andreyshpak2016-lgtm/open-universe/releases/download/v0.22.0/ou-netclient.exe",
+                         "zip":  "https://github.com/andreyshpak2016-lgtm/open-universe/releases/download/v0.22.0/open-universe-0.22.0-windows-x64.zip",
+                         "page":  "https://github.com/andreyshpak2016-lgtm/open-universe/releases/tag/v0.22.0"
+                     },
                      {
                          "tag":  "v0.21.0",
                          "name":  "Open Universe v0.21.0",
                          "date":  "2026-11-11T21:39:57Z",
-                         "latest":  true,
+                         "latest":  false,
                          "prerelease":  false,
                          "size":  233984,
                          "client":  "https://github.com/andreyshpak2016-lgtm/open-universe/releases/download/v0.21.0/ou-netclient.exe",

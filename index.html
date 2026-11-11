@@ -6,7 +6,7 @@
   <title>Open Universe — MMO-песочница в открытом космосе</title>
   <meta name="description" content="Open Universe — единый живой космос, воксельная постройка, игрок-экономика и программируемые конструкции. План разработки с живым прогрессом." />
   <link rel="icon" href="assets/blackhole.svg" type="image/svg+xml" />
-  <link rel="stylesheet" href="styles.css?v=0.22.0" />
+  <link rel="stylesheet" href="styles.css?v=0.22.1" />
 </head>
 <body>
 
@@ -467,10 +467,30 @@ $ cargo run -p ou-render --release -- lod 1280 720
             <li>плюс демо: экономика, бой, шардирование, редактор, скрипты</li>
           </ul>
           <p class="dl-meta">Размер: <b id="dl-size">~2 МБ</b> · Платформа: Windows 10+ · Дата: <span id="dl-date">—</span></p>
-          <div class="dl-actions">
-            <a class="btn primary" href="#register" id="dl-register">✦ Зарегистрироваться и скачать</a>
-            <a class="btn ghost" href="https://github.com/andreyshpak2016-lgtm/open-universe/blob/main/docs/running.md" target="_blank" rel="noopener">Подробная инструкция</a>
-          </div>
+
+          <!-- До регистрации: форма прямо здесь. После — кнопки скачивания. -->
+          <form id="register-form" class="reg-inline" autocomplete="off">
+            <p class="reg-title">Шаг 1. Создайте профиль пилота</p>
+            <label class="field">
+              <span>Позывной</span>
+              <input id="reg-name" name="name" type="text" maxlength="24" required placeholder="например, Нова" />
+            </label>
+            <label class="field">
+              <span>Email <em>(необязательно)</em></span>
+              <input id="reg-email" name="email" type="email" maxlength="64" placeholder="pilot@example.com" />
+            </label>
+            <label class="field checkbox">
+              <input id="reg-rules" name="rules" type="checkbox" required />
+              <span>Я принимаю правила сообщества и понимаю, что это pre-alpha.</span>
+            </label>
+            <p class="field-error" id="reg-error" role="alert" hidden></p>
+            <div class="dl-actions">
+              <button class="btn primary" type="submit" id="reg-submit">✦ Зарегистрироваться и скачать</button>
+              <a class="btn ghost" href="https://github.com/andreyshpak2016-lgtm/open-universe/blob/main/docs/running.md" target="_blank" rel="noopener">Инструкция</a>
+            </div>
+            <p class="dl-note" style="margin-top:10px">Аккаунт хранится в браузере — серверов сбора данных нет.</p>
+          </form>
+
           <div id="dl-unlocked" class="dl-unlocked" hidden>
             <p class="dl-note" id="dl-welcome" style="margin-top:12px"></p>
             <div class="dl-actions" style="margin-top:10px">
@@ -478,7 +498,6 @@ $ cargo run -p ou-render --release -- lod 1280 720
               <button class="btn ghost" type="button" id="dl-logout">Выйти из профиля</button>
             </div>
           </div>
-          <p class="dl-note" id="dl-gate-note" style="margin-top:10px">Регистрация нужна, чтобы закрепить за вами позывной и прогресс. Аккаунт хранится в браузере — серверов сбора данных нет.</p>
         </div>
 
         <aside class="panel dl-side">
@@ -550,38 +569,7 @@ powershell -File tools/build-client.ps1
     </div>
   </footer>
 
-  <!-- Модальное окно регистрации: открывает скачивание игры -->
-  <div id="register-modal" class="modal" hidden>
-    <div class="modal-backdrop" data-close-modal></div>
-    <div class="modal-card panel" role="dialog" aria-modal="true" aria-labelledby="reg-title">
-      <button class="modal-close" type="button" data-close-modal aria-label="Закрыть">×</button>
-      <h3 id="reg-title">Регистрация пилота</h3>
-      <p class="dl-note" style="margin:0 0 16px">Придумайте позывной — и скачивание откроется. Аккаунт хранится только в вашем браузере.</p>
-      <form id="register-form" autocomplete="off">
-        <label class="field">
-          <span>Позывной</span>
-          <input id="reg-name" name="name" type="text" maxlength="24" required
-                 placeholder="например, Нова" autofocus />
-        </label>
-        <label class="field">
-          <span>Email <em>(необязательно)</em></span>
-          <input id="reg-email" name="email" type="email" maxlength="64"
-                 placeholder="pilot@example.com" />
-        </label>
-        <label class="field checkbox">
-          <input id="reg-rules" name="rules" type="checkbox" required />
-          <span>Я принимаю правила сообщества и понимаю, что это pre-alpha.</span>
-        </label>
-        <p class="field-error" id="reg-error" role="alert" hidden></p>
-        <div class="dl-actions" style="margin-top:6px">
-          <button class="btn primary" type="submit">Создать профиль и скачать</button>
-          <button class="btn ghost" type="button" data-close-modal>Отмена</button>
-        </div>
-      </form>
-    </div>
-  </div>
-
-  <script src="data.js?v=0.22.0"></script>
-  <script src="app.js?v=0.22.0"></script>
+  <script src="data.js?v=0.22.1"></script>
+  <script src="app.js?v=0.22.1"></script>
 </body>
 </html>

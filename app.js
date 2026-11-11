@@ -401,51 +401,39 @@
 
   function applyRegistration() {
     var pilot = getPilot();
-    var gate = document.getElementById("dl-unlocked");
-    var note = document.getElementById("dl-gate-note");
-    var reg = document.getElementById("dl-register");
-    var welcome = document.getElementById("dl-welcome");
     var registered = !!pilot;
-    if (gate) gate.hidden = !registered;
-    if (note) note.hidden = registered;
-    if (reg) reg.hidden = registered;
+    var form = document.getElementById("register-form");
+    var unlocked = document.getElementById("dl-unlocked");
+    var welcome = document.getElementById("dl-welcome");
+    if (form) form.hidden = registered;
+    if (unlocked) unlocked.hidden = !registered;
     if (welcome && pilot) {
       welcome.textContent = "Профиль создан: " + pilot.name +
         (pilot.email ? " · " + pilot.email : "") + ". Скачивание открыто.";
     }
+    // Список версий: кнопки скачивания доступны только после регистрации.
+    renderVersions(LAST_VERSIONS);
+    // Кнопка в правом верхнем углу: пока регистрации нет — ведёт к форме.
+    var nav = document.querySelector(".nav-cta");
+    if (nav) {
+      nav.textContent = registered ? "⬇ Скачать" : "✦ Регистрация";
+      nav.setAttribute("href", registered ? "#download" : "#register");
+    }
   }
 
-  function openModal() {
-    var m = document.getElementById("register-modal");
-    if (!m) return;
-    m.hidden = false;
-    var name = document.getElementById("reg-name");
-    if (name) name.focus();
-  }
-  function closeModal() {
-    var m = document.getElementById("register-modal");
-    if (m) m.hidden = true;
+  /** Показать форму регистрации и прокрутить к ней. */
+  function requireRegistration(e) {
+    if (e) e.preventDefault();
+    var f = document.getElementById("register-form");
+    if (f) {
+      f.hidden = false;
+      f.scrollIntoView({ behavior: "smooth", block: "center" });
+      var n = document.getElementById("reg-name");
+      if (n) n.focus();
+    }
   }
 
   function initRegister() {
-    var m = document.getElementById("register-modal");
-    var reg = document.getElementById("dl-register");
-    if (reg) {
-      reg.addEventListener("click", function (e) {
-        e.preventDefault();
-        openModal();
-      });
-    }
-    // Закрытие по фону/крестику/«Отмена».
-    document.querySelectorAll("[data-close-modal]").forEach(function (el) {
-      el.addEventListener("click", closeModal);
-    });
-    document.addEventListener("keydown", function (e) {
-      if (e.key === "Escape") closeModal();
-    });
-    // Открытие по #register (например, из навигации или ссылки).
-    if (location.hash === "#register") openModal();
-
     var form = document.getElementById("register-form");
     if (form) {
       form.addEventListener("submit", function (e) {
@@ -461,11 +449,10 @@
         errEl.hidden = true;
         setPilot({ name: name, email: (emailEl.value || "").trim(),
                    at: new Date().toISOString() });
+        try { localStorage.setItem(REG_KEY, JSON.stringify(getPilot())); } catch (e2) {}
         applyRegistration();
-        closeModal();
-        // Сразу ведём к скачиванию.
         var dl = document.getElementById("download");
-        if (dl) dl.scrollIntoView({ behavior: "smooth", block: "center" });
+        if (dl) dl.scrollIntoView({ behavior: "smooth", block: "start" });
       });
     }
     var logout = document.getElementById("dl-logout");
@@ -475,6 +462,8 @@
         applyRegistration();
       });
     }
+    // Клик по «#register» из навигации — показать форму (она и так на месте).
+    if (location.hash === "#register") requireRegistration();
     applyRegistration();
   }
 
@@ -490,7 +479,10 @@
       page: "https://github.com/andreyshpak2016-lgtm/open-universe/releases/tag/v0.21.0" }
   ];
 
+  var LAST_VERSIONS = [];
+
   function renderVersions(rels) {
+    LAST_VERSIONS = rels || [];
     var box = document.getElementById("versions");
     if (!box) return;
     if (!rels || !rels.length) { 
@@ -498,20 +490,26 @@
       if (st) st.textContent = "Список версий недоступен — откройте релизы на GitHub.";
       return;
     }
+    var registered = !!getPilot();
     var html = "";
     rels.forEach(function (rel) {
       var tag = rel.tag || rel.name || "—";
       var size = rel.size ? (rel.size / 1048576).toFixed(2).replace(".", ",") + " МБ" : "";
       var date = rel.date ? new Date(rel.date).toLocaleDateString("ru-RU") : "";
       var links = "";
-      if (rel.client) {
-        links += '<a class="version-btn primary" href="' + rel.client + '" target="_blank" rel="noopener">⬇ клиент (exe)</a>';
-      }
-      if (rel.zip) {
-        links += '<a class="version-btn" href="' + rel.zip + '" target="_blank" rel="noopener">всё (zip)</a>';
-      }
-      if (!links) {
-        links = '<a class="version-btn" href="' + (rel.page || "#") + '" target="_blank" rel="noopener">на GitHub</a>';
+      if (registered) {
+        if (rel.client) {
+          links += '<a class="version-btn primary" href="' + rel.client + '" target="_blank" rel="noopener">⬇ клиент (exe)</a>';
+        }
+        if (rel.zip) {
+          links += '<a class="version-btn" href="' + rel.zip + '" target="_blank" rel="noopener">всё (zip)</a>';
+        }
+        if (!links) {
+          links = '<a class="version-btn" href="' + (rel.page || "#") + '" target="_blank" rel="noopener">на GitHub</a>';
+        }
+      } else {
+        // До регистрации кнопки ведут в форму, а не к файлу.
+        links = '<button type="button" class="version-btn primary locked js-need-reg">🔒 Скачать — нужна регистрация</button>';
       }
       html += '<div class="version">' +
         '<span class="version-tag">' + tag + (rel.latest ? ' <span class="version-latest">последняя</span>' : '') + '</span>' +
@@ -519,6 +517,10 @@
         '<span class="version-actions">' + links + '</span></div>';
     });
     box.innerHTML = html;
+    // Кнопки-замки открывают регистрацию.
+    box.querySelectorAll(".js-need-reg").forEach(function (b) {
+      b.addEventListener("click", function (e) { requireRegistration(e); });
+    });
   }
 
   function loadVersions() {
