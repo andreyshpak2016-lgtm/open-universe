@@ -465,17 +465,16 @@ $ cargo run -p ou-render --release -- lod 1280 720
         </div>
 
         <aside class="panel dl-side">
-          <h3>Как запустить (3 шага)</h3>
-          <pre class="codeblock"><code># 1. распакуйте архив
-# 2. в одном окне — сервер:
-ou-netd.exe 127.0.0.1:7777 60
-# 3. в другом — игрок (можно несколько):
+          <h3>Как запустить (2 шага)</h3>
+          <pre class="codeblock"><code># 1. откройте папку с игрой и запустите:
+ou-netd.exe 127.0.0.1:7777 60        # сервер
+# 2. во втором окне — игрок (можно несколько):
 ou-netclient.exe 127.0.0.1:7777 50</code></pre>
-          <p class="dl-note" style="margin-top:10px">Из исходников то же самое:</p>
-          <pre class="codeblock"><code>cd server
-cargo run -p ou-server --bin ou-netd -- 127.0.0.1:7777 60
-cargo run -p ou-client --bin ou-netclient -- 127.0.0.1:7777 50</code></pre>
-          <p class="dl-note" style="margin-top:10px">Или одной командой: <code>powershell -File tools/play.ps1</code></p>
+          <p class="dl-note" style="margin-top:10px">Ещё проще: двойной клик по <code>play.bat</code> в папке игры — скрипт соберёт и запустит всё сам.</p>
+          <h3 style="margin-top:16px;font-size:1rem">Из исходников</h3>
+          <pre class="codeblock"><code>cd D:\путь\к\open-universe
+powershell -File tools\play.ps1</code></pre>
+          <p class="dl-note" style="margin-top:8px">Важно: сначала <code>cd</code> в папку игры. Из другой папки укажите полный путь к <code>play.ps1</code>.</p>
         </aside>
       </div>
 

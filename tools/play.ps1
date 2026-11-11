@@ -20,7 +20,15 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+
+# Корень репозитория определяем от расположения самого скрипта,
+# поэтому запускать можно из любой папки (в т.ч. C:\WINDOWS\system32).
 $root = Split-Path -Parent $PSScriptRoot
+if (-not (Test-Path (Join-Path $root 'server\Cargo.toml'))) {
+  Write-Host "Не найден репозиторий Open Universe рядом со скриптом:" -ForegroundColor Red
+  Write-Host "  ожидался: $root\server\Cargo.toml"
+  exit 1
+}
 $server = Join-Path $root 'server'
 $exe = Join-Path $server 'target\release'
 

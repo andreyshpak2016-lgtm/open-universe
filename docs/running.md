@@ -6,25 +6,38 @@
 
 ---
 
-## Вариант 1. Проще всего — один скрипт
+## Вариант 0. Самый простой — двойной клик
+
+Откройте папку с игрой и **дважды кликните `play.bat`**. Всё остальное скрипт
+сделает сам: соберёт, запустит сервер и игроков, покажет статистику.
+
+> Если хотите из терминала — важно находиться **в папке игры**.
+> Команда `tools/play.ps1` — относительный путь, из `C:\WINDOWS\system32` он не
+> найдётся.
+
+## Вариант 1. Одной командой (из папки игры)
 
 ```powershell
-# из корня репозитория
-powershell -ExecutionPolicy Bypass -File tools/play.ps1
+cd D:\Pro\open-universe
+powershell -ExecutionPolicy Bypass -File tools\play.ps1
 ```
 
-Скрипт сам:
-1. соберёт release-версию,
-2. запустит сервер `ou-netd`,
-3. подключит двух игроков `ou-netclient`,
-4. покажет итоги: тики, трафик, позиции.
+Важно: **сначала перейдите в папку игры** (`cd`), иначе скрипт не найдётся.
+Скрипт сам определяет корень репозитория, поэтому `cd` нужен только чтобы путь
+к файлу был верным.
+
+Если запускаете из другой папки — укажите **полный путь**:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File "D:\Pro\open-universe\tools\play.ps1"
+```
 
 Параметры:
 
 ```powershell
-powershell -File tools/play.ps1 -Players 3 -Seconds 30      # три игрока, 30 секунд
-powershell -File tools/play.ps1 -Port 7800 -World .\world   # свой порт, сохранение мира
-powershell -File tools/play.ps1 -NoBuild                    # без пересборки
+powershell -File tools\play.ps1 -Players 3 -Seconds 30      # три игрока, 30 секунд
+powershell -File tools\play.ps1 -Port 7800 -World .\world   # свой порт, сохранение мира
+powershell -File tools\play.ps1 -NoBuild                    # без пересборки
 ```
 
 ---
