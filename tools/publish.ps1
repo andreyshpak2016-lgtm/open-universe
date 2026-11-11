@@ -1,4 +1,4 @@
-# Публикация релиза одной командой.
+﻿# Публикация релиза одной командой.
 #
 # Использование (после того как репозиторий создан на GitHub):
 #   powershell -ExecutionPolicy Bypass -File tools/publish.ps1 -Version 0.1.0

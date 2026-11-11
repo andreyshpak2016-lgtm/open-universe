@@ -1,4 +1,4 @@
-# Скрипт релиза Open Universe.
+﻿# Скрипт релиза Open Universe.
 #
 # Сборка:
 #   powershell -File tools/release.ps1 -Version 0.1.0
