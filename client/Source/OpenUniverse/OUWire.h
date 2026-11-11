@@ -45,6 +45,7 @@ namespace OUWire
         TagSnapshotV2 = 5,
         TagBuild = 6,
         TagBuildResult = 7,
+        TagWelcome = 8,
     };
 
     /// Действия редактора конструкций.
@@ -257,6 +258,18 @@ namespace OUWire
             e.VZ = static_cast<float>(vz * WireToCm);
             out.Entities.push_back(e);
         }
+        return true;
+    }
+
+    /// Разобрать приветствие сервера (tag 8): id своей сущности.
+    inline bool DecodeWelcome(const uint8_t* body, size_t len, int32_t& out_entity)
+    {
+        Reader r{body, len, 0};
+        uint8_t tag = 0;
+        if (!r.U8(tag) || tag != TagWelcome) return false;
+        uint64_t id = 0;
+        if (!r.Varint(id)) return false;
+        out_entity = static_cast<int32_t>(id);
         return true;
     }
 

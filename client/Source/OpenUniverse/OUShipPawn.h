@@ -58,10 +58,36 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Open Universe|Flight")
 	void ApplyAuthoritative(const FOUEntityState& Authoritative);
 
+	/** Включить/выключить отправку ввода на сервер (для отладки без сервера). */
+	UFUNCTION(BlueprintCallable, Category = "Open Universe|Net")
+	void SetInputEnabled(bool bEnabled) { bInputEnabled = bEnabled; }
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void Tick(float DeltaSeconds) override;
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
+
+	/** Обработчики осей управления (клавиатура). */
+	void AxisThrottle(float Value);
+	void AxisYaw(float Value);
+	void AxisPitch(float Value);
+	void StartFire();
+	void StopFire();
+
+	/** Обновить визуализацию других игроков из последнего снимка. */
+	void UpdateRemotePlayers();
+
+	/** Найти или создать актор-заглушку для чужой сущности. */
+	AActor* GetOrCreateRemoteActor(int32 EntityId);
+
+	/**
+	 * Реконсиляция как в Rust-клиенте: принять авторитетное состояние,
+	 * затем переиграть ещё не подтверждённые кадры ввода.
+	 */
+	void ReconcileTo(const FOUEntityState& Authoritative, int32 AckSeq);
+
+	/** Разосланные, но ещё не подтверждённые кадры ввода (для переигровки). */
+	TArray<FOUInputFrame> PendingInputs;
 
 	/** Меш корабля (блочная конструкция — временная заглушка до воксельной сборки). */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Open Universe|Flight")
@@ -78,4 +104,17 @@ protected:
 	/** Ближайший менеджер начала координат (floating origin). */
 	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Flight")
 	class AUOOriginManager* OriginManager = nullptr;
+
+	/** Чужие корабли: сущность → актор-заглушка. */
+	UPROPERTY(Transient)
+	TMap<int32, TObjectPtr<AActor>> RemoteActors;
+
+	/** Отправлять ли ввод на сервер (включается после подключения). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Open Universe|Net")
+	bool bInputEnabled = true;
+
+private:
+	/** Меш-заглушка чужого корабля (загружается один раз). */
+	UPROPERTY(Transient)
+	TObjectPtr<class UStaticMesh> RemoteShipMesh = nullptr;
 };

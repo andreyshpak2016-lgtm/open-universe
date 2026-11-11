@@ -46,11 +46,18 @@ fn main() {
         loop {
             match net.recv_message(token) {
                 Ok(Some((_from, msg))) => match msg {
+                    Message::ServerWelcome { entity } => {
+                        // Сервер сам сообщает, какой сущностью управляет клиент.
+                        me = Some(entity);
+                        println!("welcome: моя сущность = {entity}");
+                    }
                     Message::ServerSnapshot(snap) => {
                         snapshots += 1;
                         let id = *me.get_or_insert_with(|| {
                             let first = snap.entities.first().map(|e| e.id).unwrap_or(1);
-                            println!("baseline получен, моя сущность = {first}");
+                            println!(
+                                "baseline получен, моя сущность = {first} (welcome не пришёл)"
+                            );
                             first
                         });
                         // На клиенте хранится ровно одна сущность — его корабль.

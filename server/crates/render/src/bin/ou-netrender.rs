@@ -92,6 +92,9 @@ fn main() {
         loop {
             match net.recv_message(token) {
                 Ok(Some((_from, msg))) => match msg {
+                    Message::ServerWelcome { entity } => {
+                        my_entity = Some(entity);
+                    }
                     Message::ServerSnapshot(snap) => {
                         if my_entity.is_none() {
                             if let Some(e) = snap.entities.first() {

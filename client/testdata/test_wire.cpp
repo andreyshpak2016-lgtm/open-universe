@@ -192,6 +192,21 @@ int main(int argc, char** argv)
         Check(br.Accepted && br.Reason == OUWire::BuildOk, "команда принята сервером");
     }
 
+    // --- 7. Приветствие сервера (какой сущностью управляем) ---
+    std::printf("\n=== 7. Приветствие сервера (welcome) ===\n");
+    {
+        // [tag=8][entity varint]. Для 300 varint = 0xAC 0x02.
+        const uint8_t w1[2] = {OUWire::TagWelcome, 7};
+        int32_t entity = -1;
+        Check(OUWire::DecodeWelcome(w1, 2, entity) && entity == 7, "entity=7 разобран");
+
+        const uint8_t w2[3] = {OUWire::TagWelcome, 0xAC, 0x02}; // 300
+        Check(OUWire::DecodeWelcome(w2, 3, entity) && entity == 300, "entity=300 (varint) разобран");
+
+        const uint8_t wbad[1] = {OUWire::TagSnapshotV2};
+        Check(!OUWire::DecodeWelcome(wbad, 1, entity), "чужой тег отклонён");
+    }
+
     std::printf("\n=== Итог ===\n");
     if (g_failures == 0)
     {

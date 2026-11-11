@@ -300,23 +300,21 @@ VWAP = 26 · Всего сделок в журнале: 2</code></pre>
   трение тормозит скольжение по поверхности</code></pre>
         <p class="lead" style="margin-top:14px;font-size:.88rem">Состояния: <code>Flying</code> / <code>Landed</code> / <code>Crashed</code>. Рельеф детерминирован (octahedral mapping + value noise) — один и тот же на сервере, клиенте и в тестах.</p>
 
-        <h3>Каркас UE5-клиента (C++)</h3>
-        <p class="lead" style="margin-bottom:18px">Движок Unreal Engine 5 установлен, <b>модуль собран, редактор открывает настоящую 3D-сцену</b>: свет, небо, атмосфера, туман и воксельная планета. Окно проекта — <code>OpenUniverse - Unreal Editor</code>. Сборка и карта воспроизводятся двумя командами.</p>
-        <pre class="codeblock"><code>$ powershell -File tools/build-client.ps1        # находит движок, собирает модуль
-[1/5] Compile [x64] OUVoxelPlanet.cpp
-[4/5] Link [x64] UnrealEditor-OpenUniverse.dll    # игровой модуль
-Сборка завершена успешно
+        <h3>Каркас UE5-клиента (C++) — подключён к серверу</h3>
+        <p class="lead" style="margin-bottom:18px">Движок Unreal Engine 5 установлен, <b>модуль собран, редактор открывает настоящую 3D-сцену</b>, и клиент <b>работает по сети с Rust-сервером</b>: получает свой id от сервера, шлёт ввод 30 Гц, предсказывает движение и рисует других игроков. Окно проекта — <code>OpenUniverse - Unreal Editor</code>.</p>
+        <pre class="codeblock"><code>$ powershell -File tools/connect.ps1             # сервер + редактор одной командой
 
-$ powershell -File tools/make-map.ps1            # создаёт карту /Game/Maps/OpenUniverse
-Карта создана: client\Content\Maps\OpenUniverse.umap
+# в редакторе: Play (Alt+P)
+LogOUClient: Приветствие отправлено на 127.0.0.1:7777
+LogOUClient: Сервер принял: моя сущность = 3
 
-$ & "D:\UE_5.5\Engine\Binaries\Win64\UnrealEditor.exe" "...\OpenUniverse.uproject"
-LogOpenUniverse: Open Universe: модуль запущен</code></pre>
+# на стороне Rust-сервера:
+ou-netd: игрок 3 «pilot» вошёл с 127.0.0.1:59738 (сущность 3)</code></pre>
         <p class="lead" style="margin-top:14px;font-size:.9rem">Ошибки, которые пришлось исправить по пути (все описаны в <code>client/BUILDING.md</code>): <code>uint64</code> в <code>UPROPERTY</code> → <code>int64</code>; абстрактный <code>FInternetAddr</code> → через <code>CreateInternetAddr()</code>; <code>FColor</code> → <code>FLinearColor</code> для процедурного меша; пустая карта (чёрный экран) → сцена достраивается в <code>AOUGameMode</code>. Плюс потребовался <b>.NET Framework SDK</b>.</p>
         <div class="grid3" style="margin-bottom:20px">
           <div class="card"><div class="ico">🌍</div><h3>Floating origin</h3><p>Мир живёт в <code>double</code>, акторы — в локальных <code>float</code>. Начало переносится, когда игрок улетает далеко: точность не теряется на планетарных масштабах.</p></div>
-          <div class="card"><div class="ico">📡</div><h3>Сеть как на сервере</h3><p><code>OUClientNet</code> говорит с Rust-сервером тем же бинарным протоколом: varint, zigzag, токен сессии, снапшоты.</p></div>
-          <div class="card"><div class="ico">🧮</div><h3>Общая математика</h3><p>Детерминированная тригонометрия и кинематика — те же формулы, что в Rust. Кинематика C++ дала <b>z = 23.101</b> против серверных <b>23.10086</b>.</p></div>
+          <div class="card"><div class="ico">📡</div><h3>Сеть как на сервере</h3><p><code>OUClientNet</code> говорит с Rust-сервером тем же бинарным протоколом: <code>hello</code> → <code>welcome</code>, <code>input</code> 30 Гц, дельта-снапшоты, токен сессии.</p></div>
+          <div class="card"><div class="ico">🧮</div><h3>Общая математика</h3><p>Детерминированная тригонометрия и кинематика — те же формулы, что в Rust. Предсказание совпадает с сервером (коррекция — сантиметры).</p></div>
         </div>
         <pre class="codeblock"><code>client/
 ├─ OpenUniverse.uproject              # проект (UE 5.5)
@@ -509,7 +507,7 @@ cargo run -p ou-render --release --bin ou-netrender -- 127.0.0.1:7777 8 4</code>
         <aside class="panel dl-side">
           <h3>Проверка, что всё работает</h3>
           <pre class="codeblock"><code>cd server
-cargo test --workspace        # 215 тестов Rust
+cargo test --workspace        # 216 тестов Rust
 
 # проверка C++-клиента на реальном пакете
 powershell -File tools/test-client.ps1</code></pre>

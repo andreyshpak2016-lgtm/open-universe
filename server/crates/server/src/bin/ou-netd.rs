@@ -76,6 +76,8 @@ fn main() {
                             println!(
                                 "игрок {next_player} «{name}» вошёл с {from} (сущность {entity})"
                             );
+                            // Сообщаем клиенту, какой сущностью он управляет.
+                            net.send_to(token, from, &Message::ServerWelcome { entity }).ok();
                             next_player += 1;
                         }
                     }

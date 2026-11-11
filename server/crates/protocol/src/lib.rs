@@ -163,6 +163,11 @@ pub enum Message {
     ServerAck { last_input_seq: u32, server_tick: u64 },
     /// Ответ на команду строительства.
     ServerBuildResult { accepted: bool, reason: BuildReason },
+    /// Приветствие сервера: какой сущностью управляет этот клиент.
+    ///
+    /// Отправляется сразу после `ClientHello`, чтобы клиент знал свой id
+    /// (иначе он не может отличить свой корабль от чужих в снимке).
+    ServerWelcome { entity: NetId },
 }
 
 /// Действие редактора.
@@ -388,6 +393,7 @@ mod wire {
     const TAG_SNAPSHOT_V2: u8 = 5;
     const TAG_BUILD: u8 = 6;
     const TAG_BUILD_RESULT: u8 = 7;
+    const TAG_WELCOME: u8 = 8;
 
     pub fn encode(msg: &Message) -> Vec<u8> {
         let mut w = Writer::new();
@@ -451,6 +457,10 @@ mod wire {
                     BuildReason::Disconnected => 2,
                     BuildReason::LimitReached => 3,
                 });
+            }
+            Message::ServerWelcome { entity } => {
+                w.u8(TAG_WELCOME);
+                w.varint(*entity as u64);
             }
         }
         w.buf
@@ -533,6 +543,7 @@ mod wire {
                 };
                 Ok(Message::ServerBuildResult { accepted, reason })
             }
+            TAG_WELCOME => Ok(Message::ServerWelcome { entity: r.varint()? as NetId }),
             other => Err(WireError::BadTag(other)),
         }
     }
@@ -661,6 +672,17 @@ mod tests {
         let (back, used) = deframe(&dg).unwrap();
         assert_eq!(back, m);
         assert_eq!(used, dg.len());
+    }
+
+    #[test]
+    fn welcome_roundtrip() {
+        for entity in [1u32, 7, 42, 1000] {
+            let m = Message::ServerWelcome { entity };
+            let bytes = encode(&m);
+            assert_eq!(decode(&bytes).unwrap(), m);
+            // Приветствие должно быть компактным (varint).
+            assert!(bytes.len() <= 4, "welcome too large: {}", bytes.len());
+        }
     }
 
     #[test]

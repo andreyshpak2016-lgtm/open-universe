@@ -80,9 +80,17 @@ public:
 	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Net")
 	EOUConnState State = EOUConnState::Disconnected;
 
+	/** Id своей сущности на сервере (0 — сервер ещё не ответил). */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Net")
+	int32 OwnEntityId = 0;
+
 	/** Последний полученный снимок. */
 	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Net")
 	FOUSnapshot LatestSnapshot;
+
+	/** Сколько снимков принято (для диагностики). */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Net")
+	int32 SnapshotsReceived = 0;
 
 	/** Подключиться к серверу. */
 	UFUNCTION(BlueprintCallable, Category = "Open Universe|Net")
@@ -120,5 +128,8 @@ private:
 	bool ParseSnapshot(const TArray<uint8>& Body, FOUSnapshot& Out);
 
 	/** Отправить сырой пакет с токеном. */
-	void SendPacket(const TArray<uint8>& Body);
+	bool SendPacket(const TArray<uint8>& Body);
+
+	/** Отправить приветствие серверу. */
+	bool SendHello();
 };

@@ -69,6 +69,12 @@ void AOUShipPawn::BeginPlay()
 		}
 	}
 
+	// Меш-заглушка для чужих кораблей (грузим один раз).
+	if (!RemoteShipMesh)
+	{
+		RemoteShipMesh = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cube.Cube"));
+	}
+
 	// Менеджер начала координат (может отсутствовать — тогда работаем без него).
 	OriginManager = Cast<AUOOriginManager>(
 		UGameplayStatics::GetActorOfClass(GetWorld(), AUOOriginManager::StaticClass()));
@@ -77,7 +83,41 @@ void AOUShipPawn::BeginPlay()
 void AOUShipPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 {
 	Super::SetupPlayerInputComponent(PlayerInputComponent);
-	// Управление настраивается в Blueprint/Enhanced Input; здесь каркас.
+	if (!PlayerInputComponent)
+	{
+		return;
+	}
+	// Классический ввод (без ассетов): работает сразу, без Blueprint.
+	PlayerInputComponent->BindAxis(TEXT("Throttle"), this, &AOUShipPawn::AxisThrottle);
+	PlayerInputComponent->BindAxis(TEXT("Yaw"), this, &AOUShipPawn::AxisYaw);
+	PlayerInputComponent->BindAxis(TEXT("Pitch"), this, &AOUShipPawn::AxisPitch);
+	PlayerInputComponent->BindAction(TEXT("Fire"), IE_Pressed, this, &AOUShipPawn::StartFire);
+	PlayerInputComponent->BindAction(TEXT("Fire"), IE_Released, this, &AOUShipPawn::StopFire);
+}
+
+void AOUShipPawn::AxisThrottle(float Value)
+{
+	CurrentInput.Throttle = FMath::Clamp(Value, -1.f, 1.f);
+}
+
+void AOUShipPawn::AxisYaw(float Value)
+{
+	CurrentInput.Yaw = FMath::Clamp(Value, -1.f, 1.f);
+}
+
+void AOUShipPawn::AxisPitch(float Value)
+{
+	CurrentInput.Pitch = FMath::Clamp(Value, -1.f, 1.f);
+}
+
+void AOUShipPawn::StartFire()
+{
+	CurrentInput.bFire = true;
+}
+
+void AOUShipPawn::StopFire()
+{
+	CurrentInput.bFire = false;
 }
 
 void AOUShipPawn::StepPrediction(const FOUInputFrame& Input, float Dt)
@@ -154,26 +194,48 @@ void AOUShipPawn::Tick(float DeltaSeconds)
 	// Фиксированный шаг: сеть и предсказание идут на 30 Гц, рендер — быстрее.
 	const int32 Steps = FMath::Max(1, FMath::RoundToInt(DeltaSeconds / FixedDeltaSeconds));
 
-	// Заполняем ввод из осей (настроит Blueprint) и предсказываем.
+	// Предсказываем движение нашим же шагом (сеть не требуется).
 	CurrentInput.Seq += 1;
 	for (int32 i = 0; i < Steps; ++i)
 	{
 		StepPrediction(CurrentInput, FixedDeltaSeconds);
 	}
 
-	if (Net && Net->IsConnected())
+	if (Net)
 	{
-		Net->SendInput(CurrentInput);
+		// Опрашиваем сеть всегда: так мы узнаём свой id и состояние мира.
 		Net->Poll();
 
-		// Если пришёл снимок с нашей сущностью — реконсиляция.
-		for (const FOUEntityState& E : Net->LatestSnapshot.Entities)
+		// Свой id берём у сервера (он сообщает его в welcome).
+		if (Net->OwnEntityId != 0)
 		{
-			if (E.Id == State.Id)
+			State.Id = Net->OwnEntityId;
+		}
+
+		if (Net->IsConnected())
+		{
+			if (bInputEnabled)
 			{
-				ApplyAuthoritative(E);
-				break;
+				Net->SendInput(CurrentInput);
+				// Запоминаем кадр: сервер подтвердит его seq, и мы отбросим.
+				PendingInputs.Add(CurrentInput);
+				if (PendingInputs.Num() > 128)
+				{
+					PendingInputs.RemoveAt(0);
+				}
 			}
+			// Реконсиляция: принимаем авторитетное состояние своей сущности
+			// и переигрываем ещё не подтверждённые кадры.
+			for (const FOUEntityState& E : Net->LatestSnapshot.Entities)
+			{
+				if (E.Id == State.Id)
+				{
+					ReconcileTo(E, Net->LatestSnapshot.AckInputSeq);
+					break;
+				}
+			}
+			// Рисуем чужие корабли из последнего снимка.
+			UpdateRemotePlayers();
 		}
 	}
 
@@ -181,5 +243,86 @@ void AOUShipPawn::Tick(float DeltaSeconds)
 	if (OriginManager)
 	{
 		OriginManager->UpdateOrigin(this);
+	}
+}
+
+void AOUShipPawn::ReconcileTo(const FOUEntityState& Authoritative, int32 AckSeq)
+{
+	// 1. Встаём на авторитетное состояние.
+	ApplyAuthoritative(Authoritative);
+	// 2. Отбрасываем подтверждённые кадры.
+	PendingInputs.RemoveAll([AckSeq](const FOUInputFrame& In) { return In.Seq <= AckSeq; });
+	// 3. Переигрываем оставшиеся — так предсказание снова совпадёт с сервером.
+	for (const FOUInputFrame& In : PendingInputs)
+	{
+		StepPrediction(In, FixedDeltaSeconds);
+	}
+}
+
+AActor* AOUShipPawn::GetOrCreateRemoteActor(int32 EntityId)
+{
+	if (TObjectPtr<AActor>* Found = RemoteActors.Find(EntityId))
+	{
+		return *Found;
+	}
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return nullptr;
+	}
+	AActor* Actor = World->SpawnActor<AActor>(AActor::StaticClass(), FTransform::Identity);
+	if (!Actor)
+	{
+		return nullptr;
+	}
+	UStaticMeshComponent* Comp = NewObject<UStaticMeshComponent>(Actor);
+	Comp->SetupAttachment(Actor->GetRootComponent());
+	Comp->RegisterComponent();
+	if (RemoteShipMesh)
+	{
+		Comp->SetStaticMesh(RemoteShipMesh);
+	}
+	Comp->SetRelativeScale3D(FVector(3.f, 1.f, 0.6f));
+	Comp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	Actor->AddInstanceComponent(Comp);
+	// Красноватый оттенок, чтобы отличать чужие корабли от своего.
+	Comp->SetVectorParameterValueOnMaterials(TEXT("Color"), FVector(1.f, 0.35f, 0.35f));
+	RemoteActors.Add(EntityId, Actor);
+	return Actor;
+}
+
+void AOUShipPawn::UpdateRemotePlayers()
+{
+	const FOUSnapshot& Snap = Net->LatestSnapshot;
+	TSet<int32> Seen;
+	for (const FOUEntityState& E : Snap.Entities)
+	{
+		if (E.Id == State.Id)
+		{
+			continue; // свой корабль уже есть
+		}
+		Seen.Add(E.Id);
+		AActor* Actor = GetOrCreateRemoteActor(E.Id);
+		if (Actor)
+		{
+			Actor->SetActorLocation(E.Position);
+			Actor->SetActorRotation(
+				FQuat(FRotator(E.Pitch * 180.0 / OUDeterministic::OUPi, E.Yaw * 180.0 / OUDeterministic::OUPi, 0.0)));
+		}
+	}
+
+	// Снимки — дельта: отсутствие сущности в дельте НЕ значит, что она ушла.
+	// Полный список видимых сущностей приходит только в baseline, поэтому
+	// удаляем «призраков» лишь тогда, когда это действительно достоверно.
+	if (Snap.bBaseline)
+	{
+		for (auto It = RemoteActors.CreateIterator(); It; ++It)
+		{
+			if (!Seen.Contains(It.Key()) && It.Value())
+			{
+				It.Value()->Destroy();
+				It.RemoveCurrent();
+			}
+		}
 	}
 }

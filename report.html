@@ -50,10 +50,10 @@
     <p style="font-size:1.05rem">Что уже работает, с доказательствами: скриншотами движка, метриками и результатами тестов. Версия <b id="ver">0.9.0</b>.</p>
 
     <div class="meta">
-      <div><b id="m-tests">215</b><span>тестов ядра (Rust)</span></div>
+      <div><b id="m-tests">216</b><span>тестов ядра (Rust)</span></div>
       <div><b id="m-crates">13</b><span>модулей (крейтов)</span></div>
-      <div><b id="m-progress">71%</b><span>план выполнен</span></div>
-      <div><b id="m-version">v0.19.2</b><span>последний релиз</span></div>
+      <div><b id="m-progress">72%</b><span>план выполнен</span></div>
+      <div><b id="m-version">v0.20.0</b><span>последний релиз</span></div>
     </div>
 
     <!-- ================= 1. Что сделано ================= -->
@@ -178,7 +178,7 @@ $ cargo run -p ou-script --bin ou-script-demo
 === Детерминизм ===         повтор совпадает</code></pre>
 
     <h3>Каркас UE5-клиента и проверка протокола</h3>
-    <p>Движок Unreal Engine 5 установлен, C++-модуль <b>собран, редактор открывает 3D-сцену</b>: свет, небо, атмосфера, туман и воксельная планета (карта <code>/Game/Maps/OpenUniverse</code>). Раньше на пустой карте был чёрный экран — теперь сцена достраивается в <code>AOUGameMode</code>. Стенд берёт реальный пакет Rust-сервера и разбирает его тем же кодом, что и клиент UE5.</p>
+    <p>Движок Unreal Engine 5 установлен, C++-модуль <b>собран, редактор открывает 3D-сцену</b>, и клиент <b>подключается к Rust-серверу</b>: получает свой id, шлёт ввод 30 Гц и рисует других игроков. Стенд берёт реальный пакет Rust-сервера и разбирает его тем же кодом, что и клиент UE5.</p>
     <pre class="codeblock"><code>$ powershell -File tools/test-client.ps1
 [OK] заголовок прочитан, токен совпал
 [OK] снимок разобран · в снимке три сущности · тик совпал
@@ -209,9 +209,9 @@ $ cargo run -p ou-script --bin ou-script-demo
 
     <!-- ================= 4. Результаты тестов ================= -->
     <h2>4. Результаты тестов</h2>
-    <pre class="codeblock"><code>$ cargo test --workspace   →  215 passed (13 крейтов)
+    <pre class="codeblock"><code>$ cargo test --workspace   →  216 passed (13 крейтов)
 
-protocol 12 · sim 23 · spatial 6 · net 5 · shard 9 · persist 14
+protocol 13 · sim 23 · spatial 6 · net 5 · shard 9 · persist 14
 economy 27 · combat 17 · render 37 · script 32 · build 15 · server 12 · client 9
 
 $ cargo run -p ou-combat --bin ou-combat-demo
@@ -242,7 +242,7 @@ $ cargo run -p ou-render --release --bin ou-netrender -- 127.0.0.1:7777 8 4
       <li>Шардирование: миграция состояния между узлами (сейчас — маршрутизация).</li>
       <li>Kubernetes и автомасштабирование (единственный пункт Фазы 3).</li>
       <li>Lua-скриптинг конструкций (Фаза 8). ✓</li>
-      <li>Каркас проекта на Unreal Engine 5. ✓ модуль собран, редактор открывает 3D-сцену</li>
+      <li>Каркас проекта на Unreal Engine 5. ✓ подключён к серверу</li>
     </ul>
 
     <h2>6. Итог</h2>

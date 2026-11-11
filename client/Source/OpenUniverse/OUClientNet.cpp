@@ -65,10 +65,30 @@ bool UOUClientNet::Connect()
 	{
 		State = EOUConnState::Error;
 		UE_LOG(LogOUClient, Error, TEXT("Неверный адрес сервера: %s"), *ServerAddress);
+		// Освобождаем сокет, чтобы повторный Connect() не считал себя подключённым.
+		Disconnect();
 		return false;
 	}
 	ServerEndpoint = ServerAddr;
 
+	if (!SendHello())
+	{
+		Disconnect();
+		return false;
+	}
+
+	// Пока не пришёл ответ (welcome/снимок), состояние — «подключение».
+	State = EOUConnState::Connecting;
+	UE_LOG(LogOUClient, Log, TEXT("Приветствие отправлено на %s:%d"), *ServerAddress, ServerPort);
+	return true;
+}
+
+bool UOUClientNet::SendHello()
+{
+	if (!Socket || !ServerEndpoint.IsValid())
+	{
+		return false;
+	}
 	// Приветствие (тег 1): [tag][protocol u16][name len u16][name].
 	TArray<uint8> Body;
 	Body.Add(1);
@@ -82,11 +102,7 @@ bool UOUClientNet::Connect()
 	{
 		Body.Add(static_cast<uint8>(NameUtf8.Get()[i]));
 	}
-	SendPacket(Body);
-
-	State = EOUConnState::Connected;
-	UE_LOG(LogOUClient, Log, TEXT("Подключение к %s:%d"), *ServerAddress, ServerPort);
-	return true;
+	return SendPacket(Body);
 }
 
 void UOUClientNet::Disconnect()
@@ -100,11 +116,11 @@ void UOUClientNet::Disconnect()
 	State = EOUConnState::Disconnected;
 }
 
-void UOUClientNet::SendPacket(const TArray<uint8>& Body)
+bool UOUClientNet::SendPacket(const TArray<uint8>& Body)
 {
 	if (!Socket || !ServerEndpoint.IsValid())
 	{
-		return;
+		return false;
 	}
 	// Пакет: [token u64][len u32 LE][body].
 	TArray<uint8> Packet;
@@ -121,7 +137,7 @@ void UOUClientNet::SendPacket(const TArray<uint8>& Body)
 	Packet.Append(Body);
 
 	int32 BytesSent = 0;
-	Socket->SendTo(Packet.GetData(), Packet.Num(), BytesSent, *ServerEndpoint);
+	return Socket->SendTo(Packet.GetData(), Packet.Num(), BytesSent, *ServerEndpoint) && BytesSent > 0;
 }
 
 void UOUClientNet::SendInput(const FOUInputFrame& Input)
@@ -197,12 +213,28 @@ void UOUClientNet::Poll()
 		// Тело: с 12-го байта.
 		TArray<uint8> Body;
 		Body.Append(Buffer.GetData() + 12, BytesRead - 12);
-		if (Body.Num() > 0 && Body[0] == 5) // snapshot v2
+		if (Body.Num() == 0)
+		{
+			continue;
+		}
+		if (Body[0] == OUWire::TagWelcome) // приветствие: наш id
+		{
+			int32 Entity = 0;
+			if (OUWire::DecodeWelcome(Body.GetData(), static_cast<size_t>(Body.Num()), Entity))
+			{
+				OwnEntityId = Entity;
+				State = EOUConnState::Connected;
+				UE_LOG(LogOUClient, Log, TEXT("Сервер принял: моя сущность = %d"), Entity);
+			}
+		}
+		else if (Body[0] == OUWire::TagSnapshotV2) // snapshot v2
 		{
 			FOUSnapshot Snap;
 			if (ParseSnapshot(Body, Snap))
 			{
 				LatestSnapshot = Snap;
+				++SnapshotsReceived;
+				State = EOUConnState::Connected;
 			}
 		}
 	}
