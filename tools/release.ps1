@@ -54,11 +54,12 @@ Write-Host "--> упаковка артефакта" -ForegroundColor Yellow
 New-Item -ItemType Directory -Force -Path $dist | Out-Null
 $zip = Join-Path $dist "open-universe-$Version-windows-x64.zip"
 if (Test-Path $zip) { Remove-Item $zip -Force }
-Compress-Archive -Path `
-  (Join-Path $server 'target\release\ou-server.exe'), `
-  (Join-Path $server 'target\release\ou-client.exe'), `
-  (Join-Path $root 'README.md'), `
-  -DestinationPath $zip -Force
+$files = @(
+  (Join-Path $server 'target\release\ou-server.exe'),
+  (Join-Path $server 'target\release\ou-client.exe'),
+  (Join-Path $root 'README.md')
+)
+Compress-Archive -Path $files -DestinationPath $zip -Force
 Write-Host ("Артефакт: {0} ({1:N0} байт)" -f $zip, (Get-Item $zip).Length) -ForegroundColor Green
 
 # 4. Обновить VERSION
