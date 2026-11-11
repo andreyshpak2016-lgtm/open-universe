@@ -9,7 +9,7 @@ world/
 **/world.snapshot*
 # Кадры, отрендеренные в рабочую директорию (нужные лежат в assets/)
 server/render-*.png
-render-*.png
+/render-*.png
 
 # Unreal Engine (только внутри клиента, чтобы не задеть server/crates/build)
 client/Binaries/
