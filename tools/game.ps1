@@ -20,6 +20,9 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
+$common = Join-Path $PSScriptRoot 'ou-common.ps1'
+if (Test-Path $common) { . $common }
+$layout = Resolve-OU -StartDir $PSScriptRoot
 $client = Join-Path $root 'client'
 $uproject = Join-Path $client 'OpenUniverse.uproject'
 $map = Join-Path $client 'Content\Maps\OpenUniverse.umap'
@@ -60,6 +63,24 @@ function Find-Engine
 Write-Host "=========================================" -ForegroundColor Cyan
 Write-Host " Open Universe - ИГРА (Unreal Engine 5)" -ForegroundColor Cyan
 Write-Host "=========================================" -ForegroundColor Cyan
+
+# В установленной версии нет проекта UE и движка (~100 ГБ) — объясняем честно.
+if (-not (Test-Path $uproject)) {
+  Write-Host ""
+  Write-Host "Графический клиент (UE5) в эту сборку не входит." -ForegroundColor Yellow
+  Write-Host ""
+  Write-Host "Что делать:" -ForegroundColor Cyan
+  Write-Host "  1. Запустите игру без графики: двойной клик по play.bat" -ForegroundColor Green
+  Write-Host "     (поднимает сервер и подключает игроков — играть можно сразу)."
+  Write-Host "  2. Нужна графика UE5 — есть два пути:" -ForegroundColor Green
+  Write-Host "     - установить Unreal Engine 5.5+ и собрать клиент из исходников:"
+  Write-Host "       https://github.com/andreyshpak2016-lgtm/open-universe"
+  Write-Host "       (см. client/BUILDING.md и tools/build-client.ps1)"
+  Write-Host "     - ждать отдельный графический установщик (в планах)."
+  Write-Host ""
+  Read-Host "Нажмите Enter, чтобы закрыть"
+  exit 0
+}
 
 if (-not (Test-Path $uproject)) { throw "Не найден проект: $uproject" }
 

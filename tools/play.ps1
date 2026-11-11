@@ -21,16 +21,17 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-# Корень репозитория определяем от расположения самого скрипта,
-# поэтому запускать можно из любой папки (в т.ч. C:\WINDOWS\system32).
-$root = Split-Path -Parent $PSScriptRoot
-if (-not (Test-Path (Join-Path $root 'server\Cargo.toml'))) {
-  Write-Host "Не найден репозиторий Open Universe рядом со скриптом:" -ForegroundColor Red
-  Write-Host "  ожидался: $root\server\Cargo.toml"
+# Общий помощник: раскладка (репозиторий или установка).
+$common = Join-Path $PSScriptRoot 'ou-common.ps1'
+if (Test-Path $common) { . $common }
+$layout = Resolve-OU -StartDir $PSScriptRoot
+if (-not $layout) {
+  Write-Host "Не найдены файлы Open Universe (ou-netd.exe)." -ForegroundColor Red
+  Read-Host "Нажмите Enter, чтобы закрыть"
   exit 1
 }
-$server = Join-Path $root 'server'
-$exe = Join-Path $server 'target\release'
+$server = Join-Path $layout.Root 'server'
+$exe = $layout.ExeDir
 
 Write-Host "=========================================" -ForegroundColor Cyan
 Write-Host " Open Universe — запуск" -ForegroundColor Cyan
@@ -41,8 +42,10 @@ Write-Host " Время:   $Seconds с"
 if ($World) { Write-Host " Мир:     $World (сохраняется между запусками)" }
 Write-Host ""
 
-# --- 1. Сборка ---
-if (-not $NoBuild) {
+# --- 1. Сборка (только если есть исходники и exe ещё нет) ---
+$netd = Join-Path $exe 'ou-netd.exe'
+$netclient = Join-Path $exe 'ou-netclient.exe'
+if ($layout.HasSources -and -not $NoBuild -and -not (Test-Path $netd)) {
   Write-Host "--> сборка (cargo build --release)" -ForegroundColor Yellow
   Push-Location $server
   try {
@@ -53,16 +56,15 @@ if (-not $NoBuild) {
   }
 }
 
-$netd = Join-Path $exe 'ou-netd.exe'
-$netclient = Join-Path $exe 'ou-netclient.exe'
-if (-not (Test-Path $netd)) { throw "Не найден $netd — соберите проект: cargo build --release" }
+if (-not (Test-Path $netd)) { throw "Не найден $netd" }
 if (-not (Test-Path $netclient)) { throw "Не найден $netclient" }
 
 # --- 2. Сервер ---
 $srvOut = Join-Path $env:TEMP 'ou-play-server.out'
 $srvErr = Join-Path $env:TEMP 'ou-play-server.err'
 $srvArgs = @("127.0.0.1:$Port", "$([int]$Seconds + 2)")
-if ($World) { $srvArgs += $World }
+$worldDir = if ($World) { $World } elseif ($layout.World) { $layout.World } else { "" }
+if ($worldDir) { $srvArgs += $worldDir }
 
 Write-Host "--> старт сервера (ou-netd)" -ForegroundColor Yellow
 $srv = Start-Process -FilePath $netd -ArgumentList $srvArgs `

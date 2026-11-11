@@ -59,6 +59,7 @@ Source: "{#SourceRoot}\play.bat"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourceRoot}\tools\server.ps1"; DestDir: "{app}\tools"; Flags: ignoreversion
 Source: "{#SourceRoot}\tools\game.ps1"; DestDir: "{app}\tools"; Flags: ignoreversion
 Source: "{#SourceRoot}\tools\play.ps1"; DestDir: "{app}\tools"; Flags: ignoreversion
+Source: "{#SourceRoot}\tools\ou-common.ps1"; DestDir: "{app}\tools"; Flags: ignoreversion
 Source: "{#SourceRoot}\play.bat"; DestDir: "{app}\tools"; Flags: ignoreversion
 Source: "{#SourceRoot}\README.md"; DestDir: "{app}"; Flags: ignoreversion
 

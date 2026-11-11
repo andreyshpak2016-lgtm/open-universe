@@ -1,14 +1,13 @@
-﻿# Запуск игрового сервера Open Universe (Rust).
+﻿# Запуск игрового сервера Open Universe.
 #
 # Обычно вызывается через server.bat (двойной клик).
+# Работает и из репозитория (соберёт через cargo), и из установленной версии
+# (использует готовые .exe рядом со скриптом).
 #
 # Использование:
 #   powershell -ExecutionPolicy Bypass -File tools/server.ps1
 #   powershell -File tools/server.ps1 -Port 7800 -Seconds 600
 #   powershell -File tools/server.ps1 -World .\world
-#
-# Сервер работает в этом же окне: видно тики, вход игроков и автосохранения.
-# Чтобы остановить — нажмите Ctrl+C или закройте окно.
 
 param(
   [int]$Port = 7777,
@@ -19,15 +18,36 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-# Корень репозитория — от расположения скрипта, поэтому запускать можно откуда угодно.
-$root = Split-Path -Parent $PSScriptRoot
-if (-not (Test-Path (Join-Path $root 'server\Cargo.toml'))) {
-  Write-Host "Не найден репозиторий Open Universe рядом со скриптом:" -ForegroundColor Red
-  Write-Host "  ожидался: $root\server\Cargo.toml"
+# Общий помощник: определяем раскладку (репозиторий или установка).
+$common = Join-Path $PSScriptRoot 'ou-common.ps1'
+if (Test-Path $common) { . $common }
+$layout = Resolve-OU -StartDir $PSScriptRoot
+
+if (-not $layout) {
+  Write-Host "Не найдены файлы Open Universe." -ForegroundColor Red
+  Write-Host "  Ожидался ou-netd.exe рядом со скриптами или каталог server\\Cargo.toml."
+  Read-Host "Нажмите Enter, чтобы закрыть"
   exit 1
 }
-$server = Join-Path $root 'server'
-$exe = Join-Path $server 'target\release'
+
+$server = Join-Path $layout.Root 'server'
+$exe = $layout.ExeDir
+$netd = Join-Path $exe 'ou-netd.exe'
+
+# Сборка — только если есть исходники и это не запрещено.
+if ($layout.HasSources -and -not $NoBuild -and -not (Test-Path $netd)) {
+  Write-Host "--> сборка сервера (cargo build --release)" -ForegroundColor Yellow
+  Push-Location $server
+  try {
+    & cargo build --release -p ou-server --bin ou-netd
+    if ($LASTEXITCODE -ne 0) { throw "Сборка не удалась" }
+  } finally { Pop-Location }
+}
+if (-not (Test-Path $netd)) {
+  Write-Host "Не найден ou-netd.exe: $netd" -ForegroundColor Red
+  Read-Host "Нажмите Enter, чтобы закрыть"
+  exit 1
+}
 
 Write-Host "=========================================" -ForegroundColor Cyan
 Write-Host " Open Universe - СЕРВЕР" -ForegroundColor Cyan
@@ -36,34 +56,19 @@ Write-Host " Адрес:   127.0.0.1:$Port"
 Write-Host " Время:   $(if ($Seconds -ge 3600) { 'без ограничения (пока не закроете окно)' } else { "$Seconds с" })"
 if ($World) { Write-Host " Мир:     $World (сохраняется между запусками)" }
 Write-Host ""
-
-# --- Сборка ---
-$netd = Join-Path $exe 'ou-netd.exe'
-if (-not $NoBuild) {
-  Write-Host "--> сборка сервера (cargo build --release)" -ForegroundColor Yellow
-  Push-Location $server
-  try {
-    & cargo build --release -p ou-server --bin ou-netd
-    if ($LASTEXITCODE -ne 0) { throw "Сборка не удалась" }
-  } finally {
-    Pop-Location
-  }
-}
-if (-not (Test-Path $netd)) { throw "Не найден $netd - соберите проект: cargo build --release" }
-
-# --- Запуск ---
-$args = @("127.0.0.1:$Port", "$Seconds")
-if ($World) { $args += $World }
-
-Write-Host ""
 Write-Host "--> сервер запущен. Для игры откройте game.bat" -ForegroundColor Green
 Write-Host "    Остановить: Ctrl+C" -ForegroundColor DarkGray
 Write-Host ""
 
+$cliArgs = @("127.0.0.1:$Port", "$Seconds")
+# Каталог мира: свой или рядом с установкой, чтобы мир сохранялся.
+$worldDir = if ($World) { $World } elseif ($layout.World) { $layout.World } else { "" }
+if ($worldDir) { $cliArgs += $worldDir }
+
 $env:RUST_BACKTRACE = "1"
-Push-Location $server
+Push-Location $exe
 try {
-  & $netd @args
+  & $netd @cliArgs
 } finally {
   Pop-Location
 }
