@@ -22,6 +22,7 @@
 - `docs/market-research.md` — исследование рынка и конкурентов
 - `docs/team.md` — роли и распределение ответственности
 - `client/` — каркас клиента на UE5 (C++): floating origin, сеть, корабль, воксельные планеты
+- `client/testdata/` — стенд разбора реального пакета сервера (C++)
 - `server/` — рабочее серверное ядро на Rust (protocol, sim, server, client)
 
 ## Раздел «Архитектура» на сайте
@@ -74,6 +75,12 @@ cargo run -p ou-sim --bin ou-landing-demo           # посадка на пов
 cargo run -p ou-script --bin ou-script-demo         # скриптинг конструкций
 cargo run -p ou-economy --bin ou-market-sim         # симуляция рынка
 cargo run -p ou-build --bin ou-build-demo           # воксельный редактор
+```
+
+Проверка клиента (C++) на реальном пакете сервера:
+
+```powershell
+powershell -File tools/test-client.ps1
 ```
 
 ### Рендер по сети (живой мир с сервера)

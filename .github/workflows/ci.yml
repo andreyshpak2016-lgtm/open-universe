@@ -37,6 +37,12 @@ jobs:
         working-directory: server
         run: cargo test --workspace
 
+      - name: Проверка клиентского протокола (C++)
+        shell: pwsh
+        run: |
+          # Стенд разбирает реальный пакет сервера тем же кодом, что и клиент UE5.
+          ./tools/test-client.ps1
+
       - name: Сборка (release)
         working-directory: server
         run: cargo build --release --workspace
@@ -65,6 +71,7 @@ jobs:
             'server/target/release/ou-script-demo.exe',
             'server/target/release/ou-market-sim.exe',
             'server/target/release/ou-build-demo.exe',
+            'server/target/release/ou-dump-packet.exe',
             'README.md'
           ) | Where-Object { Test-Path $_ }
           Compress-Archive -Path $files -DestinationPath "dist/open-universe-$v-windows-x64.zip" -Force

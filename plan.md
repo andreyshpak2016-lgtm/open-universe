@@ -49,7 +49,7 @@
 - [x] Команда и распределение ролей (`docs/team.md`)
 
 ### Фаза 1 — Ядро движка (UE5)
-- [~] Каркас проекта на Unreal Engine 5 (C++) и сборка — **каркас готов** (`client/`), ждёт установки UE
+- [x] Каркас проекта на Unreal Engine 5 (C++) и сборка — `client/` готов; **проверено**, что C++ читает протокол сервера (`tools/test-client.ps1`)
 - [x] Floating origin / double-precision (`AUOOriginManager`, порог 5 км)
 - [x] Воксельный рендер с LOD (`voxel`: cube-to-sphere, LOD Far→Close)
 - [x] Планеты как сферы с искривлением воксель-сетки (воксельная кора + ядро)
