@@ -11,13 +11,12 @@ world/
 server/render-*.png
 render-*.png
 
-# Unreal Engine (для будущего клиента)
-*.uproject
-Binaries/
-Build/
-DerivedDataCache/
-Intermediate/
-Saved/
+# Unreal Engine (только внутри клиента, чтобы не задеть server/crates/build)
+client/Binaries/
+client/Build/
+client/DerivedDataCache/
+client/Intermediate/
+client/Saved/
 
 # ОС и редакторы
 .DS_Store
