@@ -57,6 +57,9 @@ if (Test-Path $zip) { Remove-Item $zip -Force }
 $files = @(
   (Join-Path $server 'target\release\ou-server.exe'),
   (Join-Path $server 'target\release\ou-client.exe'),
+  (Join-Path $server 'target\release\ou-netd.exe'),
+  (Join-Path $server 'target\release\ou-netclient.exe'),
+  (Join-Path $server 'target\release\ou-worldgen.exe'),
   (Join-Path $root 'README.md')
 )
 Compress-Archive -Path $files -DestinationPath $zip -Force

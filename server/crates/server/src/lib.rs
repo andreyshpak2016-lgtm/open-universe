@@ -10,10 +10,16 @@
 
 use ou_protocol::{EntityState, InputFrame, Message, NetId, Snapshot, Vec3};
 use ou_sim::World;
+use ou_spatial::SpatialGrid;
 use std::collections::{BTreeMap, BTreeSet};
 
 /// Радиус зоны интереса: игрок видит сущности в этом радиусе (ед.).
 pub const INTEREST_RADIUS: f64 = 2_000.0;
+
+/// Размер ячейки пространственного индекса. Должен быть сопоставим с радиусом
+/// интереса: слишком мелкая сетка даёт много пустых ячеек, слишком крупная —
+/// лишние проверки. Половина радиуса — хороший компромисс.
+pub const CELL_SIZE: f64 = INTEREST_RADIUS / 2.0;
 
 /// Подключённый игрок.
 #[derive(Clone, Debug)]
@@ -41,6 +47,8 @@ pub struct SendPlan {
 pub struct Server {
     pub world: World,
     pub connections: BTreeMap<NetId, Connection>,
+    /// Пространственный индекс: ускоряет interest management.
+    pub grid: SpatialGrid,
     next_entity_id: NetId,
 }
 
@@ -49,6 +57,7 @@ impl Server {
         Server {
             world: World::new(),
             connections: BTreeMap::new(),
+            grid: SpatialGrid::new(CELL_SIZE),
             next_entity_id: 1,
         }
     }
@@ -96,7 +105,12 @@ impl Server {
         self.world.step(&inputs);
         let tick = self.world.tick;
 
-        // 3. Для каждого клиента — интерес‑менеджмент и дельта.
+        // 3. Обновить пространственный индекс под новые позиции.
+        for (id, ent) in self.world.entities.iter() {
+            self.grid.update(*id, ent.state.pos);
+        }
+
+        // 4. Для каждого клиента — интерес‑менеджмент и дельта.
         let mut plan = SendPlan::default();
         let all_states: BTreeMap<NetId, EntityState> = self.world.snapshot_map();
 
@@ -106,12 +120,11 @@ impl Server {
                 .map(|e| e.pos)
                 .unwrap_or(Vec3::ZERO);
 
-            // Зона интереса: всё в радиусе + собственная сущность всегда.
-            let visible: BTreeSet<NetId> = all_states
-                .iter()
-                .filter(|(_, e)| e.pos.distance(center) <= INTEREST_RADIUS)
-                .map(|(id, _)| *id)
-                .collect();
+            // Зона интереса через пространственный индекс: обходим только
+            // близкие ячейки, а не весь мир. Своя сущность — всегда видна.
+            let mut visible: BTreeSet<NetId> =
+                self.grid.query_radius(center, INTEREST_RADIUS).into_iter().collect();
+            visible.insert(conn.entity_id);
 
             let baseline = conn.known.is_empty();
             let mut changed: Vec<EntityState> = Vec::new();

@@ -13,8 +13,11 @@
 //! операции `+ - * /`, которые IEEE‑754 задаёт однозначно. `sqrt` использовать
 //! можно: стандарт требует корректного округления.
 
-use ou_protocol::{EntityState, InputFrame, NetId, Vec3, TICK_DT};
+use ou_protocol::{EntityState, InputFrame, NetId, TICK_DT};
 use std::collections::BTreeMap;
+
+/// Реэкспорт базовых типов, чтобы потребителям хватало одного крейта.
+pub use ou_protocol::Vec3;
 
 // ---------------------------------------------------------------------------
 // Детерминированная тригонометрия
@@ -23,7 +26,6 @@ use std::collections::BTreeMap;
 /// Число π (константа, одинакова везде).
 pub const PI: f64 = 3.141592653589793;
 const TWO_PI: f64 = 6.283185307179586;
-
 /// Приведение угла к диапазону [−π, π] только арифметическими операциями.
 #[inline]
 pub fn wrap_pi(mut x: f64) -> f64 {
@@ -210,6 +212,209 @@ impl World {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Генерация мира: детерминированные звёздные системы
+// ---------------------------------------------------------------------------
+
+/// Детерминированный генератор псевдослучайных чисел (SplitMix64).
+///
+/// Используется вместо `rand`, потому что генерация мира обязана быть
+/// воспроизводимой из одного числа‑семени на любой платформе.
+#[derive(Clone, Debug)]
+pub struct Rng {
+    state: u64,
+}
+
+impl Rng {
+    pub fn new(seed: u64, salt: u64) -> Self {
+        // Смешиваем семя и соль, чтобы разные подсистемы давали разные потоки.
+        Rng { state: seed ^ salt.wrapping_mul(0x9E3779B97F4A7C15) }
+    }
+
+    /// Следующее 64-битное число.
+    pub fn next_u64(&mut self) -> u64 {
+        self.state = self.state.wrapping_add(0x9E3779B97F4A7C15);
+        let mut z = self.state;
+        z = (z ^ (z >> 30)).wrapping_mul(0xBF58476D1CE4E5B9);
+        z = (z ^ (z >> 27)).wrapping_mul(0x94D049BB133111EB);
+        z ^ (z >> 31)
+    }
+
+    /// Значение в диапазоне [0, 1).
+    pub fn next_f64(&mut self) -> f64 {
+        (self.next_u64() >> 11) as f64 / (1u64 << 53) as f64
+    }
+
+    /// Значение в диапазоне [lo, hi).
+    pub fn range(&mut self, lo: f64, hi: f64) -> f64 {
+        lo + self.next_f64() * (hi - lo)
+    }
+
+    /// Целое в диапазоне [lo, hi].
+    pub fn range_i64(&mut self, lo: i64, hi: i64) -> i64 {
+        let span = (hi - lo + 1) as u64;
+        lo + (self.next_u64() % span) as i64
+    }
+}
+
+/// Тип небесного тела.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BodyKind {
+    Star,
+    Planet,
+    Moon,
+    GasGiant,
+    AsteroidBelt,
+    BlackHole,
+}
+
+/// Небесное тело в сгенерированной системе.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Body {
+    pub id: u32,
+    pub kind: BodyKind,
+    /// Позиция относительно центра системы (для чёрных дыр — сама сингулярность).
+    pub pos: Vec3,
+    pub radius: f64,
+    /// Радиус орбиты (0 для центрального тела).
+    pub orbit: f64,
+    /// Орбитальная фаза в радианах.
+    pub phase: f64,
+    /// Количество ресурсов (для поясов астероидов), условных единиц.
+    pub resources: u64,
+}
+
+/// Сгенерированная звёздная система.
+#[derive(Clone, Debug, PartialEq)]
+pub struct StarSystem {
+    pub id: u32,
+    pub name: String,
+    pub seed: u64,
+    pub pos: Vec3,
+    pub bodies: Vec<Body>,
+}
+
+impl StarSystem {
+    pub fn body(&self, id: u32) -> Option<&Body> {
+        self.bodies.iter().find(|b| b.id == id)
+    }
+
+    /// Суммарные ресурсы всех поясов астероидов.
+    pub fn total_resources(&self) -> u64 {
+        self.bodies.iter().map(|b| b.resources).sum()
+    }
+
+    /// Позиция тела в момент `t` (сек) по круговой орбите. Детерминирована.
+    pub fn body_position_at(&self, id: u32, t: f64) -> Option<Vec3> {
+        let b = self.body(id)?;
+        if b.orbit == 0.0 {
+            return Some(b.pos); // центральное тело неподвижно
+        }
+        // Угловая скорость ~ 1/sqrt(orbit) — упрощённый закон Кеплера.
+        let omega = 1.0 / b.orbit.sqrt();
+        let a = b.phase + omega * t;
+        // Орбита отсчитывается от центра системы (self.pos), а не от b.pos.
+        Some(Vec3::new(
+            self.pos.x + b.orbit * det_cos(a),
+            b.pos.y,
+            self.pos.z + b.orbit * det_sin(a),
+        ))
+    }
+}
+
+const SYLLABLES: [&str; 12] = [
+    "Al", "Be", "Cor", "Dra", "El", "Fen", "Gly", "Hy", "Ix", "Kry", "Lu", "Ny",
+];
+const SUFFIXES: [&str; 8] = ["ra", "tis", "on", "us", "ea", "ar", "ov", "ium"];
+
+/// Сгенерировать имя системы из семени (детерминированно).
+pub fn system_name(id: u32, seed: u64) -> String {
+    let mut rng = Rng::new(seed, 0xA11CE);
+    let a = SYLLABLES[(rng.next_u64() % SYLLABLES.len() as u64) as usize];
+    let b = SUFFIXES[(rng.next_u64() % SUFFIXES.len() as u64) as usize];
+    format!("{a}{b}-{id}")
+}
+
+/// Сгенерировать звёздную систему по семени.
+///
+/// Детерминированно: одно и то же `seed` даёт одну и ту же систему.
+pub fn generate_system(id: u32, seed: u64, center: Vec3) -> StarSystem {
+    let mut rng = Rng::new(seed, 0x5EED);
+
+    // Решаем, что в центре: звезда или чёрная дыра (редко).
+    let central_kind = if rng.next_f64() < 0.12 { BodyKind::BlackHole } else { BodyKind::Star };
+    let central_radius = match central_kind {
+        BodyKind::BlackHole => rng.range(8.0, 25.0),
+        _ => rng.range(200.0, 900.0),
+    };
+    let mut bodies = vec![Body {
+        id: 0,
+        kind: central_kind,
+        pos: center,
+        radius: central_radius,
+        orbit: 0.0,
+        phase: 0.0,
+        resources: 0,
+    }];
+
+    // Планеты и газовые гиганты.
+    let planet_count = rng.range_i64(2, 8) as u32;
+    let mut orbit = central_radius * 3.0 + rng.range(500.0, 1500.0);
+    for i in 0..planet_count {
+        let gas = rng.next_f64() < 0.3;
+        let kind = if gas { BodyKind::GasGiant } else { BodyKind::Planet };
+        let radius = if gas { rng.range(500.0, 1200.0) } else { rng.range(80.0, 260.0) };
+        let id = 1 + i;
+        bodies.push(Body {
+            id,
+            kind,
+            pos: Vec3::new(center.x + orbit, center.y, center.z),
+            radius,
+            orbit,
+            phase: rng.range(0.0, TWO_PI),
+            resources: if gas { 0 } else { rng.range_i64(50, 400) as u64 },
+        });
+        // Луны для планет (не газовых).
+        if !gas && rng.next_f64() < 0.5 {
+            let moon_orbit = radius * 4.0;
+            bodies.push(Body {
+                id: 100 + i,
+                kind: BodyKind::Moon,
+                pos: Vec3::new(center.x + orbit, center.y, center.z),
+                radius: radius * rng.range(0.15, 0.35),
+                orbit: moon_orbit,
+                phase: rng.range(0.0, TWO_PI),
+                resources: rng.range_i64(5, 40) as u64,
+            });
+        }
+        // Раздвигаем орбиты с запасом.
+        orbit += radius * 6.0 + rng.range(800.0, 2500.0);
+    }
+
+    // Пояса астероидов — источники ресурсов.
+    let belt_count = rng.range_i64(1, 3) as u32;
+    for i in 0..belt_count {
+        let belt_orbit = rng.range(orbit, orbit * 1.8);
+        bodies.push(Body {
+            id: 200 + i,
+            kind: BodyKind::AsteroidBelt,
+            pos: Vec3::new(center.x + belt_orbit, center.y, center.z),
+            radius: rng.range(200.0, 600.0),
+            orbit: belt_orbit,
+            phase: rng.range(0.0, TWO_PI),
+            resources: rng.range_i64(500, 5000) as u64,
+        });
+    }
+
+    StarSystem {
+        id,
+        name: system_name(id, seed),
+        seed,
+        pos: center,
+        bodies,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -296,5 +501,70 @@ mod tests {
         }
         let v_after = w.entities.get(&1).unwrap().state.vel.length();
         assert!(v_after < v_before, "демпфирование должно уменьшать скорость");
+    }
+
+    // --- Генерация мира ---
+
+    #[test]
+    fn rng_is_reproducible() {
+        let mut a = Rng::new(42, 7);
+        let mut b = Rng::new(42, 7);
+        let mut c = Rng::new(43, 7);
+        let seq_a: Vec<u64> = (0..10).map(|_| a.next_u64()).collect();
+        let seq_b: Vec<u64> = (0..10).map(|_| b.next_u64()).collect();
+        let first_c = c.next_u64();
+        assert_eq!(seq_a, seq_b)
+        ;
+        assert_ne!(seq_a[0], first_c);
+    }
+
+    #[test]
+    fn rng_range_bounds() {
+        let mut r = Rng::new(1, 2);
+        for _ in 0..1000 {
+            let v = r.next_f64();
+            assert!((0.0..1.0).contains(&v));
+            let x = r.range(-5.0, 5.0);
+            assert!((-5.0..5.0).contains(&x));
+            let i = r.range_i64(3, 7);
+            assert!((3..=7).contains(&i));
+        }
+    }
+
+    #[test]
+    fn system_generation_is_deterministic() {
+        let a = generate_system(1, 999, Vec3::ZERO);
+        let b = generate_system(1, 999, Vec3::ZERO);
+        let c = generate_system(1, 1000, Vec3::ZERO);
+        assert_eq!(a, b, "одно семя должно давать одинаковую систему");
+        assert_ne!(a, c, "разные семена дают разные системы");
+    }
+
+    #[test]
+    fn system_has_star_and_bodies() {
+        let s = generate_system(5, 12345, Vec3::new(1000.0, 0.0, 0.0));
+        // Центральное тело присутствует и находится в центре системы.
+        let center = s.body(0).unwrap();
+        assert!(matches!(center.kind, BodyKind::Star | BodyKind::BlackHole));
+        assert_eq!(center.pos, Vec3::new(1000.0, 0.0, 0.0));
+        // Есть планеты и хотя бы один пояс астероидов с ресурсами.
+        assert!(s.bodies.iter().any(|b| b.kind == BodyKind::Planet || b.kind == BodyKind::GasGiant));
+        assert!(s.bodies.iter().any(|b| b.kind == BodyKind::AsteroidBelt));
+        assert!(s.total_resources() > 0);
+    }
+
+    #[test]
+    fn orbit_is_periodic_and_bounded() {
+        let s = generate_system(2, 777, Vec3::ZERO);
+        let asteroid = s.bodies.iter().find(|b| b.kind == BodyKind::AsteroidBelt).unwrap();
+        let r = asteroid.orbit;
+        // Тело всегда на расстоянии r от центра системы.
+        for t in [0.0, 10.0, 100.0, 1234.5] {
+            let p = s.body_position_at(asteroid.id, t).unwrap();
+            let d = Vec3::new(p.x - s.pos.x, 0.0, p.z - s.pos.z).length();
+            // Радиус орбиты большой, а тригонометрия полиномиальная: допуск
+            // задаём относительно r (ошибка ~1e-8, умноженная на r).
+            assert!((d - r).abs() < r * 1e-6, "t={t} d={d} r={r}");
+        }
     }
 }

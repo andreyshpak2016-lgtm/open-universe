@@ -16,3 +16,4 @@ path = "src/main.rs"
 [dependencies]
 ou-protocol = { path = "../protocol" }
 ou-sim = { path = "../sim" }
+ou-net = { path = "../net" }

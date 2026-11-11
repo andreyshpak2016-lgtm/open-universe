@@ -6,8 +6,16 @@ version = 4
 name = "ou-client"
 version = "0.1.0"
 dependencies = [
+ "ou-net",
  "ou-protocol",
  "ou-sim",
+]
+
+[[package]]
+name = "ou-net"
+version = "0.1.0"
+dependencies = [
+ "ou-protocol",
 ]
 
 [[package]]
@@ -18,12 +26,21 @@ version = "0.1.0"
 name = "ou-server"
 version = "0.1.0"
 dependencies = [
+ "ou-net",
  "ou-protocol",
  "ou-sim",
+ "ou-spatial",
 ]
 
 [[package]]
 name = "ou-sim"
+version = "0.1.0"
+dependencies = [
+ "ou-protocol",
+]
+
+[[package]]
+name = "ou-spatial"
 version = "0.1.0"
 dependencies = [
  "ou-protocol",

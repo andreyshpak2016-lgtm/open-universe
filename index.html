@@ -187,38 +187,42 @@
         <p class="lead">Ядро единого шарда уже написано на Rust и работает: детерминированная симуляция, бинарный протокол, tick loop и interest management. Код собирается и покрыт тестами.</p>
 
         <div class="grid3" style="margin-bottom:22px">
-          <div class="card"><div class="ico">🧭</div><h3>Детерминизм</h3><p>Своя тригонометрия и фиксированный шаг 30 Гц: сервер и клиент считают мир бит-в-бит одинаково. Проверяется контрольной суммой.</p></div>
-          <div class="card"><div class="ico">📡</div><h3>Дельта-репликация</h3><p>По сети летят только изменившиеся сущности. Пустая дельта с подтверждением — всего 29 байт.</p></div>
-          <div class="card"><div class="ico">👁️</div><h3>Interest management</h3><p>Клиент видит только то, что рядом. Зона видимости — радиус 2000 ед., вынесен в настройку.</p></div>
+          <div class="card"><div class="ico">🧭</div><h3>Детерминизм</h3><p>Своя тригонометрия, свой ГПСЧ и фиксированный шаг 30 Гц: сервер и клиент считают мир бит-в-бит одинаково. Проверяется контрольной суммой.</p></div>
+          <div class="card"><div class="ico">🌌</div><h3>Генерация мира</h3><p>Звёздные системы, планеты, луны и пояса астероидов генерируются из семени — воспроизводимо. Редко встречаются чёрные дыры.</p></div>
+          <div class="card"><div class="ico">📡</div><h3>UDP и дельты</h3><p>Реальный UDP-транспорт с токеном сессии и батчингом. По сети летят только изменившиеся сущности в зоне видимости.</p></div>
+          <div class="card"><div class="ico">🗺️</div><h3>Spatial-индекс</h3><p>Равномерная сетка: интерес-менеджмент обходит только близкие ячейки, а не весь мир. Проверено против полного перебора.</p></div>
+          <div class="card"><div class="ico">👁️</div><h3>Interest management</h3><p>Клиент видит только то, что рядом. Радиус — 2000 ед., размер ячейки индекса — 1000 ед.</p></div>
+          <div class="card"><div class="ico">🔁</div><h3>Netcode</h3><p>Клиентское предсказание и реконсиляция: расхождение с сервером устраняется переигровкой неподтверждённых кадров.</p></div>
         </div>
 
         <div class="panel" style="padding:20px 22px;overflow:auto">
           <table id="codestats">
             <thead><tr><th>Показатель</th><th>Значение</th></tr></thead>
             <tbody>
-              <tr><td>Тесты ядра</td><td class="ok">17 пройдено</td></tr>
-              <tr><td>Частота тика симуляции</td><td>30 Гц</td></tr>
+              <tr><td>Тесты ядра</td><td class="ok">33 пройдено</td></tr>
+              <tr><td>Крейты (модули)</td><td>6 (protocol, sim, spatial, net, server, client)</td></tr>
+              <tr><td>Частота тика симуляции</td><td>30 Гц (149 тиков за 5 с — проверено)</td></tr>
               <tr><td>Точность позиции по проводу</td><td>0.1 мм (i32, ±214 км)</td></tr>
               <tr><td>Снапшот одной сущности</td><td>52 байта</td></tr>
               <tr><td>Пустая дельта + ack (вне зоны видимости)</td><td class="ok">29 байт</td></tr>
-              <tr><td>Дельта при появлении соседа</td><td>65 байт</td></tr>
-              <tr><td>Средний трафик (демо, на игрока)</td><td>≈ 0.7 КБ/с</td></tr>
+              <tr><td>Реальный UDP: трафик на игрока</td><td>≈ 202 байта/тик</td></tr>
+              <tr><td>Макс. коррекция предсказания (UDP)</td><td class="ok">0.006 у.е. (ровная сеть)</td></tr>
+              <tr><td>Сгенерировано в демо-кластере</td><td>6 систем, 58 тел</td></tr>
             </tbody>
           </table>
         </div>
 
         <pre class="codeblock"><code>$ cargo test --workspace
-protocol  6 passed   sim  5 passed   server  4 passed   client  2 passed
+protocol 6 · sim 10 · spatial 6 · net 5 · server 4 · client 2   →  33 passed
 
-$ cargo run -p ou-server
- tick |     видит |        id |     байт | дист.
-  220 |         1 |         1 |       29 | 2042
-  240 |         2 |       1,2 |       65 | 1828
+$ cargo run -p ou-sim --bin ou-worldgen
+Bera-1   центр: звезда      | тел: 5  (планет 3, поясов 1) | ресурсов: 4736
+Elar-4   центр: чёрная дыра | тел: 8  (планет 3, поясов 3) | ресурсов: 7831
+Итого: 6 систем, 58 тел, 1 чёрная дыра
+Повторная генерация идентична -> true
 
-$ cargo run -p ou-client
-Идеальная сеть: предсказание совпало с сервером -> true
-После реконсиляции переиграно неподтверждённых кадров: 5
-После доставки вводов предсказание совпало с сервером -> true</code></pre>
+$ cargo run -p ou-server --bin ou-netd -- 127.0.0.1:7777 5   # реальный UDP
+тиков симуляции: 149 | игроков: 2 | снапшотов: 244 | трафик: 202 байт/тик</code></pre>
 
         <p class="lead" style="margin-top:16px;font-size:.88rem">Исходники: <code>server/crates/{protocol,sim,server,client}</code> · описание — <code>server/README.md</code>.</p>
       </div>
@@ -274,8 +278,10 @@ $ cargo run -p ou-client
           <h3>Ядро игры (Windows x64)</h3>
           <p class="dl-desc">Исполняемые файлы сервера и клиента на Rust: детерминированная симуляция, tick loop 30 Гц, предсказание и реконсиляция.</p>
           <ul class="dl-files">
-            <li><code>ou-server.exe</code> — авторитетный сервер единого шарда</li>
-            <li><code>ou-client.exe</code> — headless-клиент (предсказание)</li>
+            <li><code>ou-netd.exe</code> — сервер единого шарда (реальный UDP)</li>
+            <li><code>ou-netclient.exe</code> — клиент с предсказанием и реконсиляцией</li>
+            <li><code>ou-server.exe</code> / <code>ou-client.exe</code> — демо-режимы</li>
+            <li><code>ou-worldgen.exe</code> — генератор звёздных систем</li>
           </ul>
           <p class="dl-meta">Размер: <b id="dl-size">~0.2 МБ</b> · Платформа: Windows 10+ · Дата: <span id="dl-date">—</span></p>
           <div class="dl-actions">

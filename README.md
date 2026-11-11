@@ -38,13 +38,19 @@
 ## Серверное ядро (Rust)
 
 В `server/` лежит рабочее ядро единого шарда: детерминированная симуляция,
-бинарный протокол, tick loop и interest management.
+бинарный протокол, UDP-транспорт, пространственный индекс, tick loop, interest
+management и генерация мира.
 
 ```bash
 cd server
-cargo test --workspace     # 17 тестов
-cargo run -p ou-server     # демо interest management и дельт
-cargo run -p ou-client     # демо предсказания и реконсиляции
+cargo test --workspace                  # 33 теста
+cargo run -p ou-server                  # демо interest management и дельт
+cargo run -p ou-client                  # демо предсказания и реконсиляции
+cargo run -p ou-sim --bin ou-worldgen   # генерация звёздных систем
+
+# реальный UDP-обмен (в двух терминалах):
+cargo run -p ou-server --bin ou-netd -- 127.0.0.1:7777 10
+cargo run -p ou-client --bin ou-netclient -- 127.0.0.1:7777 8
 ```
 
 Подробности — в `server/README.md`.

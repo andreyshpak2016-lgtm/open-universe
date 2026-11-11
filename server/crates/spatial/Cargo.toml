@@ -1,0 +1,13 @@
+[package]
+name = "ou-spatial"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Open Universe: пространственный индекс (uniform grid) для interest management"
+
+[lib]
+name = "ou_spatial"
+path = "src/lib.rs"
+
+[dependencies]
+ou-protocol = { path = "../protocol" }
