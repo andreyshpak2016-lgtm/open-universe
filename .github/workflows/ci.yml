@@ -76,7 +76,8 @@ jobs:
             'README.md'
           ) | Where-Object { Test-Path $_ }
           Compress-Archive -Path $files -DestinationPath "dist/open-universe-$v-windows-x64.zip" -Force
-          Write-Host "РЎРѕР±СЂР°РЅ Р°СЂС…РёРІ РґР»СЏ РІРµСЂСЃРёРё $v СЃ $($files.Count) С„Р°Р№Р»Р°РјРё"
+          $count = $files.Count
+          Write-Host "Собран архив версии $v, файлов: $count"
 
       - name: РџСЂРёР»РѕР¶РёС‚СЊ СЃР±РѕСЂРєСѓ Рє СЂРµР»РёР·Сѓ
         if: startsWith(github.ref, 'refs/tags/')
