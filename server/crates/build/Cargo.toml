@@ -1,0 +1,13 @@
+[package]
+name = "ou-build"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Open Universe: воксельный редактор конструкций (ставить, удалять, красить)"
+
+[lib]
+name = "ou_build"
+path = "src/lib.rs"
+
+[dependencies]
+ou-protocol = { path = "../protocol" }
