@@ -1,10 +1,10 @@
 {
-    "generated":  "2026-11-11T22:20:06Z",
+    "generated":  "2026-11-11T22:37:30Z",
     "repo":  "andreyshpak2016-lgtm/open-universe",
     "releases":  [
                      {
                          "tag":  "v0.23.0",
-                         "name":  "Open Universe 0.23.0",
+                         "name":  "Open Universe v0.23.0",
                          "date":  "2026-11-11T22:19:49Z",
                          "latest":  true,
                          "prerelease":  false,

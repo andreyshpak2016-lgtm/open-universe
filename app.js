@@ -416,11 +416,12 @@
     }
     // Список версий: кнопки скачивания доступны только после регистрации.
     renderVersions(LAST_VERSIONS);
-    // Кнопка в правом верхнем углу: пока регистрации нет — ведёт к форме.
+    // Кнопка в правом верхнем углу: пока регистрации нет — ведёт к форме
+    // (форма находится в разделе «Скачать», поэтому якорь — #download).
     var nav = document.querySelector(".nav-cta");
     if (nav) {
       nav.textContent = registered ? "⬇ Скачать" : "✦ Регистрация";
-      nav.setAttribute("href", registered ? "#download" : "#register");
+      nav.setAttribute("href", "#download");
     }
   }
 
@@ -466,7 +467,18 @@
       });
     }
     // Клик по «#register» из навигации — показать форму (она и так на месте).
-    if (location.hash === "#register") requireRegistration();
+    // Кнопка в правом углу — это ссылка `#register`; элемента с таким id нет,
+    // поэтому обычный переход ничего не делает. Перехватываем клик сами.
+    document.querySelectorAll('a[href="#register"], .nav-cta').forEach(function (a) {
+      a.addEventListener("click", function (e) {
+        if (getPilot()) return; // уже зарегистрирован — пусть идёт к скачиванию
+        requireRegistration(e);
+      });
+    });
+    window.addEventListener("hashchange", function () {
+      if (location.hash === "#register" && !getPilot()) requireRegistration();
+    });
+    if (location.hash === "#register" && !getPilot()) requireRegistration();
     applyRegistration();
   }
 
