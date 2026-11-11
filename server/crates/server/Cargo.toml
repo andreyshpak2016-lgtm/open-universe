@@ -18,3 +18,4 @@ ou-protocol = { path = "../protocol" }
 ou-sim = { path = "../sim" }
 ou-spatial = { path = "../spatial" }
 ou-net = { path = "../net" }
+ou-persist = { path = "../persist" }

@@ -81,6 +81,23 @@ impl Server {
         entity_id
     }
 
+    /// Продолжить нумерацию сущностей после загрузки мира из снимка,
+    /// чтобы новые сущности не столкнулись с уже существующими.
+    pub fn adopt_world(&mut self, world: World) {
+        let max_id = world.entities.keys().copied().max().unwrap_or(0);
+        self.next_entity_id = max_id + 1;
+        self.world = world;
+        // Пересобрать пространственный индекс под загруженные позиции.
+        for (id, ent) in self.world.entities.iter() {
+            self.grid.update(*id, ent.state.pos);
+        }
+    }
+
+    /// Текущий следующий идентификатор сущности (для диагностики).
+    pub fn next_entity_id(&self) -> NetId {
+        self.next_entity_id
+    }
+
     /// Приём ввода от клиента (сервер хранит последний кадр).
     pub fn receive_input(&mut self, player_id: NetId, inputs: &[InputFrame]) {
         if let Some(conn) = self.connections.get_mut(&player_id) {

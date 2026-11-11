@@ -4,6 +4,9 @@ server/target/
 
 # Сборки и релизные артефакты
 dist/
+# Каталог сохранённого мира
+world/
+**/world.snapshot*
 
 # Unreal Engine (для будущего клиента)
 *.uproject

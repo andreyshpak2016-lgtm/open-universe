@@ -1,14 +1,13 @@
 //! Open Universe — авторитетный сервер по реальному UDP.
 //!
-//! Запуск: `cargo run -p ou-server --bin ou-netd -- [адрес] [секунды]`
-//! По умолчанию: `127.0.0.1:7777`, 4 секунды.
+//! Запуск: `cargo run -p ou-server --bin ou-netd -- [адрес] [секунды] [каталог]`
+//! По умолчанию: `127.0.0.1:7777`, 4 секунды, каталог `./world`.
 //!
-//! Что делает:
-//! 1. Принимает `ClientHello`, регистрирует игрока и запоминает его адрес.
-//! 2. Принимает `ClientInput` и передаёт их в детерминированную симуляцию.
-//! 3. Каждый тик (30 Гц) рассылает дельта-снимки с учётом зон интереса.
+//! Мир персистентен: при старте загружается последний снимок, периодически
+//! сохраняется и сохраняется на выходе.
 
 use ou_net::{new_session_token, UdpTransport};
+use ou_persist::{save_world, FileStore};
 use ou_protocol::{InputFrame, Message, NetId, Snapshot, Vec3, TICK_DT};
 use ou_server::{Server, INTEREST_RADIUS};
 use std::collections::BTreeMap;
@@ -16,21 +15,40 @@ use std::net::SocketAddr;
 use std::thread::sleep;
 use std::time::{Duration, Instant};
 
+/// Как часто сохранять мир (в тиках). 30 Гц × 300 = раз в 10 секунд.
+const AUTOSAVE_TICKS: u64 = 300;
+
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let addr = args.get(1).cloned().unwrap_or_else(|| "127.0.0.1:7777".to_string());
     let seconds: f64 = args.get(2).and_then(|s| s.parse().ok()).unwrap_or(4.0);
+    let world_dir = args.get(3).cloned().unwrap_or_else(|| "world".to_string());
 
     let token = new_session_token(0x5EED);
     let mut net = UdpTransport::bind(&addr).expect("не удалось занять UDP-порт");
     println!("ou-netd: слушаю {}", net.local_addr().unwrap());
     println!("токен сессии: {token:#018x} | тик 30 Гц | радиус интереса {INTEREST_RADIUS}");
+
+    // --- персистентность: загружаем мир ---
+    let mut store = FileStore::open(&world_dir).expect("не удалось открыть каталог мира");
+    let mut server = Server::new();
+    match ou_persist::load_world(&store) {
+        Ok(w) if !w.entities.is_empty() => {
+            println!(
+                "мир загружен из «{world_dir}»: {} сущностей, тик {}",
+                w.entities.len(),
+                w.tick
+            );
+            server.adopt_world(w);
+        }
+        Ok(_) => println!("мир пуст — начинаем новый (каталог «{world_dir}»)"),
+        Err(e) => println!("снимок мира не прочитан ({e}) — начинаем новый"),
+    }
     println!("работаю {seconds} с...\n");
 
-    let mut server = Server::new();
-    // addr -> (player_id, token)
     let mut clients: BTreeMap<SocketAddr, NetId> = BTreeMap::new();
-    let mut next_player: NetId = 1;
+    // Продолжаем нумерацию игроков с учётом загруженного мира.
+    let mut next_player: NetId = server.next_entity_id();
     let mut next_spawn = 0.0;
 
     let tick_dt = Duration::from_secs_f64(TICK_DT);
@@ -38,6 +56,8 @@ fn main() {
     let mut ticks: u64 = 0;
     let mut bytes_out: u64 = 0;
     let mut snapshots_out: u64 = 0;
+    let mut saves: u64 = 0;
+    let mut saved_bytes: u64 = 0;
 
     while start.elapsed().as_secs_f64() < seconds {
         let loop_start = Instant::now();
@@ -89,6 +109,18 @@ fn main() {
         net.flush().ok();
         ticks += 1;
 
+        // --- автосохранение мира ---
+        if ticks % AUTOSAVE_TICKS == 0 {
+            match save_world(&mut store, &server.world) {
+                Ok(n) => {
+                    saves += 1;
+                    saved_bytes += n;
+                    println!("[автосейв] тик {ticks}: сохранено {n} байт");
+                }
+                Err(e) => println!("[автосейв] ошибка: {e}"),
+            }
+        }
+
         // --- выдержка частоты ---
         let elapsed = loop_start.elapsed();
         if elapsed < tick_dt {
@@ -96,11 +128,22 @@ fn main() {
         }
     }
 
+    // --- финальное сохранение при выходе ---
+    match save_world(&mut store, &server.world) {
+        Ok(n) => {
+            saves += 1;
+            saved_bytes += n;
+            println!("\n[выход] мир сохранён: {n} байт, тик {}", server.world.tick);
+        }
+        Err(e) => println!("\n[выход] не удалось сохранить мир: {e}"),
+    }
+
     println!("\n--- итоги ---");
     println!("тиков симуляции: {ticks}");
     println!("игроков обслужено: {}", clients.len());
     println!("снапшотов отправлено: {snapshots_out}");
     println!("байт отправлено: {bytes_out}");
+    println!("сохранений мира: {saves} ({saved_bytes} байт всего)");
     if ticks > 0 {
         println!("средний исходящий трафик: {:.0} байт/тик", bytes_out as f64 / ticks as f64);
     }

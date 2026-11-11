@@ -56,6 +56,7 @@ jobs:
             'server/target/release/ou-netclient.exe',
             'server/target/release/ou-worldgen.exe',
             'server/target/release/ou-shard-demo.exe',
+            'server/target/release/ou-persist-demo.exe',
             'README.md'
           ) | Where-Object { Test-Path $_ }
           Compress-Archive -Path $files -DestinationPath "dist/open-universe-$v-windows-x64.zip" -Force

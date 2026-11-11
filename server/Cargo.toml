@@ -6,6 +6,7 @@ members = [
   "crates/spatial",
   "crates/net",
   "crates/shard",
+  "crates/persist",
   "crates/server",
   "crates/client",
 ]
