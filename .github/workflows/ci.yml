@@ -44,10 +44,22 @@ jobs:
       - name: Упаковка артефакта
         shell: pwsh
         run: |
-          $v = (Get-Content VERSION -Raw).Trim()
+          # Версия: из имени тега (vX.Y.Z) или из файла VERSION.
+          $ref = "${{ github.ref_name }}"
+          if ($ref -match '^v(\d+\.\d+\.\d+)$') { $v = $Matches[1] } else { $v = (Get-Content VERSION -Raw).Trim() }
           New-Item -ItemType Directory -Force -Path dist | Out-Null
-          Compress-Archive -Path server/target/release/ou-server.exe, server/target/release/ou-client.exe `
-            -DestinationPath "dist/open-universe-$v-windows-x64.zip" -Force
+          # Собираем единый набор: демо + сетевые + генератор + шард.
+          $files = @(
+            'server/target/release/ou-server.exe',
+            'server/target/release/ou-client.exe',
+            'server/target/release/ou-netd.exe',
+            'server/target/release/ou-netclient.exe',
+            'server/target/release/ou-worldgen.exe',
+            'server/target/release/ou-shard-demo.exe',
+            'README.md'
+          ) | Where-Object { Test-Path $_ }
+          Compress-Archive -Path $files -DestinationPath "dist/open-universe-$v-windows-x64.zip" -Force
+          Write-Host "Собран архив для версии $v с $($files.Count) файлами"
 
       - name: Приложить сборку к релизу
         if: startsWith(github.ref, 'refs/tags/')
@@ -58,3 +70,4 @@ jobs:
           # а этот шаг лишь догружает артефакт (идемпотентно).
           generate_release_notes: false
           draft: false
+          name: Open Universe ${{ github.ref_name }}
