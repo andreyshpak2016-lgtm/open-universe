@@ -1,21 +1,37 @@
 {
-    "generated":  "2026-11-11T23:46:00Z",
+    "generated":  "2026-11-11T23:48:25Z",
     "repo":  "andreyshpak2016-lgtm/open-universe",
     "releases":  [
                      {
-                         "tag":  "v0.25.1",
-                         "name":  "Open Universe 0.25.1",
-                         "date":  "2026-11-11T23:45:42Z",
+                         "tag":  "v0.25.2",
+                         "name":  "Open Universe 0.25.2",
+                         "date":  "2026-11-11T23:48:22Z",
                          "latest":  true,
                          "prerelease":  false,
                          "size":  0,
                          "gameSetup":  null,
                          "setup":  null,
                          "setupSize":  0,
-                         "launcher":  "https://github.com/andreyshpak2016-lgtm/open-universe/releases/download/v0.25.1/OpenUniverseLauncher.exe",
+                         "launcher":  "https://github.com/andreyshpak2016-lgtm/open-universe/releases/download/v0.25.2/OpenUniverseLauncher.exe",
                          "launcherSize":  25600,
                          "client":  null,
                          "zip":  null,
+                         "page":  "https://github.com/andreyshpak2016-lgtm/open-universe/releases/tag/v0.25.2"
+                     },
+                     {
+                         "tag":  "v0.25.1",
+                         "name":  "Open Universe v0.25.1",
+                         "date":  "2026-11-11T23:45:42Z",
+                         "latest":  false,
+                         "prerelease":  false,
+                         "size":  2247121,
+                         "gameSetup":  null,
+                         "setup":  null,
+                         "setupSize":  0,
+                         "launcher":  "https://github.com/andreyshpak2016-lgtm/open-universe/releases/download/v0.25.1/OpenUniverseLauncher.exe",
+                         "launcherSize":  25600,
+                         "client":  null,
+                         "zip":  "https://github.com/andreyshpak2016-lgtm/open-universe/releases/download/v0.25.1/open-universe-0.25.1-windows-x64.zip",
                          "page":  "https://github.com/andreyshpak2016-lgtm/open-universe/releases/tag/v0.25.1"
                      },
                      {
