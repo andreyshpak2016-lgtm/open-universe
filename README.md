@@ -64,6 +64,18 @@
 ```bash
 cargo run -p ou-render --release -- all 1280 720
 #  ship · blackhole · asteroids  → три PNG-кадра
+cargo run -p ou-render --release -- voxel 900 506   # воксельная планета
+cargo run -p ou-render --release -- dig 640 360     # копание (до/после)
+```
+
+### Рендер по сети (живой мир с сервера)
+
+```bash
+# терминал 1: сервер
+cargo run -p ou-server --bin ou-netd -- 127.0.0.1:7777 10
+# терминал 2: клиент рисует мир, что пришёл по UDP
+cargo run -p ou-render --release --bin ou-netrender -- 127.0.0.1:7777 8 4
+# → 1 baseline + 236 дельт → 4 кадра в render-net.png
 ```
 
 Он рендерит тот же мир (планеты, корабли, астероиды, чёрные дыры), что

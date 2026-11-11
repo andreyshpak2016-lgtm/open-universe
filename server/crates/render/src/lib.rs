@@ -881,12 +881,12 @@ pub fn scene_from_states(states: &[ou_protocol::EntityState], focus_id: u32) -> 
     // Камера смотрит на корабль игрока сзади-сверху.
     if let Some(me) = states.iter().find(|e| e.id == focus_id) {
         let rot = Mat3::from_yaw_pitch(me.yaw as f64, me.pitch as f64);
-        let back = Vec3::new(0.0, 70.0, -330.0);
+        let back = Vec3::new(0.0, 55.0, -260.0);
         s.camera.origin = me.pos.add(rot.mul_vec(back));
-        s.camera.forward = rot.mul_vec(Vec3::new(0.0, -0.08, 1.0));
+        s.camera.forward = rot.mul_vec(Vec3::new(0.0, -0.10, 1.0));
     } else if let Some(first) = states.first() {
-        s.camera.origin = first.pos.add(Vec3::new(0.0, 60.0, -320.0));
-        s.camera.forward = Vec3::new(0.0, -0.08, 1.0);
+        s.camera.origin = first.pos.add(Vec3::new(0.0, 50.0, -250.0));
+        s.camera.forward = Vec3::new(0.0, -0.10, 1.0);
     }
     s.camera.fov = 1.0;
     s

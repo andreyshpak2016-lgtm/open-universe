@@ -278,6 +278,13 @@ VWAP = 26 · Всего сделок в журнале: 2</code></pre>
           <img src="assets/render-dig.png" alt="Копание воксельной планеты: до и после" />
         </figure>
 
+    <h3>Рендер по сети: живой мир с сервера</h3>
+    <p class="lead" style="margin-bottom:18px">Кадры ниже получены <b>не из локальной симуляции</b>: клиент подключился к серверу по UDP, принял baseline и дельты, собрал мир и нарисовал его. Это полный цикл движка MMO — сервер → протокол → сеть → клиентская сборка → рендер.</p>
+    <figure class="diagram">
+      <img src="assets/render-net.png" alt="Рендер по сети: 4 кадра живого мира с сервера" />
+    </figure>
+    <p class="lead" style="margin-top:14px;font-size:.9rem">1 baseline + 236 дельт → 2 корабля и планета, нарисованные в реальном времени. Код: <code>crates/render/src/bin/ou-netrender.rs</code>.</p>
+
         <p class="lead" style="margin-top:18px;font-size:.92rem">📊 Полный разбор с метриками и всеми скриншотами — на отдельной странице <a href="report.html">«Отчёт о разработке»</a>.</p>
 
         <pre class="codeblock"><code>$ cargo run -p ou-render --release -- sim 1280 720
@@ -352,6 +359,7 @@ $ cargo run -p ou-render --release -- lod 1280 720
             <li><code>ou-market-demo.exe</code> — рынок, стакан, сделки, производство</li>
             <li><code>ou-combat-demo.exe</code> — бой, щиты, броня, территории</li>
             <li><code>ou-render.exe</code> — рендерер мира (трассировка лучей → PNG)</li>
+            <li><code>ou-netrender.exe</code> — рендер живого мира с сервера по UDP</li>
           </ul>
           <p class="dl-meta">Размер: <b id="dl-size">~0.2 МБ</b> · Платформа: Windows 10+ · Дата: <span id="dl-date">—</span></p>
           <div class="dl-actions">

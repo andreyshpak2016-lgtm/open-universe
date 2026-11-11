@@ -16,3 +16,4 @@ path = "src/bin/ou-render.rs"
 [dependencies]
 ou-protocol = { path = "../protocol" }
 ou-sim = { path = "../sim" }
+ou-net = { path = "../net" }
