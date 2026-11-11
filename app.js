@@ -508,10 +508,12 @@
       return;
     }
     var registered = !!getPilot();
+    // По умолчанию показываем только самые свежие версии; остальные — по кнопке.
+    var SHOW = 3;
     var html = "";
-    rels.forEach(function (rel) {
+    rels.forEach(function (rel, idx) {
       var tag = rel.tag || rel.name || "—";
-      var size = rel.size ? (rel.size / 1048576).toFixed(2).replace(".", ",") + " МБ" : "";
+      var size = rel.size ? (rel.size / 1048576).toFixed(1).replace(".", ",") + " МБ" : "";
       var date = rel.date ? new Date(rel.date).toLocaleDateString("ru-RU") : "";
       var links = "";
       if (registered) {
@@ -531,16 +533,38 @@
         // До регистрации кнопки ведут в форму, а не к файлу.
         links = '<button type="button" class="version-btn primary locked js-need-reg">🔒 Скачать — нужна регистрация</button>';
       }
-      html += '<div class="version">' +
+      // Старые версии прячем под «показать ещё».
+      var cls = idx >= SHOW ? "version version-old" : "version";
+      var hidden = idx >= SHOW ? " hidden" : "";
+      html += '<div class="' + cls + '"' + hidden + '>' +
         '<span class="version-tag">' + tag + (rel.latest ? ' <span class="version-latest">последняя</span>' : '') + '</span>' +
         '<span class="version-meta">' + [date, size].filter(Boolean).join(" · ") + '</span>' +
         '<span class="version-actions">' + links + '</span></div>';
     });
+    // Кнопка раскрытия — только если старых версий больше нуля.
+    if (rels.length > SHOW) {
+      html += '<button type="button" class="version-toggle" id="versions-toggle">' +
+        'Показать предыдущие версии (' + (rels.length - SHOW) + ') ▾</button>';
+    }
     box.innerHTML = html;
     // Кнопки-замки открывают регистрацию.
     box.querySelectorAll(".js-need-reg").forEach(function (b) {
       b.addEventListener("click", function (e) { requireRegistration(e); });
     });
+    // Раскрытие/сворачивание старых версий.
+    var toggle = document.getElementById("versions-toggle");
+    if (toggle) {
+      toggle.addEventListener("click", function () {
+        var open = toggle.getAttribute("data-open") === "1";
+        box.querySelectorAll(".version-old").forEach(function (v) {
+          v.hidden = open;
+        });
+        toggle.setAttribute("data-open", open ? "0" : "1");
+        toggle.textContent = open
+          ? ("Показать предыдущие версии (" + (rels.length - SHOW) + ") ▾")
+          : "Скрыть предыдущие версии ▴";
+      });
+    }
   }
 
   function loadVersions() {

@@ -24,3 +24,6 @@ client/Packaged/
 Thumbs.db
 .vscode/
 .idea/
+
+# Sobrannyj launcheer (peresobiraetsya build-launcher.ps1)
+launcher/OpenUniverseLauncher.exe

@@ -348,6 +348,13 @@ section .lead { color: var(--muted); max-width: 760px; margin: 0 0 34px; }
 .version-btn:hover { text-decoration: none; background: rgba(30,40,80,.7); }
 .version-btn.primary { background: linear-gradient(90deg,#6a8bff,#00e6d0); color: #04121a; border: none; }
 .version-btn.primary:hover { filter: brightness(1.08); }
+.version-toggle {
+  margin-top: 6px; padding: 11px 16px; border-radius: 10px; cursor: pointer;
+  font-weight: 700; font-size: .88rem; color: var(--accent2);
+  background: rgba(255,255,255,.03); border: 1px dashed var(--panel-brd);
+}
+.version-toggle:hover { background: rgba(30,40,80,.5); }
+.version[hidden] { display: none; }
 @media (max-width: 640px) {
   .version { grid-template-columns: 1fr; }
   .version-actions { justify-content: flex-start; }

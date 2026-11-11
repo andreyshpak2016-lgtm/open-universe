@@ -49,6 +49,13 @@ try {
   Pop-Location
 }
 
+# 2a. Лаунчер (C#) — вход, новости, автообновление.
+try {
+  & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'build-launcher.ps1')
+} catch {
+  Write-Host "Лаунчер не собран: $_" -ForegroundColor DarkYellow
+}
+
 # 3. Упаковка
 Write-Host "--> упаковка артефакта" -ForegroundColor Yellow
 New-Item -ItemType Directory -Force -Path $dist | Out-Null
@@ -74,6 +81,8 @@ $files = @(
   (Join-Path $root 'tools\play.ps1'),
   (Join-Path $root 'tools\server.ps1'),
   (Join-Path $root 'tools\game.ps1'),
+  (Join-Path $root 'tools\ou-common.ps1'),
+  (Join-Path $root 'launcher\OpenUniverseLauncher.exe'),
   (Join-Path $root 'play.bat'),
   (Join-Path $root 'server.bat'),
   (Join-Path $root 'game.bat'),

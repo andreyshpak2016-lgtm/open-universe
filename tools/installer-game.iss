@@ -45,10 +45,11 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"
 
+[Dirs]
+Name: "{app}\server\world"
+
 [Files]
 ; Вся собранная игра: лаунчер OpenUniverse.exe, папки OpenUniverse\ и Engine\.
-; Именно так — от Packaged\Windows\*, потому что лаунчер лежит в его корне
-; и ищет движок и ассеты в соседних папках.
 Source: "{#SourceRoot}\client\Packaged\Windows\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 ; Сервер и демо-утилиты рядом (для игры по сети).
 Source: "{#SourceRoot}\server\target\release\ou-*.exe"; DestDir: "{app}\server"; Flags: ignoreversion
@@ -56,15 +57,18 @@ Source: "{#SourceRoot}\tools\server.ps1"; DestDir: "{app}\server"; Flags: ignore
 Source: "{#SourceRoot}\tools\ou-common.ps1"; DestDir: "{app}\server"; Flags: ignoreversion
 Source: "{#SourceRoot}\server.bat"; DestDir: "{app}\server"; Flags: ignoreversion
 Source: "{#SourceRoot}\README.md"; DestDir: "{app}"; Flags: ignoreversion
-
-[Dirs]
-Name: "{app}\server\world"
+; Версия — чтобы лаунчер понимал, что установлено.
+Source: "{#SourceRoot}\VERSION"; DestDir: "{app}"; DestName: "VERSION"; Flags: ignoreversion
+; Лаунчер: вход, новости, автообновление.
+Source: "{#SourceRoot}\launcher\OpenUniverseLauncher.exe"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
-Name: "{group}\Open Universe"; Filename: "{app}\OpenUniverse.exe"
+; Лаунчер — главный ярлык: вход, новости, автообновление, запуск игры.
+Name: "{group}\Open Universe — лаунчер"; Filename: "{app}\OpenUniverseLauncher.exe"
+Name: "{group}\Open Universe (напрямую)"; Filename: "{app}\OpenUniverse.exe"
 Name: "{group}\Сервер (для игры по сети)"; Filename: "{app}\server\server.bat"; WorkingDir: "{app}\server"
 Name: "{group}\Удалить Open Universe"; Filename: "{uninstallexe}"
-Name: "{autodesktop}\Open Universe"; Filename: "{app}\OpenUniverse.exe"; Tasks: desktopicon
+Name: "{autodesktop}\Open Universe"; Filename: "{app}\OpenUniverseLauncher.exe"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\OpenUniverse.exe"; Description: "Запустить Open Universe"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\OpenUniverseLauncher.exe"; Description: "Запустить лаунчер Open Universe"; Flags: nowait postinstall skipifsilent
