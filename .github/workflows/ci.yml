@@ -16,15 +16,15 @@ permissions:
 
 jobs:
   test:
-    name: РўРµСЃС‚С‹ Рё СЃР±РѕСЂРєР° СЏРґСЂР°
+    name: Тесты и сборка ядра
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: РЈСЃС‚Р°РЅРѕРІРєР° Rust
+      - name: Установка Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: РљСЌС€ cargo
+      - name: Кэш cargo
         uses: actions/cache@v4
         with:
           path: |
@@ -33,28 +33,28 @@ jobs:
             server/target
           key: ${{ runner.os }}-cargo-${{ hashFiles('server/**/Cargo.toml') }}
 
-      - name: РўРµСЃС‚С‹
+      - name: Тесты
         working-directory: server
         run: cargo test --workspace
 
-      - name: РџСЂРѕРІРµСЂРєР° РєР»РёРµРЅС‚СЃРєРѕРіРѕ РїСЂРѕС‚РѕРєРѕР»Р° (C++)
+      - name: Проверка клиентского протокола (C++)
         shell: pwsh
         run: |
-          # РЎС‚РµРЅРґ СЂР°Р·Р±РёСЂР°РµС‚ СЂРµР°Р»СЊРЅС‹Р№ РїР°РєРµС‚ СЃРµСЂРІРµСЂР° С‚РµРј Р¶Рµ РєРѕРґРѕРј, С‡С‚Рѕ Рё РєР»РёРµРЅС‚ UE5.
+          # Стенд разбирает реальный пакет сервера тем же кодом, что и клиент UE5.
           ./tools/test-client.ps1
 
-      - name: РЎР±РѕСЂРєР° (release)
+      - name: Сборка (release)
         working-directory: server
         run: cargo build --release --workspace
 
-      - name: РЈРїР°РєРѕРІРєР° Р°СЂС‚РµС„Р°РєС‚Р°
+      - name: Упаковка артефакта
         shell: pwsh
         run: |
-          # Р’РµСЂСЃРёСЏ: РёР· РёРјРµРЅРё С‚РµРіР° (vX.Y.Z) РёР»Рё РёР· С„Р°Р№Р»Р° VERSION.
+          # Версия: из имени тега (vX.Y.Z) или из файла VERSION.
           $ref = "${{ github.ref_name }}"
           if ($ref -match '^v(\d+\.\d+\.\d+)$') { $v = $Matches[1] } else { $v = (Get-Content VERSION -Raw).Trim() }
           New-Item -ItemType Directory -Force -Path dist | Out-Null
-          # РЎРѕР±РёСЂР°РµРј РµРґРёРЅС‹Р№ РЅР°Р±РѕСЂ: РґРµРјРѕ + СЃРµС‚РµРІС‹Рµ + РіРµРЅРµСЂР°С‚РѕСЂ + С€Р°СЂРґ.
+          # Собираем единый набор: демо + сетевые + генератор + шард.
           $files = @(
             'server/target/release/ou-server.exe',
             'server/target/release/ou-client.exe',
@@ -80,13 +80,13 @@ jobs:
           $count = $files.Count
           Write-Host "Собран архив версии $v, файлов: $count"
 
-      - name: РџСЂРёР»РѕР¶РёС‚СЊ СЃР±РѕСЂРєСѓ Рє СЂРµР»РёР·Сѓ
+      - name: Приложить сборку к релизу
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
           files: dist/*.zip
-          # Р—Р°РјРµС‚РєРё РЅРµ РіРµРЅРµСЂРёСЂСѓРµРј Р°РІС‚РѕРјР°С‚РёС‡РµСЃРєРё: СЂРµР»РёР· СЃРѕР·РґР°С‘С‚СЃСЏ СЃ CHANGELOG,
-          # Р° СЌС‚РѕС‚ С€Р°Рі Р»РёС€СЊ РґРѕРіСЂСѓР¶Р°РµС‚ Р°СЂС‚РµС„Р°РєС‚ (РёРґРµРјРїРѕС‚РµРЅС‚РЅРѕ).
+          # Заметки не генерируем автоматически: релиз создаётся с CHANGELOG,
+          # а этот шаг лишь догружает артефакт (идемпотентно).
           generate_release_notes: false
           draft: false
           name: Open Universe ${{ github.ref_name }}
