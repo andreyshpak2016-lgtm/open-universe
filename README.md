@@ -100,8 +100,17 @@ cargo run -p ou-render --release --bin ou-netrender -- 127.0.0.1:7777 8 4
 
 ## Движок и рендер
 
-По ADR-0001 клиент — Unreal Engine 5. Пока UE не установлен, есть рабочий
-**рендерер на Rust** (`crates/render`): настоящая трассировка лучей на CPU.
+По ADR-0001 клиент — Unreal Engine 5. Движок установлен, C++-модуль собирается,
+редактор открывает карту `/Game/Maps/OpenUniverse` (свет, небо, туман,
+воксельная планета). Сборка и генерация карты:
+
+```powershell
+powershell -File tools/build-client.ps1   # собирает модуль
+powershell -File tools/make-map.ps1       # создаёт карту
+```
+
+Кроме UE-клиента есть рабочий **рендерер на Rust** (`crates/render`):
+настоящая трассировка лучей на CPU.
 
 ```bash
 cargo run -p ou-render --release -- all 1280 720

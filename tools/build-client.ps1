@@ -50,7 +50,20 @@ function Find-Engine
   }
   if ($valid.Count -eq 0) { return $null }
 
-  # Выбираем самую новую версию (по имени папки).
+  # Проект собирается под конкретную версию движка (EngineAssociation в .uproject).
+  $assoc = $null
+  if (Test-Path $uproject)
+  {
+    $m = Select-String -Path $uproject -Pattern '"EngineAssociation"\s*:\s*"([^"]+)"'
+    if ($m) { $assoc = $m.Matches[0].Groups[1].Value }
+  }
+  if ($assoc)
+  {
+    $match = $valid | Where-Object { (Split-Path $_.Path -Leaf) -eq ("UE_" + $assoc) }
+    if ($match) { return $match[0] }
+  }
+
+  # Иначе выбираем самую новую версию (по имени папки).
   return ($valid | Sort-Object { [version]($_.Path -replace '.*UE_','') } -Descending)[0]
 }
 

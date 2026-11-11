@@ -74,6 +74,9 @@ public:
 protected:
 	virtual void BeginPlay() override;
 
+	/** Строим меш и в редакторе, чтобы планета была видна сразу на карте. */
+	virtual void OnConstruction(const FTransform& Transform) override;
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Open Universe|Planet")
 	UProceduralMeshComponent* Mesh = nullptr;
 

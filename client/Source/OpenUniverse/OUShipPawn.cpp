@@ -5,6 +5,11 @@
 #include "OUDeterministic.h"
 #include "OUOriginManager.h"
 #include "Components/StaticMeshComponent.h"
+#include "Components/InputComponent.h"
+#include "Camera/CameraComponent.h"
+#include "GameFramework/SpringArmComponent.h"
+#include "Engine/StaticMesh.h"
+#include "UObject/ConstructorHelpers.h"
 #include "Kismet/GameplayStatics.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogOUShip, Log, All);
@@ -16,10 +21,32 @@ AOUShipPawn::AOUShipPawn()
 	ShipMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("ShipMesh"));
 	RootComponent = ShipMesh;
 
+	// Видимый «корабль»: базовый куб движка. Настоящая блочная/воксельная
+	// конструкция появится позже; сейчас важно, что игрок видит свой корабль.
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> ShipShape(
+		TEXT("/Engine/BasicShapes/Cube.Cube"));
+	if (ShipShape.Succeeded())
+	{
+		ShipMesh->SetStaticMesh(ShipShape.Object);
+	}
+	ShipMesh->SetRelativeScale3D(FVector(3.f, 1.f, 0.6f));
+
 	// Физику UE **не используем** в открытом мире: кинематику считаем сами,
 	// как на сервере. Это принципиально для детерминизма и античита.
 	ShipMesh->SetSimulatePhysics(false);
 	ShipMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+
+	// Камера: штанга назад-вверх, вид от третьего лица.
+	SpringArm = CreateDefaultSubobject<USpringArmComponent>(TEXT("SpringArm"));
+	SpringArm->SetupAttachment(RootComponent);
+	SpringArm->TargetArmLength = 1200.f;
+	SpringArm->SetRelativeRotation(FRotator(-25.f, 0.f, 0.f));
+	SpringArm->bDoCollisionTest = false;
+	SpringArm->bUsePawnControlRotation = false;
+
+	Camera = CreateDefaultSubobject<UCameraComponent>(TEXT("Camera"));
+	Camera->SetupAttachment(SpringArm, USpringArmComponent::SocketName);
+	Camera->bUsePawnControlRotation = false;
 
 	AutoPossessPlayer = EAutoReceiveInput::Player0;
 }

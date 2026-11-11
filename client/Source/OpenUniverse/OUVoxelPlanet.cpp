@@ -73,6 +73,14 @@ void AOUVoxelPlanet::BeginPlay()
 	BuildPlanet();
 }
 
+void AOUVoxelPlanet::OnConstruction(const FTransform& Transform)
+{
+	Super::OnConstruction(Transform);
+	// В редакторе BeginPlay не вызывается — строим меш здесь, чтобы планета
+	// была видна на карте сразу.
+	BuildPlanet();
+}
+
 int32 AOUVoxelPlanet::Segments() const
 {
 	switch (Lod)

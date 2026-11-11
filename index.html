@@ -239,7 +239,7 @@ VWAP = 26 · Всего сделок в журнале: 2</code></pre>
     <section id="engine">
       <div class="wrap">
         <h2>Движок: рендер мира</h2>
-        <p class="lead">По ADR-0001 клиент — Unreal Engine 5, но пока он не установлен, я написал <b>работающий рендерер на Rust</b>: настоящую трассировку лучей на CPU. Он рисует <b>тот же мир</b>, что приходит по сети, и это доказуемо — кадры ниже сгенерированы кодом, который лежит в репозитории.</p>
+        <p class="lead">По ADR-0001 клиент — Unreal Engine 5: движок установлен, модуль собран, редактор открывает настоящую 3D-сцену. А пока UE-клиент обрастает геймплеем, мир можно увидеть и через <b>собственный рендерер на Rust</b> — настоящую трассировку лучей на CPU. Он рисует <b>тот же мир</b>, что приходит по сети, и это доказуемо — кадры ниже сгенерированы кодом, который лежит в репозитории.</p>
 
         <div class="grid3" style="margin-bottom:24px">
           <div class="card"><div class="ico">🎥</div><h3>Трассировка лучей</h3><p>Пересечения луча со сферами (планеты, звёзды) и с ориентированными блоками (корабли, астероиды). Сглаживание 2×2 на пиксель.</p></div>
@@ -301,15 +301,18 @@ VWAP = 26 · Всего сделок в журнале: 2</code></pre>
         <p class="lead" style="margin-top:14px;font-size:.88rem">Состояния: <code>Flying</code> / <code>Landed</code> / <code>Crashed</code>. Рельеф детерминирован (octahedral mapping + value noise) — один и тот же на сервере, клиенте и в тестах.</p>
 
         <h3>Каркас UE5-клиента (C++)</h3>
-        <p class="lead" style="margin-bottom:18px">Движок Unreal Engine 5 установлен, <b>модуль собран и загружается в редакторе</b> — окно проекта открывается как <code>OpenUniverse - Unreal Editor</code>. Сборка воспроизводится одной командой.</p>
+        <p class="lead" style="margin-bottom:18px">Движок Unreal Engine 5 установлен, <b>модуль собран, редактор открывает настоящую 3D-сцену</b>: свет, небо, атмосфера, туман и воксельная планета. Окно проекта — <code>OpenUniverse - Unreal Editor</code>. Сборка и карта воспроизводятся двумя командами.</p>
         <pre class="codeblock"><code>$ powershell -File tools/build-client.ps1        # находит движок, собирает модуль
 [1/5] Compile [x64] OUVoxelPlanet.cpp
 [4/5] Link [x64] UnrealEditor-OpenUniverse.dll    # игровой модуль
 Сборка завершена успешно
 
+$ powershell -File tools/make-map.ps1            # создаёт карту /Game/Maps/OpenUniverse
+Карта создана: client\Content\Maps\OpenUniverse.umap
+
 $ & "D:\UE_5.5\Engine\Binaries\Win64\UnrealEditor.exe" "...\OpenUniverse.uproject"
 LogOpenUniverse: Open Universe: модуль запущен</code></pre>
-        <p class="lead" style="margin-top:14px;font-size:.9rem">Ошибки, которые пришлось исправить по пути (все описаны в <code>client/BUILDING.md</code>): <code>uint64</code> в <code>UPROPERTY</code> → <code>int64</code>; <code>FInternetAddr</code> абстрактный → через <code>CreateInternetAddr()</code>; <code>FColor</code> → <code>FLinearColor</code> для процедурного меша. Плюс потребовался <b>.NET Framework SDK</b>.</p>
+        <p class="lead" style="margin-top:14px;font-size:.9rem">Ошибки, которые пришлось исправить по пути (все описаны в <code>client/BUILDING.md</code>): <code>uint64</code> в <code>UPROPERTY</code> → <code>int64</code>; абстрактный <code>FInternetAddr</code> → через <code>CreateInternetAddr()</code>; <code>FColor</code> → <code>FLinearColor</code> для процедурного меша; пустая карта (чёрный экран) → сцена достраивается в <code>AOUGameMode</code>. Плюс потребовался <b>.NET Framework SDK</b>.</p>
         <div class="grid3" style="margin-bottom:20px">
           <div class="card"><div class="ico">🌍</div><h3>Floating origin</h3><p>Мир живёт в <code>double</code>, акторы — в локальных <code>float</code>. Начало переносится, когда игрок улетает далеко: точность не теряется на планетарных масштабах.</p></div>
           <div class="card"><div class="ico">📡</div><h3>Сеть как на сервере</h3><p><code>OUClientNet</code> говорит с Rust-сервером тем же бинарным протоколом: varint, zigzag, токен сессии, снапшоты.</p></div>
@@ -457,7 +460,7 @@ $ cargo run -p ou-render --release -- lod 1280 720
             <span class="hero-badge" style="font-size:.72rem"><span class="dot"></span> Последняя версия</span>
           </div>
           <h3>Ядро игры (Windows x64)</h3>
-          <p class="dl-desc">Сервер единого шарда и клиент: детерминированная симуляция, tick loop 30 Гц, предсказание и реконсиляция. Графического клиента пока нет — каркас UE5 готов, но движок не установлен.</p>
+          <p class="dl-desc">Сервер единого шарда и клиент: детерминированная симуляция, tick loop 30 Гц, предсказание и реконсиляция. Графический клиент на Unreal Engine 5 собирается из <code>client/</code> (см. <code>tools/build-client.ps1</code>).</p>
           <ul class="dl-files">
             <li><code>ou-netd.exe</code> — сервер: запускает мир</li>
             <li><code>ou-netclient.exe</code> — игрок: подключается к серверу</li>

@@ -8,6 +8,8 @@
 #include "OUShipPawn.generated.h"
 
 class UStaticMeshComponent;
+class USpringArmComponent;
+class UCameraComponent;
 class UOUClientNet;
 
 /**
@@ -64,6 +66,14 @@ protected:
 	/** Меш корабля (блочная конструкция — временная заглушка до воксельной сборки). */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Open Universe|Flight")
 	UStaticMeshComponent* ShipMesh = nullptr;
+
+	/** Штанга камеры: камера смотрит на корабль сзади-сверху. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Open Universe|Flight")
+	USpringArmComponent* SpringArm = nullptr;
+
+	/** Камера игрока (вид от третьего лица). */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Open Universe|Flight")
+	UCameraComponent* Camera = nullptr;
 
 	/** Ближайший менеджер начала координат (floating origin). */
 	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Flight")
