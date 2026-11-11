@@ -343,19 +343,21 @@
       if (!rel) return;
       var verEl = document.getElementById("dl-version");
       if (verEl && rel.tag) verEl.textContent = rel.tag;
+      // Размер основной кнопки — лаунчер (маленький); дату берём у релиза.
       var sizeEl = document.getElementById("dl-size");
-      var bytes = rel.size || rel.setupSize;
-      if (sizeEl && bytes) {
-        sizeEl.textContent = "~" + (bytes / 1048576).toFixed(0) + " МБ";
+      if (sizeEl && rel.launcherSize) {
+        sizeEl.textContent = "~" + Math.max(1, Math.round(rel.launcherSize / 1024)) + " КБ";
       }
       var dateEl = document.getElementById("dl-date");
       if (dateEl && rel.date) dateEl.textContent = new Date(rel.date).toLocaleDateString("ru-RU");
+      // Кнопка лаунчера: прямая ссылка на файл в последнем релизе.
+      var launcherEl = document.getElementById("dl-launcher");
+      if (launcherEl && rel.launcher) launcherEl.href = rel.launcher;
+      // Кнопка «Игра (установщик)» — установщик с графикой.
       var linkEl = document.getElementById("dl-latest");
       if (linkEl && (rel.gameSetup || rel.setup || rel.zip || rel.client)) {
         linkEl.href = rel.gameSetup || rel.setup || rel.zip || rel.client;
       }
-      var portableEl = document.getElementById("dl-portable");
-      if (portableEl && (rel.zip || rel.client)) portableEl.href = rel.zip || rel.client;
     }
     // 1) releases.json рядом с сайтом (без GitHub API).
     fetch("releases.json", { cache: "no-store" })

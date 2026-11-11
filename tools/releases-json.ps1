@@ -31,22 +31,26 @@ foreach ($rel in $rels) {
   # Установщик консольного ядра (сервер + клиенты, без графики).
   $setup  = ($assets | Where-Object { $_.name -match '^OpenUniverse-Setup.*\.exe$' } | Select-Object -First 1)
   $client = ($assets | Where-Object { $_.name -match '^ou-netclient.*\.exe$' } | Select-Object -First 1)
+  # Лаунчер — то, что скачивают первым.
+  $launcher = ($assets | Where-Object { $_.name -eq 'OpenUniverseLauncher.exe' } | Select-Object -First 1)
   $zip    = ($assets | Where-Object { $_.name -match '\.zip$' } | Select-Object -First 1)
   $primary = if ($gameSetup) { $gameSetup } elseif ($setup) { $setup } elseif ($client) { $client } else { $zip }
 
   $list += [PSCustomObject]@{
-    tag        = $rel.tag_name
-    name       = $rel.name
-    date       = $rel.published_at
-    latest     = ($rel.tag_name -eq $latestTag)
-    prerelease = [bool]$rel.prerelease
-    size       = if ($primary) { [int64]$primary.size } else { 0 }
-    gameSetup  = if ($gameSetup) { $gameSetup.browser_download_url } else { $null }
-    setup      = if ($setup) { $setup.browser_download_url } else { $null }
-    setupSize  = if ($setup) { [int64]$setup.size } else { 0 }
-    client     = if ($client) { $client.browser_download_url } else { $null }
-    zip        = if ($zip) { $zip.browser_download_url } else { $null }
-    page       = "https://github.com/$repo/releases/tag/$($rel.tag_name)"
+    tag          = $rel.tag_name
+    name         = $rel.name
+    date         = $rel.published_at
+    latest       = ($rel.tag_name -eq $latestTag)
+    prerelease   = [bool]$rel.prerelease
+    size         = if ($primary) { [int64]$primary.size } else { 0 }
+    gameSetup    = if ($gameSetup) { $gameSetup.browser_download_url } else { $null }
+    setup        = if ($setup) { $setup.browser_download_url } else { $null }
+    setupSize    = if ($setup) { [int64]$setup.size } else { 0 }
+    launcher     = if ($launcher) { $launcher.browser_download_url } else { $null }
+    launcherSize = if ($launcher) { [int64]$launcher.size } else { 0 }
+    client       = if ($client) { $client.browser_download_url } else { $null }
+    zip          = if ($zip) { $zip.browser_download_url } else { $null }
+    page         = "https://github.com/$repo/releases/tag/$($rel.tag_name)"
   }
 }
 
