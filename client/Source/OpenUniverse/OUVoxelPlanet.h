@@ -80,6 +80,10 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Open Universe|Planet")
 	UProceduralMeshComponent* Mesh = nullptr;
 
+	/** Материал планеты (назначается на все секции меша). */
+	UPROPERTY(Transient)
+	TObjectPtr<class UMaterialInterface> PlanetMaterial = nullptr;
+
 private:
 	/** Детерминированный шум рельефа (совпадает с сервером). */
 	float Noise(float U, float V) const;

@@ -259,6 +259,8 @@ bool UOUClientNet::ParseSnapshot(const TArray<uint8>& Body, FOUSnapshot& Out)
 	{
 		FOUEntityState S;
 		S.Id = E.Id;
+		// Храним координаты как есть (серверные оси). Перевод в оси UE
+		// делается при применении к актору — так State совпадает с сервером.
 		S.Position = FVector(E.X, E.Y, E.Z);
 		S.Velocity = FVector(E.VX, E.VY, E.VZ);
 		S.Yaw = E.Yaw;

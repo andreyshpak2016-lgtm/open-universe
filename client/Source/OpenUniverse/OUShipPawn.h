@@ -80,11 +80,18 @@ protected:
 	/** Найти или создать актор-заглушку для чужой сущности. */
 	AActor* GetOrCreateRemoteActor(int32 EntityId);
 
-	/**
-	 * Реконсиляция как в Rust-клиенте: принять авторитетное состояние,
-	 * затем переиграть ещё не подтверждённые кадры ввода.
-	 */
+	/** Реконсиляция как в Rust-клиенте: принять авторитетное состояние,
+	 * затем переиграть ещё не подтверждённые кадры ввода. */
 	void ReconcileTo(const FOUEntityState& Authoritative, int32 AckSeq);
+
+	/** Применить State к актору (позиция + ориентация), с учётом floating origin. */
+	void ApplyStateToActor();
+
+	/** Вектор «вперёд» в серверных осях по текущим углам. */
+	FVector ForwardVector() const;
+
+	/** Вектор «вперёд» в серверных осях для чужой сущности. */
+	static FVector ForwardVectorOf(const FOUEntityState& E);
 
 	/** Разосланные, но ещё не подтверждённые кадры ввода (для переигровки). */
 	TArray<FOUInputFrame> PendingInputs;

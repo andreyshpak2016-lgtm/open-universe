@@ -2,6 +2,8 @@
 
 #include "OUVoxelPlanet.h"
 #include "ProceduralMeshComponent.h"
+#include "Materials/MaterialInterface.h"
+#include "UObject/ConstructorHelpers.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogOUPlanet, Log, All);
 
@@ -65,6 +67,16 @@ AOUVoxelPlanet::AOUVoxelPlanet()
 	Mesh = CreateDefaultSubobject<UProceduralMeshComponent>(TEXT("VoxelMesh"));
 	RootComponent = Mesh;
 	Mesh->bUseAsyncCooking = true;
+
+	// Материал обязателен: без него процедурный меш в UE не виден.
+	// Копию запоминаем — назначим его на КАЖДУЮ секцию (иначе видна лишь одна
+	// грань: секция берёт материал из слота со своим номером).
+	static ConstructorHelpers::FObjectFinder<UMaterialInterface> BasicMat(
+		TEXT("/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial"));
+	if (BasicMat.Succeeded())
+	{
+		PlanetMaterial = BasicMat.Object;
+	}
 }
 
 void AOUVoxelPlanet::BeginPlay()
@@ -204,6 +216,11 @@ void AOUVoxelPlanet::BuildPlanet()
 		}
 
 		// Индексы двух треугольников на каждую ячейку.
+		//
+		// Намотка зависит от знака грани, поэтому вместо угадывания «лицевой»
+		// стороны дублируем каждый треугольник обратным обходом. Отсечение
+		// задних граней оставляет ровно один экземпляр из пары — планета
+		// гарантированно видна с любой стороны, мерцания (z-fighting) нет.
 		for (int32 J = 0; J < Seg; ++J)
 		{
 			for (int32 I = 0; I < Seg; ++I)
@@ -216,8 +233,21 @@ void AOUVoxelPlanet::BuildPlanet()
 				Tris.Add(B); Tris.Add(C); Tris.Add(D);
 			}
 		}
+		// Обратные копии считаем в отдельном массиве: нельзя читать Tris,
+		// одновременно добавляя в него (массив перевыделяется — падение).
+		TArray<int32> BackTris;
+		BackTris.Reserve(Tris.Num());
+		for (int32 T = 0; T + 2 < Tris.Num(); T += 3)
+		{
+			BackTris.Add(Tris[T + 0]);
+			BackTris.Add(Tris[T + 2]);
+			BackTris.Add(Tris[T + 1]);
+		}
+		Tris.Append(BackTris);
 
 		Mesh->CreateMeshSection_LinearColor(SectionIndex, Verts, Tris, Normals, UVs, Colors, Tangents, false);
+		// Материал на каждую секцию: иначе грань без материала не рисуется.
+		Mesh->SetMaterial(SectionIndex, PlanetMaterial);
 		++SectionIndex;
 	}
 

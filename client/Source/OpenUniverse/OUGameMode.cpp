@@ -21,10 +21,13 @@ DEFINE_LOG_CATEGORY_STATIC(LogOUGameMode, Log, All);
 namespace
 {
 	/**
-	 * Планета ставится ниже нуля, чтобы начало координат (0,0,0) оказалось
-	 * над поверхностью — иначе вид по умолчанию был бы «внутри» планеты.
+	 * Смещение планеты в осях UE.
+	 *
+	 * Корабль стартует в начале координат и смотрит вперёд (в UE это +X).
+	 * Планета — впереди (по +X) и ниже, так что её поверхность видна как
+	 * «вид с орбиты»: в кадре и кривизна горизонта, и корабль на её фоне.
 	 */
-	const FVector GPlanetOffset(0.f, 0.f, -130000.f);
+	const FVector GPlanetOffset(260000.f, 60000.f, -120000.f);
 }
 
 AOUGameMode::AOUGameMode()
@@ -116,10 +119,9 @@ void AOUGameMode::BuildWorld()
 	}
 
 	// --- Атмосферный туман ---
-	if (!Has(AExponentialHeightFog::StaticClass()))
-	{
-		World->SpawnActor<AExponentialHeightFog>(AExponentialHeightFog::StaticClass(), FTransform::Identity);
-	}
+	// В космической сцене туман не нужен: при настройках по умолчанию он
+	// полностью скрывает объекты на дистанции в километры (планета «исчезала»).
+	// Поэтому туман не создаём.
 
 	// --- Планета ---
 	if (!Has(AOUVoxelPlanet::StaticClass()))

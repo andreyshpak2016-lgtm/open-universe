@@ -63,17 +63,16 @@ def main():
             comp.set_editor_property("mobility", unreal.ComponentMobility.MOVABLE)
             comp.set_editor_property("real_time_capture", True)
 
-    # --- Атмосферный туман ---
-    spawn("/Script/Engine.ExponentialHeightFog")
+    # --- Атмосферный туман НЕ создаём: в космосе он скрывает планету ---
 
     # --- Точка старта игрока (над планетой, смотрит чуть вниз) ---
     spawn("/Script/Engine.PlayerStart", unreal.Vector(0.0, 0.0, 0.0),
           unreal.Rotator(-20.0, 0.0, 0.0))
 
-    # --- Планета (смещена вниз, чтобы 0,0,0 было над поверхностью) ---
+    # --- Планета (впереди и ниже точки старта, в осях UE) ---
     # Меш строится в OnConstruction, поэтому он появляется сразу.
     planet = spawn("/Script/OpenUniverse.OUVoxelPlanet",
-                   unreal.Vector(0.0, 0.0, -130000.0))
+                   unreal.Vector(260000.0, 60000.0, -120000.0))
 
     # --- Менеджер начала координат (floating origin) ---
     # Отражённое имя класса: префикс `A` отброшен -> UOOriginManager.

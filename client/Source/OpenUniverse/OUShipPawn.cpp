@@ -3,6 +3,7 @@
 #include "OUShipPawn.h"
 #include "OUClientNet.h"
 #include "OUDeterministic.h"
+#include "OUInterop.h"
 #include "OUOriginManager.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/InputComponent.h"
@@ -39,8 +40,8 @@ AOUShipPawn::AOUShipPawn()
 	// Камера: штанга назад-вверх, вид от третьего лица.
 	SpringArm = CreateDefaultSubobject<USpringArmComponent>(TEXT("SpringArm"));
 	SpringArm->SetupAttachment(RootComponent);
-	SpringArm->TargetArmLength = 1200.f;
-	SpringArm->SetRelativeRotation(FRotator(-25.f, 0.f, 0.f));
+	SpringArm->TargetArmLength = 2500.f;
+	SpringArm->SetRelativeRotation(FRotator(-20.f, 0.f, 0.f));
 	SpringArm->bDoCollisionTest = false;
 	SpringArm->bUsePawnControlRotation = false;
 
@@ -56,7 +57,8 @@ void AOUShipPawn::BeginPlay()
 	Super::BeginPlay();
 
 	State.Id = 1;
-	State.Position = GetActorLocation();
+	// Позицию храним в серверных осях, поэтому переводим из UE.
+	State.Position = OUInterop::UEToServer(GetActorLocation());
 
 	// Находим клиент сети: свой компонент или на уровне.
 	if (!Net)
@@ -135,11 +137,10 @@ void AOUShipPawn::StepPrediction(const FOUInputFrame& Input, float Dt)
 	State.Pitch = static_cast<float>(Pitch);
 
 	// 2. Направление «вперёд» из углов (та же формула, что на сервере).
-	const double CP = DetCos(Pitch);
-	const double SP = DetSin(Pitch);
-	const double CY = DetCos(Yaw);
-	const double SY = DetSin(Yaw);
-	const FVector Forward(CP * SY, SP, CP * CY);
+	const FVector Forward(
+		DetCos(Pitch) * DetSin(Yaw),
+		DetSin(Pitch),
+		DetCos(Pitch) * DetCos(Yaw));
 
 	// 3. Тяга + демпфирование.
 	const FVector Thrust = Forward * (Input.Throttle * Flight.MaxThrust);
@@ -155,17 +156,45 @@ void AOUShipPawn::StepPrediction(const FOUInputFrame& Input, float Dt)
 
 	// 5. Позиция.
 	State.Position += State.Velocity * Dt;
+	ApplyStateToActor();
+}
 
-	// 6. Применяем к актору (с учётом floating origin).
+void AOUShipPawn::ApplyStateToActor()
+{
+	// Позиция: State.Position (серверные оси) → UE.
+	const FVector PosUE = OUInterop::ServerToUE(State.Position);
 	if (OriginManager)
 	{
-		OriginManager->SetWorldPosition(this, State.Position);
+		OriginManager->SetWorldPosition(this, PosUE);
 	}
 	else
 	{
-		SetActorLocation(State.Position);
+		SetActorLocation(PosUE);
 	}
-	SetActorRotation(FQuat(FRotator(State.Pitch * 180.0 / OUPi, State.Yaw * 180.0 / OUPi, 0.0)));
+	// Ориентация: куб-меш смотрит вдоль +X, поэтому направляем его
+	// вектором «вперёд» (переведённым в оси UE).
+	SetActorRotation(OUInterop::ServerToUE(ForwardVector()).Rotation());
+}
+
+FVector AOUShipPawn::ForwardVector() const
+{
+	using namespace OUDeterministic;
+	// Вперёд в серверных осях (вверх = Y): (cp·sy, sp, cp·cy).
+	const double CP = DetCos(State.Pitch);
+	const double SP = DetSin(State.Pitch);
+	const double SY = DetSin(State.Yaw);
+	const double CY = DetCos(State.Yaw);
+	return FVector(CP * SY, SP, CP * CY);
+}
+
+FVector AOUShipPawn::ForwardVectorOf(const FOUEntityState& E)
+{
+	using namespace OUDeterministic;
+	const double CP = DetCos(E.Pitch);
+	const double SP = DetSin(E.Pitch);
+	const double SY = DetSin(E.Yaw);
+	const double CY = DetCos(E.Yaw);
+	return FVector(CP * SY, SP, CP * CY);
 }
 
 void AOUShipPawn::ApplyAuthoritative(const FOUEntityState& Authoritative)
@@ -177,14 +206,7 @@ void AOUShipPawn::ApplyAuthoritative(const FOUEntityState& Authoritative)
 	State.Yaw = Authoritative.Yaw;
 	State.Pitch = Authoritative.Pitch;
 
-	if (OriginManager)
-	{
-		OriginManager->SetWorldPosition(this, State.Position);
-	}
-	else
-	{
-		SetActorLocation(State.Position);
-	}
+	ApplyStateToActor();
 }
 
 void AOUShipPawn::Tick(float DeltaSeconds)
@@ -305,9 +327,11 @@ void AOUShipPawn::UpdateRemotePlayers()
 		AActor* Actor = GetOrCreateRemoteActor(E.Id);
 		if (Actor)
 		{
-			Actor->SetActorLocation(E.Position);
-			Actor->SetActorRotation(
-				FQuat(FRotator(E.Pitch * 180.0 / OUDeterministic::OUPi, E.Yaw * 180.0 / OUDeterministic::OUPi, 0.0)));
+			// E.Position — в серверных осях: переводим в UE.
+			Actor->SetActorLocation(OUInterop::ServerToUE(E.Position));
+			// Чужие корабли смотрят туда же, куда летят.
+			const FVector FwdUE = OUInterop::ServerToUE(ForwardVectorOf(E));
+			Actor->SetActorRotation(FwdUE.Rotation());
 		}
 	}
 

@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
 #include "OpenUniverseTypes.h"
+#include "OUInterop.h"
 #include "OUClientNet.generated.h"
 
 /** Статус подключения к серверу. */
