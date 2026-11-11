@@ -344,14 +344,16 @@
       var verEl = document.getElementById("dl-version");
       if (verEl && rel.tag) verEl.textContent = rel.tag;
       var sizeEl = document.getElementById("dl-size");
-      var bytes = rel.setupSize || rel.size;
+      var bytes = rel.size || rel.setupSize;
       if (sizeEl && bytes) {
-        sizeEl.textContent = "~" + (bytes / 1048576).toFixed(2).replace(".", ",") + " МБ";
+        sizeEl.textContent = "~" + (bytes / 1048576).toFixed(0) + " МБ";
       }
       var dateEl = document.getElementById("dl-date");
       if (dateEl && rel.date) dateEl.textContent = new Date(rel.date).toLocaleDateString("ru-RU");
       var linkEl = document.getElementById("dl-latest");
-      if (linkEl && (rel.setup || rel.zip || rel.client)) linkEl.href = rel.setup || rel.zip || rel.client;
+      if (linkEl && (rel.gameSetup || rel.setup || rel.zip || rel.client)) {
+        linkEl.href = rel.gameSetup || rel.setup || rel.zip || rel.client;
+      }
       var portableEl = document.getElementById("dl-portable");
       if (portableEl && (rel.zip || rel.client)) portableEl.href = rel.zip || rel.client;
     }
@@ -513,11 +515,11 @@
       var date = rel.date ? new Date(rel.date).toLocaleDateString("ru-RU") : "";
       var links = "";
       if (registered) {
-        if (rel.setup) {
-          links += '<a class="version-btn primary" href="' + rel.setup + '" target="_blank" rel="noopener">⬇ Установщик</a>';
+        if (rel.gameSetup) {
+          links += '<a class="version-btn primary" href="' + rel.gameSetup + '" target="_blank" rel="noopener">⬇ Игра (установщик)</a>';
         }
-        if (rel.client) {
-          links += '<a class="version-btn" href="' + rel.client + '" target="_blank" rel="noopener">клиент (exe)</a>';
+        if (rel.setup) {
+          links += '<a class="version-btn" href="' + rel.setup + '" target="_blank" rel="noopener">ядро (установщик)</a>';
         }
         if (rel.zip) {
           links += '<a class="version-btn" href="' + rel.zip + '" target="_blank" rel="noopener">всё (zip)</a>';

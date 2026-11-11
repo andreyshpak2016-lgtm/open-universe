@@ -26,12 +26,13 @@ if ($rels.Count -gt 0) { $latestTag = $rels[0].tag_name }
 $list = @()
 foreach ($rel in $rels) {
   $assets = @($rel.assets)
-  # Установщик — главный файл для скачивания (ставит всё и делает ярлыки).
+  # Установщик ГРАФИЧЕСКОЙ игры — главное, что нужно игроку.
+  $gameSetup = ($assets | Where-Object { $_.name -match '^OpenUniverse-Game-Setup.*\.exe$' } | Select-Object -First 1)
+  # Установщик консольного ядра (сервер + клиенты, без графики).
   $setup  = ($assets | Where-Object { $_.name -match '^OpenUniverse-Setup.*\.exe$' } | Select-Object -First 1)
-  # Отдельный консольный клиент (для тех, кому нужен только exe).
   $client = ($assets | Where-Object { $_.name -match '^ou-netclient.*\.exe$' } | Select-Object -First 1)
   $zip    = ($assets | Where-Object { $_.name -match '\.zip$' } | Select-Object -First 1)
-  $primary = if ($setup) { $setup } elseif ($client) { $client } else { $zip }
+  $primary = if ($gameSetup) { $gameSetup } elseif ($setup) { $setup } elseif ($client) { $client } else { $zip }
 
   $list += [PSCustomObject]@{
     tag        = $rel.tag_name
@@ -40,6 +41,7 @@ foreach ($rel in $rels) {
     latest     = ($rel.tag_name -eq $latestTag)
     prerelease = [bool]$rel.prerelease
     size       = if ($primary) { [int64]$primary.size } else { 0 }
+    gameSetup  = if ($gameSetup) { $gameSetup.browser_download_url } else { $null }
     setup      = if ($setup) { $setup.browser_download_url } else { $null }
     setupSize  = if ($setup) { [int64]$setup.size } else { 0 }
     client     = if ($client) { $client.browser_download_url } else { $null }

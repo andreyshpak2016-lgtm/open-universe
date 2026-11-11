@@ -6,7 +6,7 @@
   <title>Open Universe — MMO-песочница в открытом космосе</title>
   <meta name="description" content="Open Universe — единый живой космос, воксельная постройка, игрок-экономика и программируемые конструкции. План разработки с живым прогрессом." />
   <link rel="icon" href="assets/blackhole.svg" type="image/svg+xml" />
-  <link rel="stylesheet" href="styles.css?v=0.24.0" />
+  <link rel="stylesheet" href="styles.css?v=0.24.1" />
 </head>
 <body>
 
@@ -461,9 +461,9 @@ $ cargo run -p ou-render --release -- lod 1280 720
           <h3>Ядро игры (Windows x64)</h3>
           <p class="dl-desc">Сервер единого шарда и клиент: детерминированная симуляция, tick loop 30 Гц, предсказание и реконсиляция. Графический клиент на Unreal Engine 5 собирается из <code>client/</code> (см. <code>tools/build-client.ps1</code>).</p>
           <ul class="dl-files">
+            <li><code>OpenUniverse.exe</code> — <b>игра с графикой</b> (Unreal Engine 5): планеты, корабль, сеть</li>
             <li><code>ou-netd.exe</code> — сервер: запускает мир</li>
-            <li><code>ou-netclient.exe</code> — игрок: подключается к серверу</li>
-            <li><code>ou-netrender.exe</code> — рисует мир по сети</li>
+            <li><code>ou-netclient.exe</code> — консольный игрок (без графики)</li>
             <li><code>ou-render.exe</code> — рендер сцен в PNG</li>
             <li>плюс демо: экономика, бой, шардирование, редактор, скрипты</li>
           </ul>
@@ -495,11 +495,11 @@ $ cargo run -p ou-render --release -- lod 1280 720
           <div id="dl-unlocked" class="dl-unlocked" hidden>
             <p class="dl-note" id="dl-welcome" style="margin-top:12px"></p>
             <div class="dl-actions" style="margin-top:10px">
-              <a class="btn primary" id="dl-latest" href="https://github.com/andreyshpak2016-lgtm/open-universe/releases/latest" target="_blank" rel="noopener">⬇ Скачать установщик</a>
-              <a class="btn ghost" id="dl-portable" href="https://github.com/andreyshpak2016-lgtm/open-universe/releases/latest" target="_blank" rel="noopener">Портативная сборка (zip)</a>
+              <a class="btn primary" id="dl-latest" href="https://github.com/andreyshpak2016-lgtm/open-universe/releases/latest" target="_blank" rel="noopener">⬇ Скачать игру (установщик)</a>
+              <a class="btn ghost" id="dl-portable" href="https://github.com/andreyshpak2016-lgtm/open-universe/releases/latest" target="_blank" rel="noopener">Ядро без графики (zip)</a>
               <button class="btn ghost" type="button" id="dl-logout">Выйти из профиля</button>
             </div>
-            <p class="dl-note" style="margin-top:8px">Установщик <code>OpenUniverse-Setup-*.exe</code> поставит игру, создаст ярлыки в меню «Пуск» и на рабочем столе и запустит её.</p>
+            <p class="dl-note" style="margin-top:8px">Установщик <code>OpenUniverse-Game-Setup-*.exe</code> ставит <b>игру с графикой</b> (UE5) и ярлыки. Движок Unreal устанавливать не нужно.</p>
           </div>
         </div>
 
@@ -605,7 +605,7 @@ powershell -File tools/build-client.ps1
     <span aria-hidden="true">❤</span> Стать спонсором
   </a>
 
-  <script src="data.js?v=0.24.0"></script>
-  <script src="app.js?v=0.24.0"></script>
+  <script src="data.js?v=0.24.1"></script>
+  <script src="app.js?v=0.24.1"></script>
 </body>
 </html>
