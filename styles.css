@@ -386,6 +386,32 @@ section .lead { color: var(--muted); max-width: 760px; margin: 0 0 34px; }
 .field-error { color: #ff8a8a; font-size: .85rem; margin: 0 0 12px; }
 #dl-welcome { color: var(--accent2); }
 
+/* Спонсорство */
+.nav-sponsor {
+  color: #ffb3c7 !important; font-weight: 700;
+  border: 1px solid rgba(255, 120, 160, .45); border-radius: 999px; padding: 6px 12px;
+}
+.nav-sponsor:hover { background: rgba(255, 120, 160, .12); text-decoration: none; }
+.sponsor-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+.sponsor-card { padding: 26px; display: flex; flex-direction: column; align-items: flex-start; gap: 10px; }
+.sponsor-card h3 { margin: 0; font-size: 1.15rem; }
+.sponsor-card p { color: var(--muted); margin: 0; font-size: .93rem; }
+.sponsor-ico { font-size: 1.8rem; line-height: 1; }
+.sponsor-card .btn { margin-top: 6px; }
+.sponsor-fab {
+  position: fixed; right: 20px; bottom: 20px; z-index: 90;
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 12px 18px; border-radius: 999px; font-weight: 800; font-size: .92rem;
+  color: #2a0713; text-decoration: none;
+  background: linear-gradient(90deg, #ff9db6, #ff6f91);
+  box-shadow: 0 8px 26px rgba(255, 110, 145, .38);
+}
+.sponsor-fab:hover { text-decoration: none; filter: brightness(1.06); transform: translateY(-1px); }
+@media (max-width: 720px) {
+  .sponsor-grid { grid-template-columns: 1fr; }
+  .sponsor-fab { right: 12px; bottom: 12px; padding: 10px 14px; font-size: .82rem; }
+}
+
 footer { padding: 40px 0 60px; color: var(--muted); font-size: .86rem; border-top: 1px solid var(--panel-brd); }
 footer .wrap { display: flex; justify-content: space-between; gap: 20px; flex-wrap: wrap; }
 

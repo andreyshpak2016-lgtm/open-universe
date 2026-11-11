@@ -82,6 +82,26 @@ $files = @(
 Compress-Archive -Path $files -DestinationPath $zip -Force
 Write-Host ("Артефакт: {0} ({1:N0} байт)" -f $zip, (Get-Item $zip).Length) -ForegroundColor Green
 
+# 3a. Установщик (Inno Setup): один .exe, который всё ставит и делает ярлыки.
+$setup = Join-Path $dist "OpenUniverse-Setup-$Version.exe"
+$iscc = @(
+  (Join-Path $env:LOCALAPPDATA 'Programs\Inno Setup 6\ISCC.exe'),
+  'C:\Program Files (x86)\Inno Setup 6\ISCC.exe',
+  'C:\Program Files\Inno Setup 6\ISCC.exe'
+) | Where-Object { Test-Path $_ } | Select-Object -First 1
+
+if ($iscc) {
+  Write-Host "--> установщик (Inno Setup)" -ForegroundColor Yellow
+  & $iscc "/DMyVersion=$Version" "/DSourceRoot=$root" (Join-Path $root 'tools\installer.iss') | Out-Null
+  if (Test-Path $setup) {
+    Write-Host ("Установщик: {0} ({1:N1} МБ)" -f $setup, ((Get-Item $setup).Length / 1MB)) -ForegroundColor Green
+  } else {
+    Write-Host "Установщик не собран (проверьте ISCC)" -ForegroundColor DarkYellow
+  }
+} else {
+  Write-Host "Inno Setup не найден — установщик пропущен (winget install JRSoftware.InnoSetup)" -ForegroundColor DarkYellow
+}
+
 # Отдельные .exe: чтобы на сайте каждая версия давала прямую ссылку на клиент,
 # а не только на архив. Только реальные исполняемые файлы.
 $exes = $files | Where-Object { $_ -match '\.exe$' -and (Test-Path $_) }
@@ -108,8 +128,10 @@ if ($Publish) {
 
   Write-Host "--> gh release create $tag" -ForegroundColor Yellow
   $notesFile = Join-Path $root 'CHANGELOG.md'
-  # Прикладываем архив И отдельные .exe (клиент/сервер можно скачать поштучно).
-  $upload = @($exes) + @($zip)
+  # Прикладываем установщик, отдельные .exe (клиент/сервер поштучно) и архив.
+  $upload = @($exes)
+  if (Test-Path $setup) { $upload = @($setup) + $upload }
+  $upload = $upload + @($zip)
   & $gh release create $tag @upload `
     --repo andreyshpak2016-lgtm/open-universe `
     --title "Open Universe $Version" `

@@ -344,13 +344,16 @@
       var verEl = document.getElementById("dl-version");
       if (verEl && rel.tag) verEl.textContent = rel.tag;
       var sizeEl = document.getElementById("dl-size");
-      if (sizeEl && rel.size) {
-        sizeEl.textContent = "~" + (rel.size / 1048576).toFixed(2).replace(".", ",") + " МБ";
+      var bytes = rel.setupSize || rel.size;
+      if (sizeEl && bytes) {
+        sizeEl.textContent = "~" + (bytes / 1048576).toFixed(2).replace(".", ",") + " МБ";
       }
       var dateEl = document.getElementById("dl-date");
       if (dateEl && rel.date) dateEl.textContent = new Date(rel.date).toLocaleDateString("ru-RU");
       var linkEl = document.getElementById("dl-latest");
-      if (linkEl && (rel.zip || rel.client)) linkEl.href = rel.zip || rel.client;
+      if (linkEl && (rel.setup || rel.zip || rel.client)) linkEl.href = rel.setup || rel.zip || rel.client;
+      var portableEl = document.getElementById("dl-portable");
+      if (portableEl && (rel.zip || rel.client)) portableEl.href = rel.zip || rel.client;
     }
     // 1) releases.json рядом с сайтом (без GitHub API).
     fetch("releases.json", { cache: "no-store" })
@@ -498,8 +501,11 @@
       var date = rel.date ? new Date(rel.date).toLocaleDateString("ru-RU") : "";
       var links = "";
       if (registered) {
+        if (rel.setup) {
+          links += '<a class="version-btn primary" href="' + rel.setup + '" target="_blank" rel="noopener">⬇ Установщик</a>';
+        }
         if (rel.client) {
-          links += '<a class="version-btn primary" href="' + rel.client + '" target="_blank" rel="noopener">⬇ клиент (exe)</a>';
+          links += '<a class="version-btn" href="' + rel.client + '" target="_blank" rel="noopener">клиент (exe)</a>';
         }
         if (rel.zip) {
           links += '<a class="version-btn" href="' + rel.zip + '" target="_blank" rel="noopener">всё (zip)</a>';

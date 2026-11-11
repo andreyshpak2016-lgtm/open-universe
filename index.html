@@ -6,7 +6,7 @@
   <title>Open Universe — MMO-песочница в открытом космосе</title>
   <meta name="description" content="Open Universe — единый живой космос, воксельная постройка, игрок-экономика и программируемые конструкции. План разработки с живым прогрессом." />
   <link rel="icon" href="assets/blackhole.svg" type="image/svg+xml" />
-  <link rel="stylesheet" href="styles.css?v=0.22.1" />
+  <link rel="stylesheet" href="styles.css?v=0.23.0" />
 </head>
 <body>
 
@@ -26,6 +26,7 @@
       <a href="#progress">Прогресс</a>
       <a href="#roadmap">Дорожная карта</a>
       <a href="report.html" class="nav-report">📊 Отчёт</a>
+      <a href="#sponsor" class="nav-sponsor">❤ Стать спонсором</a>
       <a href="#download" class="nav-cta">⬇ Скачать</a>
     </nav>
   </header>
@@ -494,9 +495,11 @@ $ cargo run -p ou-render --release -- lod 1280 720
           <div id="dl-unlocked" class="dl-unlocked" hidden>
             <p class="dl-note" id="dl-welcome" style="margin-top:12px"></p>
             <div class="dl-actions" style="margin-top:10px">
-              <a class="btn primary" id="dl-latest" href="https://github.com/andreyshpak2016-lgtm/open-universe/releases/latest" target="_blank" rel="noopener">⬇ Скачать последнюю версию</a>
+              <a class="btn primary" id="dl-latest" href="https://github.com/andreyshpak2016-lgtm/open-universe/releases/latest" target="_blank" rel="noopener">⬇ Скачать установщик</a>
+              <a class="btn ghost" id="dl-portable" href="https://github.com/andreyshpak2016-lgtm/open-universe/releases/latest" target="_blank" rel="noopener">Портативная сборка (zip)</a>
               <button class="btn ghost" type="button" id="dl-logout">Выйти из профиля</button>
             </div>
+            <p class="dl-note" style="margin-top:8px">Установщик <code>OpenUniverse-Setup-*.exe</code> поставит игру, создаст ярлыки в меню «Пуск» и на рабочем столе и запустит её.</p>
           </div>
         </div>
 
@@ -562,6 +565,33 @@ powershell -File tools/build-client.ps1
     </div>
   </section>
 
+  <section id="sponsor">
+    <div class="wrap">
+      <h2>Поддержать проект</h2>
+      <p class="lead">Open Universe делается как открытый проект. Поддержка идёт на серверы, сборки и разработку — и ускоряет выход новых версий.</p>
+      <div class="sponsor-grid">
+        <div class="panel sponsor-card">
+          <div class="sponsor-ico">❤</div>
+          <h3>Стать спонсором</h3>
+          <p>Ежемесячная поддержка через GitHub Sponsors — деньги идут напрямую на развитие игры. Отменить можно в любой момент.</p>
+          <a class="btn primary" id="sponsor-main"
+             href="https://github.com/sponsors/andreyshpak2016-lgtm"
+             target="_blank" rel="noopener">❤ Стать спонсором</a>
+          <p class="dl-note">Оплата картой: Visa, Mastercard, Мир и другие — через защищённую форму GitHub.</p>
+        </div>
+        <div class="panel sponsor-card">
+          <div class="sponsor-ico">⭐</div>
+          <h3>Поддержать бесплатно</h3>
+          <p>Не хочется платить — поставьте звезду на GitHub, расскажите о проекте и присылайте идеи в issues. Это тоже очень помогает.</p>
+          <a class="btn ghost"
+             href="https://github.com/andreyshpak2016-lgtm/open-universe"
+             target="_blank" rel="noopener">⭐ Звезда на GitHub</a>
+          <p class="dl-note">Открытый код, открытая разработка.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
   <footer>
     <div class="wrap">
       <span>© <span id="year"></span> Open Universe — концепт-проект.</span>
@@ -569,7 +599,13 @@ powershell -File tools/build-client.ps1
     </div>
   </footer>
 
-  <script src="data.js?v=0.22.1"></script>
-  <script src="app.js?v=0.22.1"></script>
+  <!-- Плавающая кнопка «Стать спонсором»: видна на любой странице сайта -->
+  <a class="sponsor-fab" href="https://github.com/sponsors/andreyshpak2016-lgtm"
+     target="_blank" rel="noopener" title="Поддержать развитие Open Universe">
+    <span aria-hidden="true">❤</span> Стать спонсором
+  </a>
+
+  <script src="data.js?v=0.23.0"></script>
+  <script src="app.js?v=0.23.0"></script>
 </body>
 </html>
