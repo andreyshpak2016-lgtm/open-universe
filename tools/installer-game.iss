@@ -46,9 +46,11 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"
 
 [Files]
-; Вся собранная игра (клиент UE5 + данные).
-Source: "{#SourceRoot}\client\Packaged\Windows\OpenUniverse\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
-; Сервер и демо-утилиты рядом (для одиночного запуска мира).
+; Вся собранная игра: лаунчер OpenUniverse.exe, папки OpenUniverse\ и Engine\.
+; Именно так — от Packaged\Windows\*, потому что лаунчер лежит в его корне
+; и ищет движок и ассеты в соседних папках.
+Source: "{#SourceRoot}\client\Packaged\Windows\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+; Сервер и демо-утилиты рядом (для игры по сети).
 Source: "{#SourceRoot}\server\target\release\ou-*.exe"; DestDir: "{app}\server"; Flags: ignoreversion
 Source: "{#SourceRoot}\tools\server.ps1"; DestDir: "{app}\server"; Flags: ignoreversion
 Source: "{#SourceRoot}\tools\ou-common.ps1"; DestDir: "{app}\server"; Flags: ignoreversion
