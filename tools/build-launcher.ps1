@@ -20,11 +20,13 @@ if (-not $csc) { throw "csc.exe не найден (.NET Framework)" }
 $fw = Split-Path $csc   # ...\v4.0.30319 (csc лежит прямо в нём)
 $sys = Join-Path $fw 'System.Windows.Forms.dll'
 $drw = Join-Path $fw 'System.Drawing.dll'
+$web = Join-Path $fw 'System.Web.Extensions.dll'
 if (-not (Test-Path $sys)) { throw "Не найден $sys" }
+if (-not (Test-Path $web)) { throw "Не найден $web" }
 
 Write-Host "== Сборка лаунчера ==" -ForegroundColor Cyan
 & $csc /nologo /target:winexe /optimize+ "/out:$out" `
-  "/r:$sys" "/r:$drw" `
+  "/r:$sys" "/r:$drw" "/r:$web" `
   /r:System.dll /r:System.Core.dll /r:System.Net.Http.dll `
   "$src"
 if ($LASTEXITCODE -ne 0) { throw "Компиляция не удалась" }
