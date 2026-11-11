@@ -20,6 +20,7 @@
       <a href="#gallery">Галерея</a>
       <a href="#tech">Технологии</a>
       <a href="#architecture">Архитектура</a>
+      <a href="#engine">Движок</a>
       <a href="#code">Код</a>
       <a href="#plan">План</a>
       <a href="#progress">Прогресс</a>
@@ -234,6 +235,32 @@ VWAP = 26 · Всего сделок в журнале: 2</code></pre>
       </div>
     </section>
 
+    <section id="engine">
+      <div class="wrap">
+        <h2>Движок: рендер мира</h2>
+        <p class="lead">По ADR-0001 клиент — Unreal Engine 5, но пока он не установлен, я написал <b>работающий рендерер на Rust</b>: настоящую трассировку лучей на CPU. Он рисует <b>тот же мир</b>, что приходит по сети, и это доказуемо — кадры ниже сгенерированы кодом, который лежит в репозитории.</p>
+
+        <div class="grid3" style="margin-bottom:24px">
+          <div class="card"><div class="ico">🎥</div><h3>Трассировка лучей</h3><p>Пересечения луча со сферами (планеты, звёзды) и с ориентированными блоками (корабли, астероиды). Сглаживание 2×2 на пиксель.</p></div>
+          <div class="card"><div class="ico">🌍</div><h3>Процедурные миры</h3><p>Рельеф планеты и туманности — фрактальный шум (value noise с интерполяцией). Всё детерминировано, без внешних библиотек.</p></div>
+          <div class="card"><div class="ico">📦</div><h3>Блочные конструкции</h3><p>Корабли и астероиды собраны из блоков — та же воксельная эстетика, что и в игровом строительстве.</p></div>
+        </div>
+
+        <div class="gallery gallery-3">
+          <figure><img src="assets/render-ship.png" alt="Рендер: блочный корабль у планеты" loading="lazy" /><figcaption>Корабль у обитаемой планеты</figcaption></figure>
+          <figure><img src="assets/render-blackhole.png" alt="Рендер: чёрная дыра с аккреционным диском" loading="lazy" /><figcaption>Чёрная дыра и аккреционный диск</figcaption></figure>
+          <figure><img src="assets/render-asteroids.png" alt="Рендер: пояс астероидов" loading="lazy" /><figcaption>Пояс астероидов и добыча</figcaption></figure>
+        </div>
+
+        <pre class="codeblock"><code>$ cargo run -p ou-render --release -- all 1280 720
+  ship       1280×720  1.26 с  (731991 пикс/с)  -> render-ship.png
+  blackhole  1280×720  7.29 с  (126413 пикс/с)  -> render-blackhole.png
+  asteroids  1280×720  2.30 с  (400216 пикс/с)  -> render-asteroids.png</code></pre>
+
+        <p class="lead" style="margin-top:16px;font-size:.88rem">Код: <code>server/crates/render</code> (13 тестов). Компоненты — камера, floating origin, сфера-планета, блочная конструкция — переносятся в UE5 один-к-одному.</p>
+      </div>
+    </section>
+
     <section id="plan">
       <div class="wrap">
         <h2>План разработки</h2>
@@ -292,6 +319,7 @@ VWAP = 26 · Всего сделок в журнале: 2</code></pre>
             <li><code>ou-persist-demo.exe</code> — сохранение и восстановление мира</li>
             <li><code>ou-market-demo.exe</code> — рынок, стакан, сделки, производство</li>
             <li><code>ou-combat-demo.exe</code> — бой, щиты, броня, территории</li>
+            <li><code>ou-render.exe</code> — рендерер мира (трассировка лучей → PNG)</li>
           </ul>
           <p class="dl-meta">Размер: <b id="dl-size">~0.2 МБ</b> · Платформа: Windows 10+ · Дата: <span id="dl-date">—</span></p>
           <div class="dl-actions">

@@ -9,6 +9,7 @@ members = [
   "crates/persist",
   "crates/economy",
   "crates/combat",
+  "crates/render",
   "crates/server",
   "crates/client",
 ]

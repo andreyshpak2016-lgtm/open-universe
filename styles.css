@@ -285,6 +285,8 @@ section .lead { color: var(--muted); max-width: 760px; margin: 0 0 34px; }
 }
 
 /* code / stats */
+.gallery-3 { grid-template-columns: repeat(3, 1fr); }
+.gallery-3 figure { aspect-ratio: 16/9; }
 #codestats { width: 100%; border-collapse: collapse; font-size: .9rem; }
 #codestats th, #codestats td { padding: 10px 14px; text-align: left; border-bottom: 1px solid rgba(255,255,255,.07); }
 #codestats th { color: var(--txt); font-size: .82rem; text-transform: uppercase; letter-spacing: .6px; }
@@ -325,6 +327,7 @@ footer .wrap { display: flex; justify-content: space-between; gap: 20px; flex-wr
 
 @media (max-width: 900px) {
   .gallery { grid-template-columns: repeat(2, 1fr); }
+  .gallery-3 { grid-template-columns: 1fr; }
   .grid3 { grid-template-columns: 1fr; }
   .progress-head { grid-template-columns: 1fr; }
   .download-grid { grid-template-columns: 1fr; }

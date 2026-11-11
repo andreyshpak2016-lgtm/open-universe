@@ -1,0 +1,18 @@
+[package]
+name = "ou-render"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Open Universe: софтверный рендерер (трассировка лучей, без GPU)"
+
+[lib]
+name = "ou_render"
+path = "src/lib.rs"
+
+[[bin]]
+name = "ou-render"
+path = "src/bin/ou-render.rs"
+
+[dependencies]
+ou-protocol = { path = "../protocol" }
+ou-sim = { path = "../sim" }

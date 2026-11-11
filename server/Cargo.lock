@@ -48,6 +48,14 @@ name = "ou-protocol"
 version = "0.1.0"
 
 [[package]]
+name = "ou-render"
+version = "0.1.0"
+dependencies = [
+ "ou-protocol",
+ "ou-sim",
+]
+
+[[package]]
 name = "ou-server"
 version = "0.1.0"
 dependencies = [
