@@ -18,6 +18,9 @@
 - `assets/er-data.svg` — ER-диаграмма данных (таблицы и связи)
 - `assets/seq-frame.svg` — sequence-диаграмма одного сетевого кадра
 - `docs/adr-0001-engine.md` — решение о выборе движка (Unreal Engine 5) и стека
+- `docs/economy-model.md` — экономическая модель и результаты симуляции рынка
+- `docs/market-research.md` — исследование рынка и конкурентов
+- `docs/team.md` — роли и распределение ответственности
 - `client/` — каркас клиента на UE5 (C++): floating origin, сеть, корабль, воксельные планеты
 - `server/` — рабочее серверное ядро на Rust (protocol, sim, server, client)
 
@@ -69,6 +72,7 @@ cargo run -p ou-render --release -- voxel 900 506   # воксельная пл�
 cargo run -p ou-render --release -- dig 640 360     # копание (до/после)
 cargo run -p ou-sim --bin ou-landing-demo           # посадка на поверхность
 cargo run -p ou-script --bin ou-script-demo         # скриптинг конструкций
+cargo run -p ou-economy --bin ou-market-sim         # симуляция рынка
 ```
 
 ### Рендер по сети (живой мир с сервера)

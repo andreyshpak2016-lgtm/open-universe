@@ -23,6 +23,10 @@
 
 use std::collections::BTreeMap;
 
+pub mod market_sim;
+
+pub use market_sim::{Agent, MarketTick, Role, SimConfig, SimResult, Simulator};
+
 /// Идентификатор предмета или ресурса.
 pub type ItemId = u32;
 /// Идентификатор владельца (персонаж или организация).
