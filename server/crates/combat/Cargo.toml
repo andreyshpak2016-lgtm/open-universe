@@ -1,0 +1,14 @@
+[package]
+name = "ou-combat"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Open Universe: боевые системы — оружие, щиты, броня, территории"
+
+[lib]
+name = "ou_combat"
+path = "src/lib.rs"
+
+[dependencies]
+ou-protocol = { path = "../protocol" }
+ou-sim = { path = "../sim" }

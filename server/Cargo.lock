@@ -12,6 +12,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "ou-combat"
+version = "0.1.0"
+dependencies = [
+ "ou-protocol",
+ "ou-sim",
+]
+
+[[package]]
 name = "ou-economy"
 version = "0.1.0"
 dependencies = [

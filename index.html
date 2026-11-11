@@ -199,12 +199,13 @@
           <table id="codestats">
             <thead><tr><th>Показатель</th><th>Значение</th></tr></thead>
             <tbody>
-              <tr><td>Тесты ядра</td><td class="ok">80 пройдено</td></tr>
-              <tr><td>Крейты (модули)</td><td>9 (protocol, sim, spatial, net, shard, persist, economy, server, client)</td></tr>
+              <tr><td>Тесты ядра</td><td class="ok">97 пройдено</td></tr>
+              <tr><td>Крейты (модули)</td><td>10 (protocol, sim, spatial, net, shard, persist, economy, combat, server, client)</td></tr>
               <tr><td>Частота тика симуляции</td><td>30 Гц (149 тиков за 5 с — проверено)</td></tr>
               <tr><td>Персистентность</td><td class="ok">мир и экономика переживают перезапуск</td></tr>
               <tr><td>Рынок</td><td>стакан, спред, VWAP, приоритет цены/времени</td></tr>
               <tr><td>Производство</td><td>7-ступенчатая цепочка: руда → корабль</td></tr>
+              <tr><td>Бой</td><td class="ok">щит, броня, типы урона, территории и налоги</td></tr>
               <tr><td>Точность позиции по проводу</td><td>0.1 мм (i32, ±214 км)</td></tr>
               <tr><td>Сжатие снапшотов</td><td>varint + zigzag (мелкие числа — 1–3 байта)</td></tr>
               <tr><td>Пустая дельта + ack (вне зоны видимости)</td><td>29 байт</td></tr>
@@ -215,20 +216,19 @@
           </table>
         </div>
 
-        <pre class="codeblock"><code>$ cargo test --workspace   →  80 passed (9 крейтов)
+        <pre class="codeblock"><code>$ cargo test --workspace   →  97 passed (10 крейтов)
+
+$ cargo run -p ou-combat --bin ou-combat-demo
+=== Шанс попадания (1000 выстрелов) ===
+  автопушка   дальность 1500:  97%  80%  62%  44%  31%
+=== Дуэль: лазер против рельсотрона ===
+  тик  8: щит 164 ( 54%), броня 308 ( 77%)
+  тик 27: щит   0 (  0%), броня   0 (  0%)  ← уничтожен
+Победитель по урону: игрок 2 (рельсотрон)
 
 $ cargo run -p ou-economy --bin ou-market-demo
-=== Стакан руды ===
-  продажи (от лучшей): [(25, 60), (28, 100), (30, 40)]
-=== Покупатель берёт 100 руды по лимиту 30 ===
   сделка: продавец 2 → покупатель 9, 60 шт по 25 (итого 1500)
-  сделка: продавец 3 → покупатель 9, 40 шт по 28 (итого 1120)
-VWAP = 26 · Всего сделок в журнале: 2
-
-$ cargo run -p ou-server --bin ou-netd -- 127.0.0.1:7777 10 ./world
-=== ЗАПУСК 2 (загрузка мира) ===
-мир загружен: 1 сущностей, тик 179
-[выход] мир сохранён: 106 байт, тик 477</code></pre>
+VWAP = 26 · Всего сделок в журнале: 2</code></pre>
 
         <p class="lead" style="margin-top:16px;font-size:.88rem">Исходники: <code>server/crates/{protocol,sim,server,client}</code> · описание — <code>server/README.md</code>.</p>
       </div>
@@ -291,6 +291,7 @@ $ cargo run -p ou-server --bin ou-netd -- 127.0.0.1:7777 10 ./world
             <li><code>ou-shard-demo.exe</code> — шардирование и миграции</li>
             <li><code>ou-persist-demo.exe</code> — сохранение и восстановление мира</li>
             <li><code>ou-market-demo.exe</code> — рынок, стакан, сделки, производство</li>
+            <li><code>ou-combat-demo.exe</code> — бой, щиты, броня, территории</li>
           </ul>
           <p class="dl-meta">Размер: <b id="dl-size">~0.2 МБ</b> · Платформа: Windows 10+ · Дата: <span id="dl-date">—</span></p>
           <div class="dl-actions">
