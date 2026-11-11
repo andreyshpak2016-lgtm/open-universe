@@ -71,6 +71,7 @@ $files = @(
   (Join-Path $server 'target\release\ou-market-sim.exe'),
   (Join-Path $server 'target\release\ou-build-demo.exe'),
   (Join-Path $server 'target\release\ou-dump-packet.exe'),
+  (Join-Path $root 'tools\play.ps1'),
   (Join-Path $root 'README.md')
 )
 Compress-Archive -Path $files -DestinationPath $zip -Force

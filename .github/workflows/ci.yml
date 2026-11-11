@@ -1,4 +1,4 @@
-name: ci
+﻿name: ci
 
 on:
   push:
@@ -16,15 +16,15 @@ permissions:
 
 jobs:
   test:
-    name: Тесты и сборка ядра
+    name: РўРµСЃС‚С‹ Рё СЃР±РѕСЂРєР° СЏРґСЂР°
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Установка Rust
+      - name: РЈСЃС‚Р°РЅРѕРІРєР° Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Кэш cargo
+      - name: РљСЌС€ cargo
         uses: actions/cache@v4
         with:
           path: |
@@ -33,28 +33,28 @@ jobs:
             server/target
           key: ${{ runner.os }}-cargo-${{ hashFiles('server/**/Cargo.toml') }}
 
-      - name: Тесты
+      - name: РўРµСЃС‚С‹
         working-directory: server
         run: cargo test --workspace
 
-      - name: Проверка клиентского протокола (C++)
+      - name: РџСЂРѕРІРµСЂРєР° РєР»РёРµРЅС‚СЃРєРѕРіРѕ РїСЂРѕС‚РѕРєРѕР»Р° (C++)
         shell: pwsh
         run: |
-          # Стенд разбирает реальный пакет сервера тем же кодом, что и клиент UE5.
+          # РЎС‚РµРЅРґ СЂР°Р·Р±РёСЂР°РµС‚ СЂРµР°Р»СЊРЅС‹Р№ РїР°РєРµС‚ СЃРµСЂРІРµСЂР° С‚РµРј Р¶Рµ РєРѕРґРѕРј, С‡С‚Рѕ Рё РєР»РёРµРЅС‚ UE5.
           ./tools/test-client.ps1
 
-      - name: Сборка (release)
+      - name: РЎР±РѕСЂРєР° (release)
         working-directory: server
         run: cargo build --release --workspace
 
-      - name: Упаковка артефакта
+      - name: РЈРїР°РєРѕРІРєР° Р°СЂС‚РµС„Р°РєС‚Р°
         shell: pwsh
         run: |
-          # Версия: из имени тега (vX.Y.Z) или из файла VERSION.
+          # Р’РµСЂСЃРёСЏ: РёР· РёРјРµРЅРё С‚РµРіР° (vX.Y.Z) РёР»Рё РёР· С„Р°Р№Р»Р° VERSION.
           $ref = "${{ github.ref_name }}"
           if ($ref -match '^v(\d+\.\d+\.\d+)$') { $v = $Matches[1] } else { $v = (Get-Content VERSION -Raw).Trim() }
           New-Item -ItemType Directory -Force -Path dist | Out-Null
-          # Собираем единый набор: демо + сетевые + генератор + шард.
+          # РЎРѕР±РёСЂР°РµРј РµРґРёРЅС‹Р№ РЅР°Р±РѕСЂ: РґРµРјРѕ + СЃРµС‚РµРІС‹Рµ + РіРµРЅРµСЂР°С‚РѕСЂ + С€Р°СЂРґ.
           $files = @(
             'server/target/release/ou-server.exe',
             'server/target/release/ou-client.exe',
@@ -72,18 +72,19 @@ jobs:
             'server/target/release/ou-market-sim.exe',
             'server/target/release/ou-build-demo.exe',
             'server/target/release/ou-dump-packet.exe',
+            'tools/play.ps1',
             'README.md'
           ) | Where-Object { Test-Path $_ }
           Compress-Archive -Path $files -DestinationPath "dist/open-universe-$v-windows-x64.zip" -Force
-          Write-Host "Собран архив для версии $v с $($files.Count) файлами"
+          Write-Host "РЎРѕР±СЂР°РЅ Р°СЂС…РёРІ РґР»СЏ РІРµСЂСЃРёРё $v СЃ $($files.Count) С„Р°Р№Р»Р°РјРё"
 
-      - name: Приложить сборку к релизу
+      - name: РџСЂРёР»РѕР¶РёС‚СЊ СЃР±РѕСЂРєСѓ Рє СЂРµР»РёР·Сѓ
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
           files: dist/*.zip
-          # Заметки не генерируем автоматически: релиз создаётся с CHANGELOG,
-          # а этот шаг лишь догружает артефакт (идемпотентно).
+          # Р—Р°РјРµС‚РєРё РЅРµ РіРµРЅРµСЂРёСЂСѓРµРј Р°РІС‚РѕРјР°С‚РёС‡РµСЃРєРё: СЂРµР»РёР· СЃРѕР·РґР°С‘С‚СЃСЏ СЃ CHANGELOG,
+          # Р° СЌС‚РѕС‚ С€Р°Рі Р»РёС€СЊ РґРѕРіСЂСѓР¶Р°РµС‚ Р°СЂС‚РµС„Р°РєС‚ (РёРґРµРјРїРѕС‚РµРЅС‚РЅРѕ).
           generate_release_notes: false
           draft: false
           name: Open Universe ${{ github.ref_name }}

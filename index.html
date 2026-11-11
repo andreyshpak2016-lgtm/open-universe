@@ -439,47 +439,78 @@ $ cargo run -p ou-render --release -- lod 1280 720
 
   <section id="download">
     <div class="wrap">
-      <h2>Скачать</h2>
-      <p class="lead">Каждая версия игры публикуется как релиз на GitHub. Ссылки обновляются при выпуске новой версии.</p>
+      <h2>Скачать и запустить</h2>
+      <p class="lead">Каждая версия публикуется как релиз на GitHub, ссылки обновляются автоматически.</p>
 
       <div class="download-grid">
         <div class="panel dl-card">
           <div class="dl-head">
-            <span class="dl-ver" id="dl-version">v0.1.0</span>
+            <span class="dl-ver" id="dl-version">v0.17.0</span>
             <span class="hero-badge" style="font-size:.72rem"><span class="dot"></span> Последняя версия</span>
           </div>
           <h3>Ядро игры (Windows x64)</h3>
-          <p class="dl-desc">Исполняемые файлы сервера и клиента на Rust: детерминированная симуляция, tick loop 30 Гц, предсказание и реконсиляция.</p>
+          <p class="dl-desc">Сервер единого шарда и клиент: детерминированная симуляция, tick loop 30 Гц, предсказание и реконсиляция. Графического клиента пока нет — каркас UE5 готов, но движок не установлен.</p>
           <ul class="dl-files">
-            <li><code>ou-netd.exe</code> — сервер единого шарда (реальный UDP)</li>
-            <li><code>ou-netclient.exe</code> — клиент с предсказанием и реконсиляцией</li>
-            <li><code>ou-server.exe</code> / <code>ou-client.exe</code> — демо-режимы</li>
-            <li><code>ou-worldgen.exe</code> — генератор звёздных систем</li>
-            <li><code>ou-shard-demo.exe</code> — шардирование и миграции</li>
-            <li><code>ou-persist-demo.exe</code> — сохранение и восстановление мира</li>
-            <li><code>ou-market-demo.exe</code> — рынок, стакан, сделки, производство</li>
-            <li><code>ou-combat-demo.exe</code> — бой, щиты, броня, территории</li>
-            <li><code>ou-render.exe</code> — рендерер мира (трассировка лучей → PNG)</li>
-            <li><code>ou-netrender.exe</code> — рендер живого мира с сервера по UDP</li>
+            <li><code>ou-netd.exe</code> — сервер: запускает мир</li>
+            <li><code>ou-netclient.exe</code> — игрок: подключается к серверу</li>
+            <li><code>ou-netrender.exe</code> — рисует мир по сети</li>
+            <li><code>ou-render.exe</code> — рендер сцен в PNG</li>
+            <li>плюс демо: экономика, бой, шардирование, редактор, скрипты</li>
           </ul>
-          <p class="dl-meta">Размер: <b id="dl-size">~0.2 МБ</b> · Платформа: Windows 10+ · Дата: <span id="dl-date">—</span></p>
+          <p class="dl-meta">Размер: <b id="dl-size">~2 МБ</b> · Платформа: Windows 10+ · Дата: <span id="dl-date">—</span></p>
           <div class="dl-actions">
             <a class="btn primary" id="dl-latest" href="https://github.com/andreyshpak2016-lgtm/open-universe/releases/latest" target="_blank" rel="noopener">⬇ Скачать последнюю версию</a>
-            <a class="btn ghost" href="https://github.com/andreyshpak2016-lgtm/open-universe/releases" target="_blank" rel="noopener">Все версии и changelog</a>
+            <a class="btn ghost" href="https://github.com/andreyshpak2016-lgtm/open-universe/blob/main/docs/running.md" target="_blank" rel="noopener">Подробная инструкция</a>
           </div>
         </div>
 
         <aside class="panel dl-side">
-          <h3>Как запустить</h3>
-          <pre class="codeblock"><code># распакуйте архив и запустите
-ou-server.exe   # сервер: tick loop, дельты
-ou-client.exe   # клиент: предсказание</code></pre>
-          <h3 style="margin-top:18px">Из исходников</h3>
+          <h3>Как запустить (3 шага)</h3>
+          <pre class="codeblock"><code># 1. распакуйте архив
+# 2. в одном окне — сервер:
+ou-netd.exe 127.0.0.1:7777 60
+# 3. в другом — игрок (можно несколько):
+ou-netclient.exe 127.0.0.1:7777 50</code></pre>
+          <p class="dl-note" style="margin-top:10px">Из исходников то же самое:</p>
+          <pre class="codeblock"><code>cd server
+cargo run -p ou-server --bin ou-netd -- 127.0.0.1:7777 60
+cargo run -p ou-client --bin ou-netclient -- 127.0.0.1:7777 50</code></pre>
+          <p class="dl-note" style="margin-top:10px">Или одной командой: <code>powershell -File tools/play.ps1</code></p>
+        </aside>
+      </div>
+
+      <div class="download-grid" style="margin-top:18px">
+        <div class="panel dl-card">
+          <h3>Посмотреть мир «глазами»</h3>
+          <pre class="codeblock"><code># окно 1: сервер
+ou-netd.exe 127.0.0.1:7777 20
+# окно 2: рендер мира по сети (сохранит 4 кадра)
+cargo run -p ou-render --release --bin ou-netrender -- 127.0.0.1:7777 8 4</code></pre>
+          <h3 style="margin-top:16px;font-size:1rem">Демонстрации без сети</h3>
+          <ul class="dl-files">
+            <li><code>ou-worldgen</code> — генерация звёздных систем</li>
+            <li><code>ou-landing-demo</code> — посадка на планету</li>
+            <li><code>ou-market-sim</code> — симуляция экономики</li>
+            <li><code>ou-build-demo</code> — воксельный редактор</li>
+            <li><code>ou-script-demo</code> — скриптинг конструкций</li>
+          </ul>
+        </div>
+
+        <aside class="panel dl-side">
+          <h3>Проверка, что всё работает</h3>
+          <pre class="codeblock"><code>cd server
+cargo test --workspace        # 215 тестов Rust
+
+# проверка C++-клиента на реальном пакете
+powershell -File tools/test-client.ps1</code></pre>
+          <h3 style="margin-top:18px">Сборка из исходников</h3>
           <pre class="codeblock"><code>git clone https://github.com/andreyshpak2016-lgtm/open-universe
 cd open-universe/server
-cargo test --workspace
 cargo build --release</code></pre>
-          <p class="dl-note">Сайт и план разработки открываются локально (файл <code>index.html</code>) — интернет не нужен.</p>
+          <h3 style="margin-top:18px">Клиент на Unreal Engine 5</h3>
+          <pre class="codeblock"><code># после установки UE 5.5+ и VS 2022 (C++)
+powershell -File tools/build-client.ps1</code></pre>
+          <p class="dl-note">Графику сейчас заменяет собственный рендерер на Rust — настоящие кадры в разделе «Движок».</p>
         </aside>
       </div>
     </div>
