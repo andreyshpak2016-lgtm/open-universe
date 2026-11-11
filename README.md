@@ -73,6 +73,7 @@ cargo run -p ou-render --release -- dig 640 360     # копание (до/по�
 cargo run -p ou-sim --bin ou-landing-demo           # посадка на поверхность
 cargo run -p ou-script --bin ou-script-demo         # скриптинг конструкций
 cargo run -p ou-economy --bin ou-market-sim         # симуляция рынка
+cargo run -p ou-build --bin ou-build-demo           # воксельный редактор
 ```
 
 ### Рендер по сети (живой мир с сервера)

@@ -8,7 +8,10 @@
 //! абстрагированы, поэтому ядро можно прогонять в тестах и симуляциях. Реальный
 //! UDP‑транспорт подключается поверх (см. `Transport`).
 
-use ou_protocol::{EntityState, InputFrame, Message, NetId, Snapshot, Vec3};
+use ou_build::{BuildError, Color as BuildColor, VoxelGrid};
+use ou_protocol::{
+    BuildAction, BuildCommand, BuildReason, EntityState, InputFrame, Message, NetId, Snapshot, Vec3,
+};
 use ou_script::ScriptEngine;
 use ou_sim::World;
 use ou_spatial::SpatialGrid;
@@ -54,6 +57,8 @@ pub struct Server {
     pub scripts: ScriptEngine,
     /// Сущность → имя скрипта, который ей управляет.
     pub scripted: BTreeMap<NetId, String>,
+    /// Конструкции сущностей: что игроки построили.
+    pub constructions: BTreeMap<NetId, VoxelGrid>,
     next_entity_id: NetId,
 }
 
@@ -65,7 +70,40 @@ impl Server {
             grid: SpatialGrid::new(CELL_SIZE),
             scripts: ScriptEngine::new(),
             scripted: BTreeMap::new(),
+            constructions: BTreeMap::new(),
             next_entity_id: 1,
+        }
+    }
+
+    /// Создать пустую конструкцию для сущности.
+    pub fn new_construction(&mut self, entity: NetId) {
+        self.constructions.insert(entity, VoxelGrid::new());
+    }
+
+    /// Применить команду строительства (ставить/удалить/покрасить).
+    ///
+    /// Возвращает результат, который сервер отправит клиенту. Мир не роняется
+    /// при любой ошибке — возвращается причина.
+    pub fn apply_build(&mut self, cmd: &BuildCommand) -> BuildReason {
+        let grid = match self.constructions.get_mut(&cmd.entity) {
+            Some(g) => g,
+            None => {
+                // Первая команда создаёт конструкцию.
+                self.constructions.insert(cmd.entity, VoxelGrid::new());
+                self.constructions.get_mut(&cmd.entity).unwrap()
+            }
+        };
+        let color = BuildColor(cmd.color.0, cmd.color.1, cmd.color.2);
+        let res: Result<(), BuildError> = match cmd.action {
+            BuildAction::Place => grid.place(cmd.coord, color),
+            BuildAction::Remove => grid.remove(cmd.coord).map(|_| ()),
+            BuildAction::Paint => grid.paint(cmd.coord, color),
+        };
+        match res {
+            Ok(()) => BuildReason::Ok,
+            Err(BuildError::TooManyVoxels { .. }) => BuildReason::LimitReached,
+            Err(BuildError::Disconnected(_)) => BuildReason::Disconnected,
+            Err(_) => BuildReason::Invalid,
         }
     }
 
@@ -348,5 +386,66 @@ mod tests {
         // Мир должен пережить тик без паники.
         let plan = s.tick();
         assert!(plan.messages.contains_key(&1));
+    }
+
+    // --- редактор конструкций ---
+
+    fn cmd(action: BuildAction, coord: (i32, i32, i32)) -> BuildCommand {
+        BuildCommand { entity: 1, action, coord, color: ou_protocol::Color(200, 200, 200) }
+    }
+
+    #[test]
+    fn build_places_adjacent_voxel() {
+        let mut s = Server::new();
+        s.connect(1, Vec3::ZERO);
+        let r = s.apply_build(&cmd(BuildAction::Place, (1, 0, 0)));
+        assert_eq!(r, BuildReason::Ok);
+        let g = s.constructions.get(&1).unwrap();
+        assert_eq!(g.len(), 2, "ядро + новый воксель");
+    }
+
+    #[test]
+    fn build_rejects_floating_voxel() {
+        let mut s = Server::new();
+        s.connect(1, Vec3::ZERO);
+        // Далеко от ядра — нельзя.
+        let r = s.apply_build(&cmd(BuildAction::Place, (20, 0, 0)));
+        assert_eq!(r, BuildReason::Disconnected);
+    }
+
+    #[test]
+    fn build_paint_and_remove_work() {
+        let mut s = Server::new();
+        s.connect(1, Vec3::ZERO);
+        s.apply_build(&cmd(BuildAction::Place, (1, 0, 0)));
+        assert_eq!(s.apply_build(&cmd(BuildAction::Paint, (1, 0, 0))), BuildReason::Ok);
+        assert_eq!(s.apply_build(&cmd(BuildAction::Remove, (1, 0, 0))), BuildReason::Ok);
+        // Повторное удаление — ошибка.
+        assert_eq!(s.apply_build(&cmd(BuildAction::Remove, (1, 0, 0))), BuildReason::Invalid);
+    }
+
+    #[test]
+    fn build_cannot_remove_core() {
+        let mut s = Server::new();
+        s.connect(1, Vec3::ZERO);
+        assert_eq!(s.apply_build(&cmd(BuildAction::Remove, (0, 0, 0))), BuildReason::Invalid);
+    }
+
+    #[test]
+    fn constructions_are_independent() {
+        let mut s = Server::new();
+        s.connect(1, Vec3::ZERO);
+        s.connect(2, Vec3::new(100.0, 0.0, 0.0));
+        // Игрок 1 ставит воксель.
+        s.apply_build(&cmd(BuildAction::Place, (1, 0, 0)));
+        // У игрока 2 конструкция своя.
+        let r2 = s.apply_build(&BuildCommand {
+            entity: 2,
+            action: BuildAction::Remove,
+            coord: (1, 0, 0),
+            color: ou_protocol::Color(0, 0, 0),
+        });
+        assert_eq!(r2, BuildReason::Invalid, "у второго игрока этой ячейки нет");
+        assert_eq!(s.constructions.get(&1).unwrap().len(), 2);
     }
 }

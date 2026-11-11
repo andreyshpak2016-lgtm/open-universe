@@ -3,6 +3,13 @@
 version = 4
 
 [[package]]
+name = "ou-build"
+version = "0.1.0"
+dependencies = [
+ "ou-protocol",
+]
+
+[[package]]
 name = "ou-client"
 version = "0.1.0"
 dependencies = [
@@ -68,6 +75,7 @@ dependencies = [
 name = "ou-server"
 version = "0.1.0"
 dependencies = [
+ "ou-build",
  "ou-net",
  "ou-persist",
  "ou-protocol",

@@ -11,6 +11,7 @@ members = [
   "crates/combat",
   "crates/render",
   "crates/script",
+  "crates/build",
   "crates/server",
   "crates/client",
 ]

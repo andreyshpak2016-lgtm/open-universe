@@ -155,10 +155,49 @@ pub enum Message {
     ClientHello { protocol: u16, name: String },
     /// Кадр управления (несколько подряд для надёжности).
     ClientInput { inputs: Vec<InputFrame> },
+    /// Команда строительства: поставить, удалить или покрасить воксель.
+    ClientBuild(BuildCommand),
     /// Снимок состояния с сервера.
     ServerSnapshot(Snapshot),
     /// Подтверждение: какой последний ввод сервер применил.
     ServerAck { last_input_seq: u32, server_tick: u64 },
+    /// Ответ на команду строительства.
+    ServerBuildResult { accepted: bool, reason: BuildReason },
+}
+
+/// Действие редактора.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BuildAction {
+    Place,
+    Remove,
+    Paint,
+}
+
+/// Команда строительства (то, что шлёт клиент).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct BuildCommand {
+    pub entity: NetId,
+    pub action: BuildAction,
+    /// Координаты вокселя в сетке конструкции.
+    pub coord: (i32, i32, i32),
+    /// Цвет (для Place/Paint).
+    pub color: Color,
+}
+
+/// Цвет вокселя на проводе.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Color(pub u8, pub u8, pub u8);
+
+/// Почему команда отклонена.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BuildReason {
+    Ok,
+    /// Ячейка занята / пуста / вне границ и т. п. — обобщённо.
+    Invalid,
+    /// Нарушена целостность конструкции.
+    Disconnected,
+    /// Достигнут лимит вокселей.
+    LimitReached,
 }
 
 /// Снимок мира: базовая линия + дельта.
@@ -347,6 +386,8 @@ mod wire {
     const TAG_SNAPSHOT: u8 = 3;
     const TAG_ACK: u8 = 4;
     const TAG_SNAPSHOT_V2: u8 = 5;
+    const TAG_BUILD: u8 = 6;
+    const TAG_BUILD_RESULT: u8 = 7;
 
     pub fn encode(msg: &Message) -> Vec<u8> {
         let mut w = Writer::new();
@@ -385,6 +426,31 @@ mod wire {
                 w.u8(TAG_ACK);
                 w.u32(*last_input_seq);
                 w.u64(*server_tick);
+            }
+            Message::ClientBuild(cmd) => {
+                w.u8(TAG_BUILD);
+                w.u32(cmd.entity);
+                w.u8(match cmd.action {
+                    BuildAction::Place => 0,
+                    BuildAction::Remove => 1,
+                    BuildAction::Paint => 2,
+                });
+                w.i32(cmd.coord.0);
+                w.i32(cmd.coord.1);
+                w.i32(cmd.coord.2);
+                w.u8(cmd.color.0);
+                w.u8(cmd.color.1);
+                w.u8(cmd.color.2);
+            }
+            Message::ServerBuildResult { accepted, reason } => {
+                w.u8(TAG_BUILD_RESULT);
+                w.bool(*accepted);
+                w.u8(match reason {
+                    BuildReason::Ok => 0,
+                    BuildReason::Invalid => 1,
+                    BuildReason::Disconnected => 2,
+                    BuildReason::LimitReached => 3,
+                });
             }
         }
         w.buf
@@ -444,6 +510,29 @@ mod wire {
                 Ok(Message::ServerSnapshot(Snapshot { tick, ack_input_seq, baseline, entities }))
             }
             TAG_ACK => Ok(Message::ServerAck { last_input_seq: r.u32()?, server_tick: r.u64()? }),
+            TAG_BUILD => {
+                let entity = r.u32()?;
+                let action = match r.u8()? {
+                    0 => BuildAction::Place,
+                    1 => BuildAction::Remove,
+                    2 => BuildAction::Paint,
+                    other => return Err(WireError::BadTag(other)),
+                };
+                let coord = (r.i32()?, r.i32()?, r.i32()?);
+                let color = Color(r.u8()?, r.u8()?, r.u8()?);
+                Ok(Message::ClientBuild(BuildCommand { entity, action, coord, color }))
+            }
+            TAG_BUILD_RESULT => {
+                let accepted = r.bool()?;
+                let reason = match r.u8()? {
+                    0 => BuildReason::Ok,
+                    1 => BuildReason::Invalid,
+                    2 => BuildReason::Disconnected,
+                    3 => BuildReason::LimitReached,
+                    other => return Err(WireError::BadTag(other)),
+                };
+                Ok(Message::ServerBuildResult { accepted, reason })
+            }
             other => Err(WireError::BadTag(other)),
         }
     }
@@ -572,6 +661,44 @@ mod tests {
         let (back, used) = deframe(&dg).unwrap();
         assert_eq!(back, m);
         assert_eq!(used, dg.len());
+    }
+
+    #[test]
+    fn build_command_roundtrip() {
+        let m = Message::ClientBuild(BuildCommand {
+            entity: 7,
+            action: BuildAction::Paint,
+            coord: (-3, 0, 12),
+            color: Color(10, 20, 30),
+        });
+        let bytes = encode(&m);
+        assert_eq!(decode(&bytes).unwrap(), m);
+    }
+
+    #[test]
+    fn all_build_actions_roundtrip() {
+        for action in [BuildAction::Place, BuildAction::Remove, BuildAction::Paint] {
+            let m = Message::ClientBuild(BuildCommand {
+                entity: 1,
+                action,
+                coord: (1, 2, 3),
+                color: Color(255, 128, 0),
+            });
+            assert_eq!(decode(&encode(&m)).unwrap(), m);
+        }
+    }
+
+    #[test]
+    fn build_result_roundtrip() {
+        for reason in [
+            BuildReason::Ok,
+            BuildReason::Invalid,
+            BuildReason::Disconnected,
+            BuildReason::LimitReached,
+        ] {
+            let m = Message::ServerBuildResult { accepted: reason == BuildReason::Ok, reason };
+            assert_eq!(decode(&encode(&m)).unwrap(), m);
+        }
     }
 
     #[test]

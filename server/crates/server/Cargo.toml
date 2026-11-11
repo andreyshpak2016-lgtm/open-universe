@@ -20,3 +20,4 @@ ou-spatial = { path = "../spatial" }
 ou-net = { path = "../net" }
 ou-persist = { path = "../persist" }
 ou-script = { path = "../script" }
+ou-build = { path = "../build" }

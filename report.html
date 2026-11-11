@@ -50,10 +50,10 @@
     <p style="font-size:1.05rem">Что уже работает, с доказательствами: скриншотами движка, метриками и результатами тестов. Версия <b id="ver">0.9.0</b>.</p>
 
     <div class="meta">
-      <div><b id="m-tests">192</b><span>тестов проходит</span></div>
-      <div><b id="m-crates">12</b><span>модулей (крейтов)</span></div>
-      <div><b id="m-progress">65%</b><span>план выполнен</span></div>
-      <div><b id="m-version">v0.15.0</b><span>последний релиз</span></div>
+      <div><b id="m-tests">215</b><span>тестов проходит</span></div>
+      <div><b id="m-crates">13</b><span>модулей (крейтов)</span></div>
+      <div><b id="m-progress">70%</b><span>план выполнен</span></div>
+      <div><b id="m-version">v0.16.0</b><span>последний релиз</span></div>
     </div>
 
     <!-- ================= 1. Что сделано ================= -->
@@ -75,6 +75,7 @@
       <li><b>Каркас UE5-клиента (C++)</b> — floating origin, сеть, предсказание, воксельные планеты.</li>
       <li><b>Скриптинг конструкций</b> — Lua-подобный язык с песочницей: автопилоты, турели, логистика.</li>
       <li><b>Симуляция рынка</b> — экономика проверена агентами: цена, объём, дефицит, избыток.</li>
+      <li><b>Воксельный редактор</b> — ставить, удалять, красить; проверка целостности и шаблоны.</li>
     </ul>
 
     <p style="margin-top:14px">Каркас клиента повторяет серверную логику: кинематика C++ за 1 с даёт <b>z = 23.101</b>
@@ -168,6 +169,14 @@ $ cargo run -p ou-script --bin ou-script-demo
   проверка денег: создано/сожжено кредитов = 0
 === Дефицит ===  цена растёт   === Избыток ===  VWAP падает до 10</code></pre>
 
+    <h3>Воксельный редактор</h3>
+    <p>Игрок строит из вокселей: ставить, удалять, красить. Сетка разрежённая, целостность проверяется от ядра.</p>
+    <pre class="codeblock"><code>$ cargo run -p ou-build --bin ou-build-demo
+=== Оторванный воксель ===  запрещено: оторван от ядра
+=== Ломаем середину ===     снято оторванных деталей: 1
+=== Шаблон корабля ===      31 воксель, связность ОК
+=== Детерминизм ===         повтор совпадает</code></pre>
+
     <!-- ================= 3. Метрики ================= -->
     <h2>3. Метрики</h2>
     <table class="m">
@@ -190,10 +199,10 @@ $ cargo run -p ou-script --bin ou-script-demo
 
     <!-- ================= 4. Результаты тестов ================= -->
     <h2>4. Результаты тестов</h2>
-    <pre class="codeblock"><code>$ cargo test --workspace   →  192 passed (12 крейтов)
+    <pre class="codeblock"><code>$ cargo test --workspace   →  215 passed (13 крейтов)
 
-protocol 10 · sim 23 · spatial 6 · net 5 · shard 9 · persist 14
-economy 27 · combat 17 · render 37 · script 32 · server 7 · client 9
+protocol 12 · sim 23 · spatial 6 · net 5 · shard 9 · persist 14
+economy 27 · combat 17 · render 37 · script 32 · build 15 · server 12 · client 9
 
 $ cargo run -p ou-combat --bin ou-combat-demo
 === Шанс попадания (1000 выстрелов) ===
