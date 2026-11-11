@@ -168,6 +168,32 @@ pub enum Message {
     /// Отправляется сразу после `ClientHello`, чтобы клиент знал свой id
     /// (иначе он не может отличить свой корабль от чужих в снимке).
     ServerWelcome { entity: NetId },
+    /// Применённая правка конструкции (репликация другим игрокам).
+    ///
+    /// Сервер рассылает её всем, кто видит конструкцию, — так у всех
+    /// одинаковая постройка. `revision` — номер правки, по нему клиент
+    /// подтверждает приём и не применяет одно и то же дважды.
+    ServerBuildEdit(BuildEdit),
+    /// Подтверждение правки клиентом (чтобы сервер не слал её снова).
+    ClientBuildAck { entity: NetId, revision: u64 },
+    /// Владелец конструкции разрешает строить другому игроку.
+    ClientGrantBuild { entity: NetId, player: NetId },
+    /// Сообщение клиенту, может ли он редактировать конструкцию.
+    ServerBuildAccess { entity: NetId, can_edit: bool },
+}
+
+/// Применённая правка конструкции (сервер → клиенты).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct BuildEdit {
+    /// Конструкция, к которой относится правка.
+    pub entity: NetId,
+    /// Кто её применил.
+    pub author: NetId,
+    pub action: BuildAction,
+    pub coord: (i32, i32, i32),
+    pub color: Color,
+    /// Монотонный номер правки внутри конструкции (начиная с 1).
+    pub revision: u64,
 }
 
 /// Действие редактора.
@@ -394,6 +420,10 @@ mod wire {
     const TAG_BUILD: u8 = 6;
     const TAG_BUILD_RESULT: u8 = 7;
     const TAG_WELCOME: u8 = 8;
+    const TAG_BUILD_EDIT: u8 = 9;
+    const TAG_BUILD_ACK: u8 = 10;
+    const TAG_BUILD_GRANT: u8 = 11;
+    const TAG_BUILD_ACCESS: u8 = 12;
 
     pub fn encode(msg: &Message) -> Vec<u8> {
         let mut w = Writer::new();
@@ -461,6 +491,38 @@ mod wire {
             Message::ServerWelcome { entity } => {
                 w.u8(TAG_WELCOME);
                 w.varint(*entity as u64);
+            }
+            Message::ServerBuildEdit(e) => {
+                w.u8(TAG_BUILD_EDIT);
+                w.varint(e.entity as u64);
+                w.varint(e.author as u64);
+                w.u8(match e.action {
+                    BuildAction::Place => 0,
+                    BuildAction::Remove => 1,
+                    BuildAction::Paint => 2,
+                });
+                w.i32(e.coord.0);
+                w.i32(e.coord.1);
+                w.i32(e.coord.2);
+                w.u8(e.color.0);
+                w.u8(e.color.1);
+                w.u8(e.color.2);
+                w.varint(e.revision);
+            }
+            Message::ClientBuildAck { entity, revision } => {
+                w.u8(TAG_BUILD_ACK);
+                w.varint(*entity as u64);
+                w.varint(*revision);
+            }
+            Message::ClientGrantBuild { entity, player } => {
+                w.u8(TAG_BUILD_GRANT);
+                w.varint(*entity as u64);
+                w.varint(*player as u64);
+            }
+            Message::ServerBuildAccess { entity, can_edit } => {
+                w.u8(TAG_BUILD_ACCESS);
+                w.varint(*entity as u64);
+                w.bool(*can_edit);
             }
         }
         w.buf
@@ -544,6 +606,32 @@ mod wire {
                 Ok(Message::ServerBuildResult { accepted, reason })
             }
             TAG_WELCOME => Ok(Message::ServerWelcome { entity: r.varint()? as NetId }),
+            TAG_BUILD_EDIT => {
+                let entity = r.varint()? as NetId;
+                let author = r.varint()? as NetId;
+                let action = match r.u8()? {
+                    0 => BuildAction::Place,
+                    1 => BuildAction::Remove,
+                    2 => BuildAction::Paint,
+                    other => return Err(WireError::BadTag(other)),
+                };
+                let coord = (r.i32()?, r.i32()?, r.i32()?);
+                let color = Color(r.u8()?, r.u8()?, r.u8()?);
+                let revision = r.varint()?;
+                Ok(Message::ServerBuildEdit(BuildEdit { entity, author, action, coord, color, revision }))
+            }
+            TAG_BUILD_ACK => Ok(Message::ClientBuildAck {
+                entity: r.varint()? as NetId,
+                revision: r.varint()?,
+            }),
+            TAG_BUILD_GRANT => Ok(Message::ClientGrantBuild {
+                entity: r.varint()? as NetId,
+                player: r.varint()? as NetId,
+            }),
+            TAG_BUILD_ACCESS => Ok(Message::ServerBuildAccess {
+                entity: r.varint()? as NetId,
+                can_edit: r.bool()?,
+            }),
             other => Err(WireError::BadTag(other)),
         }
     }
@@ -683,6 +771,30 @@ mod tests {
             // Приветствие должно быть компактным (varint).
             assert!(bytes.len() <= 4, "welcome too large: {}", bytes.len());
         }
+    }
+
+    #[test]
+    fn build_edit_roundtrip() {
+        let m = Message::ServerBuildEdit(BuildEdit {
+            entity: 3,
+            author: 5,
+            action: BuildAction::Paint,
+            coord: (-4, 7, 0),
+            color: Color(11, 22, 33),
+            revision: 128,
+        });
+        let bytes = encode(&m);
+        assert_eq!(decode(&bytes).unwrap(), m);
+    }
+
+    #[test]
+    fn build_ack_grant_access_roundtrip() {
+        let ack = Message::ClientBuildAck { entity: 2, revision: 300 };
+        assert_eq!(decode(&encode(&ack)).unwrap(), ack);
+        let grant = Message::ClientGrantBuild { entity: 1, player: 9 };
+        assert_eq!(decode(&encode(&grant)).unwrap(), grant);
+        let access = Message::ServerBuildAccess { entity: 4, can_edit: false };
+        assert_eq!(decode(&encode(&access)).unwrap(), access);
     }
 
     #[test]

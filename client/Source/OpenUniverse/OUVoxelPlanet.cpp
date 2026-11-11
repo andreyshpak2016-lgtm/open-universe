@@ -69,13 +69,21 @@ AOUVoxelPlanet::AOUVoxelPlanet()
 	Mesh->bUseAsyncCooking = true;
 
 	// Материал обязателен: без него процедурный меш в UE не виден.
+	// Берём материал, который рисует **цвет вершин** — иначе планета была бы
+	// однотонно-белой и весь рельеф (вода/песок/трава/снег) потерялся бы.
 	// Копию запоминаем — назначим его на КАЖДУЮ секцию (иначе видна лишь одна
 	// грань: секция берёт материал из слота со своим номером).
-	static ConstructorHelpers::FObjectFinder<UMaterialInterface> BasicMat(
+	static ConstructorHelpers::FObjectFinder<UMaterialInterface> VertexColorMat(
+		TEXT("/Engine/EngineDebugMaterials/VertexColorMaterial.VertexColorMaterial"));
+	static ConstructorHelpers::FObjectFinder<UMaterialInterface> FallbackMat(
 		TEXT("/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial"));
-	if (BasicMat.Succeeded())
+	if (VertexColorMat.Succeeded())
 	{
-		PlanetMaterial = BasicMat.Object;
+		PlanetMaterial = VertexColorMat.Object;
+	}
+	else if (FallbackMat.Succeeded())
+	{
+		PlanetMaterial = FallbackMat.Object;
 	}
 }
 

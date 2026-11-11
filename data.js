@@ -71,7 +71,7 @@ window.PLAN = {
         { "title": "Сетка деталей и «ядра» конструкций", "status": "done" },
         { "title": "Дублирование и шаблоны (blueprints)", "status": "done" },
         { "title": "Валидация физической целостности", "status": "done" },
-        { "title": "Совместное строительство (multiplayer edit)", "status": "todo" }
+        { "title": "Совместное строительство (multiplayer edit): репликация правок, права, подтверждения", "status": "done" }
       ]
     },
     {

@@ -8,7 +8,7 @@
 
 use ou_net::{new_session_token, UdpTransport};
 use ou_persist::{save_world, FileStore};
-use ou_protocol::{InputFrame, Message, NetId, Snapshot, Vec3, TICK_DT};
+use ou_protocol::{BuildReason, InputFrame, Message, NetId, Snapshot, Vec3, TICK_DT};
 use ou_server::{Server, INTEREST_RADIUS};
 use std::collections::BTreeMap;
 use std::net::SocketAddr;
@@ -47,6 +47,8 @@ fn main() {
     println!("работаю {seconds} с...\n");
 
     let mut clients: BTreeMap<SocketAddr, NetId> = BTreeMap::new();
+    // Ответы на команды строительства (кому и что ответить).
+    let mut build_results: Vec<(SocketAddr, BuildReason)> = Vec::new();
     // Продолжаем нумерацию игроков с учётом загруженного мира.
     let mut next_player: NetId = server.next_entity_id();
     let mut next_spawn = 0.0;
@@ -86,11 +88,33 @@ fn main() {
                             server.receive_input(*pid, &inputs);
                         }
                     }
+                    Message::ClientBuild(cmd) => {
+                        if let Some(pid) = clients.get(&from) {
+                            let reason = server.apply_build_as(*pid, &cmd);
+                            build_results.push((from, reason));
+                        }
+                    }
+                    Message::ClientBuildAck { entity, revision } => {
+                        if let Some(pid) = clients.get(&from) {
+                            server.ack_build(*pid, entity, revision);
+                        }
+                    }
+                    Message::ClientGrantBuild { entity, player } => {
+                        if let Some(pid) = clients.get(&from) {
+                            server.grant_build(*pid, entity, player);
+                        }
+                    }
                     _ => {}
                 },
                 Ok(None) => break,
                 Err(_) => break,
             }
+        }
+
+        // --- ответы на команды строительства ---
+        for (addr, reason) in build_results.drain(..) {
+            let accepted = reason == BuildReason::Ok;
+            net.send_to(token, addr, &Message::ServerBuildResult { accepted, reason }).ok();
         }
 
         // --- шаг симуляции и рассылка ---

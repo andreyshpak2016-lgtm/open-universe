@@ -482,11 +482,16 @@ $ cargo run -p ou-render --release -- lod 1280 720
           <pre class="codeblock"><code># то же из терминала:
 powershell -File tools\server.ps1     # окно 1: сервер
 powershell -File tools\game.ps1       # окно 2: игра (UE5)</code></pre>
-          <h3 style="margin-top:16px;font-size:1rem">Консольный вариант (без графики)</h3>
-          <pre class="codeblock"><code>play.bat                              # сервер + 2 игрока
-play.bat -Players 4 -Seconds 30</code></pre>
           <p class="dl-note" style="margin-top:8px">Из готовой сборки, без Rust: <code>ou-netd.exe 127.0.0.1:7777 60</code> (сервер) и <code>ou-netclient.exe 127.0.0.1:7777 50</code> (игрок).</p>
         </aside>
+      </div>
+
+      <div class="panel" style="margin-top:18px;padding:24px">
+        <h3 style="margin:0 0 4px">Все версии игры</h3>
+        <p class="dl-note" style="margin:0 0 14px">Готовая сборка для Windows x64 (сервер + клиенты + демо внутри <code>.exe</code> и <code>.bat</code>). Список подтягивается с GitHub автоматически.</p>
+        <div id="versions" class="versions">
+          <p class="dl-note" id="versions-status">Загружаю список версий…</p>
+        </div>
       </div>
 
       <div class="download-grid" style="margin-top:18px">

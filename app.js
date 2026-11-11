@@ -373,7 +373,53 @@
   }
 
   document.getElementById("year").textContent = new Date().getFullYear();
-  function boot() { render(); initTabs(); initLayers(); initERD(); loadLatestRelease(); }
+
+  /* ---------- Все версии игры (список релизов с GitHub) ---------- */
+  function loadVersions() {
+    var repo = "andreyshpak2016-lgtm/open-universe";
+    var box = document.getElementById("versions");
+    var status = document.getElementById("versions-status");
+    if (!box) return;
+    fetch("https://api.github.com/repos/" + repo + "/releases?per_page=30",
+      { headers: { Accept: "application/vnd.github+json" }, cache: "no-store" })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (rels) {
+        if (!rels || !rels.length) { if (status) status.textContent = "Список версий недоступен — откройте релизы на GitHub."; return; }
+        var html = "";
+        rels.forEach(function (rel) {
+          var assets = rel.assets || [];
+          // Клиент: отдельный .exe, если он приложен; иначе архив.
+          var clientExe = assets.filter(function (a) { return /ou-netclient.*\.exe$/i.test(a.name); })[0]
+                       || assets.filter(function (a) { return /\.exe$/i.test(a.name); })[0];
+          var zip = assets.filter(function (a) { return /\.zip$/i.test(a.name); })[0];
+          var primary = clientExe || zip;
+          var size = primary ? (primary.size / 1048576).toFixed(2).replace(".", ",") + " МБ" : "";
+          var date = rel.published_at ? new Date(rel.published_at).toLocaleDateString("ru-RU") : "";
+          var latest = rel.tag_name === (rels[0].tag_name);
+          var tag = rel.tag_name || rel.name || "—";
+
+          var links = "";
+          if (clientExe) {
+            links += '<a class="version-btn primary" href="' + clientExe.browser_download_url + '" target="_blank" rel="noopener">⬇ клиент (exe)</a>';
+          }
+          if (zip) {
+            links += '<a class="version-btn" href="' + zip.browser_download_url + '" target="_blank" rel="noopener">всё (zip)</a>';
+          }
+          if (!links) {
+            links = '<a class="version-btn" href="https://github.com/' + repo + '/releases/tag/' + tag + '" target="_blank" rel="noopener">на GitHub</a>';
+          }
+
+          html += '<div class="version">' +
+            '<span class="version-tag">' + tag + (latest ? ' <span class="version-latest">последняя</span>' : '') + '</span>' +
+            '<span class="version-meta">' + [date, size].filter(Boolean).join(" · ") + '</span>' +
+            '<span class="version-actions">' + links + '</span></div>';
+        });
+        box.innerHTML = html;
+      })
+      .catch(function () { if (status) status.textContent = "Список версий недоступен — откройте релизы на GitHub."; });
+  }
+
+  function boot() { render(); initTabs(); initLayers(); initERD(); loadLatestRelease(); loadVersions(); }
   if (document.readyState !== "loading") boot();
   else document.addEventListener("DOMContentLoaded", boot);
 })();

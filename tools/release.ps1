@@ -82,6 +82,10 @@ $files = @(
 Compress-Archive -Path $files -DestinationPath $zip -Force
 Write-Host ("Артефакт: {0} ({1:N0} байт)" -f $zip, (Get-Item $zip).Length) -ForegroundColor Green
 
+# Отдельные .exe: чтобы на сайте каждая версия давала прямую ссылку на клиент,
+# а не только на архив. Только реальные исполняемые файлы.
+$exes = $files | Where-Object { $_ -match '\.exe$' -and (Test-Path $_) }
+
 # 4. Обновить VERSION
 Set-Content -Path (Join-Path $root 'VERSION') -Value $Version -NoNewline -Encoding UTF8
 
@@ -97,7 +101,9 @@ if ($Publish) {
 
   Write-Host "--> gh release create $tag" -ForegroundColor Yellow
   $notesFile = Join-Path $root 'CHANGELOG.md'
-  & $gh release create $tag $zip `
+  # Прикладываем архив И отдельные .exe (клиент/сервер можно скачать поштучно).
+  $upload = @($exes) + @($zip)
+  & $gh release create $tag @upload `
     --repo andreyshpak2016-lgtm/open-universe `
     --title "Open Universe $Version" `
     --notes-file $notesFile

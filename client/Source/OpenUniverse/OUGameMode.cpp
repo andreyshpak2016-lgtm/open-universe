@@ -15,6 +15,8 @@
 #include "Components/SkyAtmosphereComponent.h"
 #include "EngineUtils.h"
 #include "Kismet/GameplayStatics.h"
+#include "UnrealClient.h"
+#include "Misc/DateTime.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogOUGameMode, Log, All);
 
@@ -46,6 +48,34 @@ void AOUGameMode::StartPlay()
 void AOUGameMode::BeginPlay()
 {
 	Super::BeginPlay();
+
+	// Автоснимок для отчётов/витрины: через движок, чтобы не зависеть от фокуса.
+	if (bAutoScreenshots)
+	{
+		// Небольшая задержка: даём сцене и PIE полностью инициализироваться.
+		RequestShot(TEXT("start"));
+	}
+}
+
+void AOUGameMode::TakeShot(const FString& Label)
+{
+	RequestShot(Label);
+}
+
+void AOUGameMode::RequestShot(const FString& Label)
+{
+	PendingShotLabel = Label;
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+	// Просим у движка снимок следующего кадра. Имя содержит метку и время,
+	// файл попадёт в <проект>/Saved/Screenshots/.
+	FScreenshotRequest::RequestScreenshot(
+		FString::Printf(TEXT("OU_%s_%s"), *Label, *FDateTime::Now().ToString(TEXT("%H%M%S"))),
+		/*bShowUI=*/false, /*bAddFilenameSuffix=*/false);
+	UE_LOG(LogOUGameMode, Log, TEXT("Запрошен скриншот: OU_%s"), *Label);
 }
 
 AActor* AOUGameMode::ChoosePlayerStart_Implementation(AController* Player)

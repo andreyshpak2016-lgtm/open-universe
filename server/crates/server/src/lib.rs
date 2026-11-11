@@ -10,7 +10,8 @@
 
 use ou_build::{BuildError, Color as BuildColor, VoxelGrid};
 use ou_protocol::{
-    BuildAction, BuildCommand, BuildReason, EntityState, InputFrame, Message, NetId, Snapshot, Vec3,
+    BuildAction, BuildCommand, BuildEdit, BuildReason, EntityState, InputFrame, Message, NetId,
+    Snapshot, Vec3,
 };
 use ou_script::ScriptEngine;
 use ou_sim::World;
@@ -24,6 +25,43 @@ pub const INTEREST_RADIUS: f64 = 2_000.0;
 /// интереса: слишком мелкая сетка даёт много пустых ячеек, слишком крупная —
 /// лишние проверки. Половина радиуса — хороший компромисс.
 pub const CELL_SIZE: f64 = INTEREST_RADIUS / 2.0;
+
+/// Конструкция: воксельная сетка плюс права и ревизии (совместная стройка).
+#[derive(Clone, Debug)]
+pub struct Construction {
+    pub grid: VoxelGrid,
+    /// Кто владеет конструкцией (может разрешать стройку другим).
+    pub owner: NetId,
+    /// Кому владелец разрешил строить (кроме него самого).
+    pub builders: BTreeSet<NetId>,
+    /// Номер последней применённой правки (растёт монотонно).
+    pub revision: u64,
+    /// Для каждого клиента — последняя отправленная ему ревизия и очередь
+    /// неприменённых правок (чтобы при потере пакета клиент их дочитал).
+    pub pending: BTreeMap<NetId, (u64, Vec<BuildEdit>)>,
+}
+
+impl Construction {
+    pub fn new(owner: NetId) -> Self {
+        Construction {
+            grid: VoxelGrid::new(),
+            owner,
+            builders: BTreeSet::new(),
+            revision: 0,
+            pending: BTreeMap::new(),
+        }
+    }
+
+    /// Может ли игрок редактировать эту конструкцию.
+    pub fn can_edit(&self, player: NetId) -> bool {
+        player == self.owner || self.builders.contains(&player)
+    }
+
+    /// Разрешить игроку строить.
+    pub fn grant(&mut self, player: NetId) {
+        self.builders.insert(player);
+    }
+}
 
 /// Подключённый игрок.
 #[derive(Clone, Debug)]
@@ -57,8 +95,8 @@ pub struct Server {
     pub scripts: ScriptEngine,
     /// Сущность → имя скрипта, который ей управляет.
     pub scripted: BTreeMap<NetId, String>,
-    /// Конструкции сущностей: что игроки построили.
-    pub constructions: BTreeMap<NetId, VoxelGrid>,
+    /// Конструкции сущностей: что игроки построили (права + ревизии).
+    pub constructions: BTreeMap<NetId, Construction>,
     next_entity_id: NetId,
 }
 
@@ -77,34 +115,114 @@ impl Server {
 
     /// Создать пустую конструкцию для сущности.
     pub fn new_construction(&mut self, entity: NetId) {
-        self.constructions.insert(entity, VoxelGrid::new());
+        self.constructions.insert(entity, Construction::new(entity));
     }
 
     /// Применить команду строительства (ставить/удалить/покрасить).
     ///
     /// Возвращает результат, который сервер отправит клиенту. Мир не роняется
     /// при любой ошибке — возвращается причина.
-    pub fn apply_build(&mut self, cmd: &BuildCommand) -> BuildReason {
-        let grid = match self.constructions.get_mut(&cmd.entity) {
-            Some(g) => g,
-            None => {
-                // Первая команда создаёт конструкцию.
-                self.constructions.insert(cmd.entity, VoxelGrid::new());
-                self.constructions.get_mut(&cmd.entity).unwrap()
+    ///
+    /// Проверяет **права**: редактировать может владелец или тот, кому он
+    /// разрешил. Первая команда от игрока создаёт его конструкцию.
+    pub fn apply_build_as(&mut self, author: NetId, cmd: &BuildCommand) -> BuildReason {
+        // Права проверяем до создания конструкции.
+        if let Some(c) = self.constructions.get(&cmd.entity) {
+            if !c.can_edit(author) {
+                return BuildReason::Invalid;
             }
-        };
+        }
+        let c = self
+            .constructions
+            .entry(cmd.entity)
+            .or_insert_with(|| Construction::new(author));
         let color = BuildColor(cmd.color.0, cmd.color.1, cmd.color.2);
         let res: Result<(), BuildError> = match cmd.action {
-            BuildAction::Place => grid.place(cmd.coord, color),
-            BuildAction::Remove => grid.remove(cmd.coord).map(|_| ()),
-            BuildAction::Paint => grid.paint(cmd.coord, color),
+            BuildAction::Place => c.grid.place(cmd.coord, color),
+            BuildAction::Remove => c.grid.remove(cmd.coord).map(|_| ()),
+            BuildAction::Paint => c.grid.paint(cmd.coord, color),
         };
         match res {
-            Ok(()) => BuildReason::Ok,
+            Ok(()) => {
+                // Записываем правку и готовим её к рассылке всем, кроме автора.
+                c.revision += 1;
+                let edit = BuildEdit {
+                    entity: cmd.entity,
+                    author,
+                    action: cmd.action,
+                    coord: cmd.coord,
+                    color: ou_protocol::Color(cmd.color.0, cmd.color.1, cmd.color.2),
+                    revision: c.revision,
+                };
+                for (player, slot) in c.pending.iter_mut() {
+                    if *player != author {
+                        slot.1.push(edit);
+                    }
+                }
+                BuildReason::Ok
+            }
             Err(BuildError::TooManyVoxels { .. }) => BuildReason::LimitReached,
             Err(BuildError::Disconnected(_)) => BuildReason::Disconnected,
             Err(_) => BuildReason::Invalid,
         }
+    }
+
+    /// Выдать игроку состояние правок для всех конструкций, которые он видит.
+    ///
+    /// Новому участнику сразу шлём **полный снимок** конструкции (все воксели),
+    /// чтобы он увидел уже построенное, а не только будущие правки.
+    fn sync_build_access(&mut self, player: NetId, visible: &BTreeSet<NetId>) {
+        for entity in visible {
+            let Some(c) = self.constructions.get_mut(entity) else {
+                continue;
+            };
+            let can_edit = c.can_edit(player);
+            let full = !c.pending.contains_key(&player);
+            if full {
+                // Полная выгрузка: каждая занятая ячейка — отдельная правка.
+                let mut edits: Vec<BuildEdit> = Vec::with_capacity(c.grid.len());
+                for (coord, bcolor) in c.grid.iter() {
+                    edits.push(BuildEdit {
+                        entity: *entity,
+                        author: c.owner,
+                        action: BuildAction::Place,
+                        coord,
+                        color: ou_protocol::Color(bcolor.0, bcolor.1, bcolor.2),
+                        revision: c.revision,
+                    });
+                }
+                let slot = c.pending.entry(player).or_insert((c.revision, Vec::new()));
+                slot.1.extend(edits);
+            }
+            // Напоминаем права (клиент может их и не знать).
+            let _ = can_edit;
+        }
+    }
+
+    /// Владелец разрешает другому игроку строить в конструкции.
+    pub fn grant_build(&mut self, owner: NetId, cmd_entity: NetId, player: NetId) -> bool {
+        match self.constructions.get_mut(&cmd_entity) {
+            Some(c) if c.owner == owner => {
+                c.grant(player);
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// Подтверждение правок клиентом: чистим очередь до `revision`.
+    pub fn ack_build(&mut self, player: NetId, entity: NetId, revision: u64) {
+        if let Some(c) = self.constructions.get_mut(&entity) {
+            if let Some(slot) = c.pending.get_mut(&player) {
+                slot.1.retain(|e| e.revision > revision);
+                slot.0 = revision;
+            }
+        }
+    }
+
+    /// Старый интерфейс (владелец = сама сущность) — для тестов и совместимости.
+    pub fn apply_build(&mut self, cmd: &BuildCommand) -> BuildReason {
+        self.apply_build_as(cmd.entity, cmd)
     }
 
     /// Назначить сущности скрипт (автопилот). С этого момента её ввод
@@ -120,6 +238,8 @@ impl Server {
         let entity_id = self.next_entity_id;
         self.next_entity_id += 1;
         self.world.spawn(entity_id, spawn);
+        // У каждого игрока есть своя конструкция (её же он и редактирует).
+        self.constructions.entry(entity_id).or_insert_with(|| Construction::new(player_id));
         self.connections.insert(
             player_id,
             Connection {
@@ -210,17 +330,45 @@ impl Server {
         let mut plan = SendPlan::default();
         let all_states: BTreeMap<NetId, EntityState> = self.world.snapshot_map();
 
-        for (player_id, conn) in self.connections.iter_mut() {
+        // Фаза A: какие сущности видит каждый клиент (только чтение).
+        let mut visible_by_player: BTreeMap<NetId, BTreeSet<NetId>> = BTreeMap::new();
+        for (player_id, conn) in self.connections.iter() {
             let center = all_states
                 .get(&conn.entity_id)
                 .map(|e| e.pos)
                 .unwrap_or(Vec3::ZERO);
-
-            // Зона интереса через пространственный индекс: обходим только
-            // близкие ячейки, а не весь мир. Своя сущность — всегда видна.
             let mut visible: BTreeSet<NetId> =
                 self.grid.query_radius(center, INTEREST_RADIUS).into_iter().collect();
             visible.insert(conn.entity_id);
+            visible_by_player.insert(*player_id, visible);
+        }
+
+        // Фаза B: репликация правок конструкций (совместное строительство).
+        let mut build_msgs: BTreeMap<NetId, Vec<Message>> = BTreeMap::new();
+        for (player_id, visible) in &visible_by_player {
+            self.sync_build_access(*player_id, visible);
+        }
+        for entity in self.constructions.keys().copied().collect::<Vec<_>>() {
+            let c = self.constructions.get_mut(&entity).unwrap();
+            let mut drained: Vec<(NetId, Vec<BuildEdit>)> = Vec::new();
+            for (player, slot) in c.pending.iter_mut() {
+                if !slot.1.is_empty() {
+                    drained.push((*player, std::mem::take(&mut slot.1)));
+                }
+            }
+            for (player, edits) in drained {
+                // Права + сами правки.
+                let can_edit = c.can_edit(player);
+                let entry = build_msgs.entry(player).or_default();
+                entry.push(Message::ServerBuildAccess { entity, can_edit });
+                for e in edits {
+                    entry.push(Message::ServerBuildEdit(e));
+                }
+            }
+        }
+
+        for (player_id, conn) in self.connections.iter_mut() {
+            let visible = visible_by_player[player_id].clone();
 
             let baseline = conn.known.is_empty();
             let mut changed: Vec<EntityState> = Vec::new();
@@ -250,6 +398,10 @@ impl Server {
                 last_input_seq: conn.acked_seq,
                 server_tick: tick,
             });
+            // Правки конструкций — после снимка.
+            if let Some(extra) = build_msgs.remove(player_id) {
+                msgs.extend(extra);
+            }
 
             // Обновляем «что клиент знает и в каком виде».
             conn.last_sent = visible.iter().map(|id| (*id, all_states[id])).collect();
@@ -401,7 +553,7 @@ mod tests {
         let r = s.apply_build(&cmd(BuildAction::Place, (1, 0, 0)));
         assert_eq!(r, BuildReason::Ok);
         let g = s.constructions.get(&1).unwrap();
-        assert_eq!(g.len(), 2, "ядро + новый воксель");
+        assert_eq!(g.grid.len(), 2, "ядро + новый воксель");
     }
 
     #[test]
@@ -446,6 +598,126 @@ mod tests {
             color: ou_protocol::Color(0, 0, 0),
         });
         assert_eq!(r2, BuildReason::Invalid, "у второго игрока этой ячейки нет");
-        assert_eq!(s.constructions.get(&1).unwrap().len(), 2);
+        assert_eq!(s.constructions.get(&1).unwrap().grid.len(), 2);
+    }
+
+    // --- совместное строительство (multiplayer edit) ---
+
+    /// Найти правки конструкций в сообщениях клиента.
+    fn build_edits(msgs: &[Message]) -> Vec<ou_protocol::BuildEdit> {
+        msgs.iter()
+            .filter_map(|m| match m {
+                Message::ServerBuildEdit(e) => Some(*e),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn build_edit_is_replicated_to_other_players() {
+        let mut s = Server::new();
+        s.connect(1, Vec3::ZERO);
+        s.connect(2, Vec3::new(10.0, 0.0, 0.0));
+        s.tick(); // оба узнали мир
+
+        // Игрок 1 строит в своей конструкции.
+        let reason = s.apply_build_as(1, &BuildCommand {
+            entity: 1,
+            action: BuildAction::Place,
+            coord: (1, 0, 0),
+            color: ou_protocol::Color(10, 20, 30),
+        });
+        assert_eq!(reason, BuildReason::Ok);
+
+        // Следующий тик: правка должна быть отправлена НЕ только автору.
+        let plan = s.tick();
+        let edits = build_edits(&plan.messages[&2]);
+        assert!(
+            edits.iter().any(|e| e.entity == 1 && e.coord == (1, 0, 0) && e.author == 1),
+            "правка игрока 1 должна прийти игроку 2"
+        );
+    }
+
+    #[test]
+    fn only_owner_or_granted_can_edit() {
+        let mut s = Server::new();
+        s.connect(1, Vec3::ZERO);
+        s.connect(2, Vec3::new(10.0, 0.0, 0.0));
+
+        // Игрок 2 пытается строить в конструкции игрока 1 — отказано.
+        let bad = s.apply_build_as(2, &BuildCommand {
+            entity: 1,
+            action: BuildAction::Place,
+            coord: (1, 0, 0),
+            color: ou_protocol::Color(1, 1, 1),
+        });
+        assert_eq!(bad, BuildReason::Invalid, "чужой строить не может");
+
+        // Владелец (игрок 1) разрешает игроку 2.
+        assert!(s.grant_build(1, 1, 2));
+        let ok = s.apply_build_as(2, &BuildCommand {
+            entity: 1,
+            action: BuildAction::Place,
+            coord: (1, 0, 0),
+            color: ou_protocol::Color(1, 1, 1),
+        });
+        assert_eq!(ok, BuildReason::Ok, "после разрешения строить можно");
+    }
+
+    #[test]
+    fn new_player_receives_existing_construction() {
+        let mut s = Server::new();
+        let e1 = s.connect(1, Vec3::ZERO);
+        // Игрок 1 уже что-то построил.
+        s.apply_build_as(1, &BuildCommand {
+            entity: e1,
+            action: BuildAction::Place,
+            coord: (1, 0, 0),
+            color: ou_protocol::Color(5, 5, 5),
+        });
+        // Подключается игрок 2 рядом.
+        s.connect(2, Vec3::new(10.0, 0.0, 0.0));
+        let plan = s.tick();
+        // Второй игрок должен получить полный снимок конструкции 1 (все воксели).
+        let edits = build_edits(&plan.messages[&2]);
+        let has_core = edits.iter().any(|e| e.coord == (0, 0, 0));
+        let has_built = edits.iter().any(|e| e.coord == (1, 0, 0));
+        assert!(has_core && has_built, "новый игрок видит уже построенное");
+    }
+
+    #[test]
+    fn ack_stops_resending_edits() {
+        let mut s = Server::new();
+        s.connect(1, Vec3::ZERO);
+        s.connect(2, Vec3::new(10.0, 0.0, 0.0));
+        s.tick();
+        s.apply_build_as(1, &BuildCommand {
+            entity: 1,
+            action: BuildAction::Place,
+            coord: (1, 0, 0),
+            color: ou_protocol::Color(1, 1, 1),
+        });
+        let plan = s.tick();
+        let rev = build_edits(&plan.messages[&2]).iter().map(|e| e.revision).max().unwrap();
+        // Игрок 2 подтверждает: повторно слать не нужно.
+        s.ack_build(2, 1, rev);
+        let plan2 = s.tick();
+        assert!(build_edits(&plan2.messages[&2]).is_empty(), "после ack повторной рассылки нет");
+    }
+
+    #[test]
+    fn remote_edit_is_authoritative_for_other_players() {
+        // Правка приходит с номером ревизии, который растёт монотонно.
+        let mut s = Server::new();
+        let e1 = s.connect(1, Vec3::ZERO);
+        for i in 1..=3 {
+            s.apply_build_as(1, &BuildCommand {
+                entity: e1,
+                action: BuildAction::Place,
+                coord: (i, 0, 0),
+                color: ou_protocol::Color(1, 1, 1),
+            });
+        }
+        assert_eq!(s.constructions[&e1].revision, 3, "ревизия растёт по числу правок");
     }
 }

@@ -35,6 +35,26 @@ public:
 	UFUNCTION(BlueprintCallable, CallInEditor, Category = "Open Universe|World")
 	void BuildWorld();
 
+	/**
+	 * Сохранить скриншот кадра в файл `Saved/Screenshots/OU_<метка>.png`.
+	 *
+	 * Вызывается автоматически при старте PIE (если включён `bAutoScreenshots`),
+	 * а также по клавише F9. Через движок — значит, не зависит от того, какое
+	 * окно в фокусе (снимок окна снаружи часто попадает не туда).
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Open Universe|Util")
+	void TakeShot(const FString& Label);
+
+	/** Делать ли автоснимок при старте игры (для отчётов и витрины). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Open Universe|Util")
+	bool bAutoScreenshots = true;
+
 protected:
 	virtual void BeginPlay() override;
+
+private:
+	/** Запрос кадра через движок (отложенный на один кадр — сцена уже готова). */
+	void RequestShot(const FString& Label);
+	FTimerHandle ShotTimer;
+	FString PendingShotLabel;
 };
