@@ -2,6 +2,9 @@
 
 Сайт-витрина и план разработки MMO-песочницы **Open Universe** (в духе *Dual Universe*).
 
+**Репозиторий:** https://github.com/andreyshpak2016-lgtm/open-universe
+**Скачать (Releases):** https://github.com/andreyshpak2016-lgtm/open-universe/releases
+
 - `index.html` — сайт (план + живой прогресс, галерея космоса, раздел «Технологии»)
 - `styles.css`, `app.js` — оформление и логика рендера плана
 - `plan.md` — план разработки (человекочитаемый)
