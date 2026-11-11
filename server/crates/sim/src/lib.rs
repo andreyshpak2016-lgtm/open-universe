@@ -16,8 +16,11 @@
 use ou_protocol::{EntityState, InputFrame, NetId, TICK_DT};
 use std::collections::BTreeMap;
 
+pub mod terrain;
+
 /// Реэкспорт базовых типов, чтобы потребителям хватало одного крейта.
 pub use ou_protocol::Vec3;
+pub use terrain::{landing, Terrain, TerrainParams};
 
 // ---------------------------------------------------------------------------
 // Детерминированная тригонометрия
@@ -88,6 +91,10 @@ pub struct ShipParams {
     pub linear_damping: f64,
     /// Ограничение модуля скорости, ед/с.
     pub max_speed: f64,
+    /// Скорость, до которой посадка считается мягкой, ед/с.
+    pub landing_safe_speed: f64,
+    /// Трение о поверхность (0..1): доля касательной скорости, теряемая за шаг.
+    pub ground_friction: f64,
 }
 
 impl Default for ShipParams {
@@ -98,6 +105,8 @@ impl Default for ShipParams {
             max_pitch_rate: 1.0,
             linear_damping: 0.02,
             max_speed: 400.0,
+            landing_safe_speed: 60.0,
+            ground_friction: 0.25,
         }
     }
 }
@@ -155,6 +164,10 @@ pub struct Entity {
     pub state: EntityState,
     /// Последний применённый сервером ввод (для подтверждения клиенту).
     pub last_input_seq: u32,
+    /// Планета, с которой взаимодействует сущность (посадка, столкновения).
+    pub terrain: Option<Terrain>,
+    /// Состояние контакта с поверхностью после последнего шага.
+    pub ground: landing::GroundState,
 }
 
 /// Мир с детерминированным порядком перебора (BTreeMap).
@@ -182,6 +195,8 @@ impl World {
                     pitch: 0.0,
                 },
                 last_input_seq: 0,
+                terrain: None,
+                ground: landing::GroundState::Flying,
             },
         );
         id
@@ -198,8 +213,33 @@ impl World {
                 let neutral = InputFrame::neutral(ent.last_input_seq);
                 integrate(&mut ent.state, &neutral, &self.params, TICK_DT);
             }
+            // Столкновение с рельефом: если у сущности есть планета, корабль
+            // не может «провалиться» под поверхность.
+            if let Some(terrain) = ent.terrain {
+                let state = ent.state;
+                let mut pos = state.pos;
+                let mut vel = state.vel;
+                let res = landing::resolve_ground(
+                    &mut pos,
+                    &mut vel,
+                    &terrain,
+                    self.params.landing_safe_speed,
+                    self.params.ground_friction,
+                    &self.params,
+                );
+                ent.state.pos = pos;
+                ent.state.vel = vel;
+                ent.ground = res;
+            }
         }
         self.tick += 1;
+    }
+
+    /// Привязать сущность к планете (для посадки и столкновений).
+    pub fn attach_terrain(&mut self, id: NetId, terrain: Terrain) {
+        if let Some(e) = self.entities.get_mut(&id) {
+            e.terrain = Some(terrain);
+        }
     }
 
     pub fn snapshot_map(&self) -> BTreeMap<NetId, EntityState> {

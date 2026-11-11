@@ -132,6 +132,8 @@ impl WorldSnapshot {
                         pitch: r.pitch,
                     },
                     last_input_seq: r.last_input_seq,
+                    terrain: None,
+                    ground: ou_sim::landing::GroundState::Flying,
                 },
             );
         }

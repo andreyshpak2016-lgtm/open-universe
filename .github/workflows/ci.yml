@@ -61,6 +61,7 @@ jobs:
             'server/target/release/ou-combat-demo.exe',
             'server/target/release/ou-render.exe',
             'server/target/release/ou-netrender.exe',
+            'server/target/release/ou-landing-demo.exe',
             'README.md'
           ) | Where-Object { Test-Path $_ }
           Compress-Archive -Path $files -DestinationPath "dist/open-universe-$v-windows-x64.zip" -Force

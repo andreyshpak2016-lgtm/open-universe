@@ -70,6 +70,22 @@ impl Vec3 {
         self.sub(o).length()
     }
 
+    /// Скалярное произведение.
+    #[inline]
+    pub fn dot(self, o: Vec3) -> f64 {
+        self.x * o.x + self.y * o.y + self.z * o.z
+    }
+
+    /// Векторное произведение.
+    #[inline]
+    pub fn cross(self, o: Vec3) -> Vec3 {
+        Vec3::new(
+            self.y * o.z - self.z * o.y,
+            self.z * o.x - self.x * o.z,
+            self.x * o.y - self.y * o.x,
+        )
+    }
+
     /// Квантование в провод (i32, масштаб [`POS_SCALE`]).
     pub fn to_wire(self) -> [i32; 3] {
         [

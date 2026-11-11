@@ -66,6 +66,7 @@ cargo run -p ou-render --release -- all 1280 720
 #  ship · blackhole · asteroids  → три PNG-кадра
 cargo run -p ou-render --release -- voxel 900 506   # воксельная планета
 cargo run -p ou-render --release -- dig 640 360     # копание (до/после)
+cargo run -p ou-sim --bin ou-landing-demo           # посадка на поверхность
 ```
 
 ### Рендер по сети (живой мир с сервера)

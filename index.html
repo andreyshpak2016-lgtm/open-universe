@@ -285,6 +285,21 @@ VWAP = 26 · Всего сделок в журнале: 2</code></pre>
     </figure>
     <p class="lead" style="margin-top:14px;font-size:.9rem">1 baseline + 236 дельт → 2 корабля и планета, нарисованные в реальном времени. Код: <code>crates/render/src/bin/ou-netrender.rs</code>.</p>
 
+        <h3>Посадка на поверхность</h3>
+        <p class="lead" style="margin-bottom:18px">Рельеф — часть <b>данных мира</b> (`sim::terrain`), а не только картинки: сервер прижимает корабль к поверхности, гасит скорость трением и различает <b>мягкую посадку</b>, <b>касание</b> и <b>удар</b>. Корабль физически не может провалиться под рельеф.</p>
+        <pre class="codeblock"><code>$ cargo run -p ou-sim --bin ou-landing-demo
+=== Мягкая посадка (скорость 25 вниз) ===
+  тик  80: высота  135.1, скорость 23.7  Flying
+  тик 240: высота   15.2, скорость 21.3  Flying
+  итог: Landed, высота 0.000, проникновение 0.000000
+
+=== Жёсткий удар (скорость 320 вниз) ===
+  → УДАР на тик 15: скорость столкновения 316.8
+     корабль остановлен на высоте 0.000
+
+  трение тормозит скольжение по поверхности</code></pre>
+        <p class="lead" style="margin-top:14px;font-size:.88rem">Состояния: <code>Flying</code> / <code>Landed</code> / <code>Crashed</code>. Рельеф детерминирован (octahedral mapping + value noise) — один и тот же на сервере, клиенте и в тестах.</p>
+
         <p class="lead" style="margin-top:18px;font-size:.92rem">📊 Полный разбор с метриками и всеми скриншотами — на отдельной странице <a href="report.html">«Отчёт о разработке»</a>.</p>
 
         <pre class="codeblock"><code>$ cargo run -p ou-render --release -- sim 1280 720

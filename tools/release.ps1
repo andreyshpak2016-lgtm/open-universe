@@ -66,6 +66,7 @@ $files = @(
   (Join-Path $server 'target\release\ou-combat-demo.exe'),
   (Join-Path $server 'target\release\ou-render.exe'),
   (Join-Path $server 'target\release\ou-netrender.exe'),
+  (Join-Path $server 'target\release\ou-landing-demo.exe'),
   (Join-Path $root 'README.md')
 )
 Compress-Archive -Path $files -DestinationPath $zip -Force
