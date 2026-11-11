@@ -474,16 +474,18 @@ $ cargo run -p ou-render --release -- lod 1280 720
         </div>
 
         <aside class="panel dl-side">
-          <h3>Как запустить (2 шага)</h3>
-          <pre class="codeblock"><code># 1. откройте папку с игрой и запустите:
-ou-netd.exe 127.0.0.1:7777 60        # сервер
-# 2. во втором окне — игрок (можно несколько):
-ou-netclient.exe 127.0.0.1:7777 50</code></pre>
-          <p class="dl-note" style="margin-top:10px">Ещё проще: двойной клик по <code>play.bat</code> в папке игры — скрипт соберёт и запустит всё сам.</p>
-          <h3 style="margin-top:16px;font-size:1rem">Из исходников</h3>
-          <pre class="codeblock"><code>cd D:\путь\к\open-universe
-powershell -File tools\play.ps1</code></pre>
-          <p class="dl-note" style="margin-top:8px">Важно: сначала <code>cd</code> в папку игры. Из другой папки укажите полный путь к <code>play.ps1</code>.</p>
+          <h3>Как запустить (2 файла)</h3>
+          <ol class="dl-steps" style="margin:0 0 12px 18px;padding:0;line-height:1.7">
+            <li>Двойной клик по <code>server.bat</code> — запустится сервер (мир).</li>
+            <li>Двойной клик по <code>game.bat</code> — откроется графический клиент (UE5); нажмите <b>Play</b>.</li>
+          </ol>
+          <pre class="codeblock"><code># то же из терминала:
+powershell -File tools\server.ps1     # окно 1: сервер
+powershell -File tools\game.ps1       # окно 2: игра (UE5)</code></pre>
+          <h3 style="margin-top:16px;font-size:1rem">Консольный вариант (без графики)</h3>
+          <pre class="codeblock"><code>play.bat                              # сервер + 2 игрока
+play.bat -Players 4 -Seconds 30</code></pre>
+          <p class="dl-note" style="margin-top:8px">Из готовой сборки, без Rust: <code>ou-netd.exe 127.0.0.1:7777 60</code> (сервер) и <code>ou-netclient.exe 127.0.0.1:7777 50</code> (игрок).</p>
         </aside>
       </div>
 

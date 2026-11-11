@@ -72,7 +72,11 @@ $files = @(
   (Join-Path $server 'target\release\ou-build-demo.exe'),
   (Join-Path $server 'target\release\ou-dump-packet.exe'),
   (Join-Path $root 'tools\play.ps1'),
+  (Join-Path $root 'tools\server.ps1'),
+  (Join-Path $root 'tools\game.ps1'),
   (Join-Path $root 'play.bat'),
+  (Join-Path $root 'server.bat'),
+  (Join-Path $root 'game.bat'),
   (Join-Path $root 'README.md')
 )
 Compress-Archive -Path $files -DestinationPath $zip -Force

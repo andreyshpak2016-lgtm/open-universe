@@ -73,7 +73,11 @@ jobs:
             'server/target/release/ou-build-demo.exe',
             'server/target/release/ou-dump-packet.exe',
             'tools/play.ps1',
+            'tools/server.ps1',
+            'tools/game.ps1',
             'play.bat',
+            'server.bat',
+            'game.bat',
             'README.md'
           ) | Where-Object { Test-Path $_ }
           Compress-Archive -Path $files -DestinationPath "dist/open-universe-$v-windows-x64.zip" -Force
