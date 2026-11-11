@@ -89,6 +89,13 @@ $exes = $files | Where-Object { $_ -match '\.exe$' -and (Test-Path $_) }
 # 4. Обновить VERSION
 Set-Content -Path (Join-Path $root 'VERSION') -Value $Version -NoNewline -Encoding UTF8
 
+# 4a. Обновить releases.json (список версий для сайта — без GitHub API).
+try {
+  & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'releases-json.ps1')
+} catch {
+  Write-Host "releases.json не обновлён: $_" -ForegroundColor DarkYellow
+}
+
 # 5. Публикация
 if ($Publish) {
   if (-not (Test-Path $gh)) { throw "GitHub CLI не найден: $gh" }
