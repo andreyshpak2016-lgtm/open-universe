@@ -336,8 +336,44 @@
     window.addEventListener("resize", function () { requestAnimationFrame(fit); });
   }
 
+  /* ---------- Скачивание: данные последнего релиза с GitHub ---------- */
+  function loadLatestRelease() {
+    var repo = "andreyshpak2016-lgtm/open-universe";
+    var endpoints = [
+      "https://api.github.com/repos/" + repo + "/releases/latest",
+      "https://api.github.com/repos/" + repo + "/releases?per_page=1"
+    ];
+    function apply(rel) {
+      if (!rel) return;
+      var verEl = document.getElementById("dl-version");
+      if (verEl && rel.tag_name) verEl.textContent = rel.tag_name;
+      var sizeEl = document.getElementById("dl-size");
+      if (sizeEl && rel.assets && rel.assets.length) {
+        var bytes = rel.assets[0].size || 0;
+        sizeEl.textContent = "~" + (bytes / 1048576).toFixed(2).replace(".", ",") + " МБ";
+      }
+      var dateEl = document.getElementById("dl-date");
+      if (dateEl && rel.published_at) {
+        dateEl.textContent = new Date(rel.published_at).toLocaleDateString("ru-RU");
+      }
+      var linkEl = document.getElementById("dl-latest");
+      if (linkEl && rel.assets && rel.assets.length) linkEl.href = rel.assets[0].browser_download_url;
+    }
+    function tryNext(i) {
+      if (i >= endpoints.length) return; // остаёмся на значениях по умолчанию из HTML
+      fetch(endpoints[i], { headers: { Accept: "application/vnd.github+json" } })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (data) {
+          var rel = Array.isArray(data) ? data[0] : data;
+          if (rel && rel.tag_name) apply(rel);
+        })
+        .catch(function () {});
+    }
+    tryNext(0);
+  }
+
   document.getElementById("year").textContent = new Date().getFullYear();
-  function boot() { render(); initTabs(); initLayers(); initERD(); }
+  function boot() { render(); initTabs(); initLayers(); initERD(); loadLatestRelease(); }
   if (document.readyState !== "loading") boot();
   else document.addEventListener("DOMContentLoaded", boot);
 })();
