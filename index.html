@@ -6,7 +6,7 @@
   <title>Open Universe — MMO-песочница в открытом космосе</title>
   <meta name="description" content="Open Universe — единый живой космос, воксельная постройка, игрок-экономика и программируемые конструкции. План разработки с живым прогрессом." />
   <link rel="icon" href="assets/blackhole.svg" type="image/svg+xml" />
-  <link rel="stylesheet" href="styles.css?v=0.25.1" />
+  <link rel="stylesheet" href="styles.css?v=0.25.2" />
 </head>
 <body>
 
@@ -503,21 +503,20 @@ $ cargo run -p ou-render --release -- lod 1280 720
         </div>
 
         <aside class="panel dl-side">
-          <h3>Как запустить (2 файла)</h3>
+          <h3>Как играть</h3>
           <ol class="dl-steps" style="margin:0 0 12px 18px;padding:0;line-height:1.7">
-            <li>Двойной клик по <code>server.bat</code> — запустится сервер (мир).</li>
-            <li>Двойной клик по <code>game.bat</code> — откроется графический клиент (UE5); нажмите <b>Play</b>.</li>
+            <li>Скачайте и запустите <code>OpenUniverseLauncher.exe</code>.</li>
+            <li>Войдите в профиль (логин и пароль).</li>
+            <li>Лаунчер сам скачает игру — нажмите <b>«Играть»</b>.</li>
           </ol>
-          <pre class="codeblock"><code># то же из терминала:
-powershell -File tools\server.ps1     # окно 1: сервер
-powershell -File tools\game.ps1       # окно 2: игра (UE5)</code></pre>
-          <p class="dl-note" style="margin-top:8px">Из готовой сборки, без Rust: <code>ou-netd.exe 127.0.0.1:7777 60</code> (сервер) и <code>ou-netclient.exe 127.0.0.1:7777 50</code> (игрок).</p>
+          <p class="dl-note">Дальше лаунчер будет следить за обновлениями и предлагать
+          новую версию. Unreal Engine или Rust ставить не нужно — всё уже внутри.</p>
         </aside>
       </div>
 
       <div class="panel" style="margin-top:18px;padding:24px">
         <h3 style="margin:0 0 4px">Все версии игры</h3>
-        <p class="dl-note" style="margin:0 0 14px">Готовая сборка для Windows x64 (сервер + клиенты + демо внутри <code>.exe</code> и <code>.bat</code>). Список подтягивается с GitHub автоматически.</p>
+        <p class="dl-note" style="margin:0 0 14px">История релизов для Windows x64. Свежие три версии показаны сразу, более старые — по кнопке. Список берётся из <code>releases.json</code>.</p>
         <div id="versions" class="versions">
           <p class="dl-note" id="versions-status">Загружаю список версий…</p>
         </div>
@@ -525,19 +524,16 @@ powershell -File tools\game.ps1       # окно 2: игра (UE5)</code></pre>
 
       <div class="download-grid" style="margin-top:18px">
         <div class="panel dl-card">
-          <h3>Посмотреть мир «глазами»</h3>
-          <pre class="codeblock"><code># окно 1: сервер
-ou-netd.exe 127.0.0.1:7777 20
-# окно 2: рендер мира по сети (сохранит 4 кадра)
-cargo run -p ou-render --release --bin ou-netrender -- 127.0.0.1:7777 8 4</code></pre>
-          <h3 style="margin-top:16px;font-size:1rem">Демонстрации без сети</h3>
-          <ul class="dl-files">
-            <li><code>ou-worldgen</code> — генерация звёздных систем</li>
-            <li><code>ou-landing-demo</code> — посадка на планету</li>
-            <li><code>ou-market-sim</code> — симуляция экономики</li>
-            <li><code>ou-build-demo</code> — воксельный редактор</li>
-            <li><code>ou-script-demo</code> — скриптинг конструкций</li>
-          </ul>
+          <h3>Для разработчиков</h3>
+          <p class="dl-desc">Проект открыт: ядро на Rust, клиент на Unreal Engine 5. Сборка из исходников.</p>
+          <pre class="codeblock"><code>git clone https://github.com/andreyshpak2016-lgtm/open-universe
+cd open-universe/server
+cargo build --release        # ядро (223 теста)
+
+# клиент UE5 (нужны UE 5.5+, VS 2022 и .NET Framework SDK)
+powershell -File tools/build-client.ps1
+powershell -File tools/make-map.ps1</code></pre>
+          <p class="dl-note">Подробности — <code>docs/running.md</code> и <code>client/BUILDING.md</code>.</p>
         </div>
 
         <aside class="panel dl-side">
@@ -545,21 +541,18 @@ cargo run -p ou-render --release --bin ou-netrender -- 127.0.0.1:7777 8 4</code>
           <pre class="codeblock"><code>cd server
 cargo test --workspace        # 223 теста Rust
 
-# проверка C++-клиента на реальном пакете
+# проверка C++-клиента на реальном пакете сервера
 powershell -File tools/test-client.ps1</code></pre>
-          <h3 style="margin-top:18px">Сборка из исходников</h3>
-          <pre class="codeblock"><code>git clone https://github.com/andreyshpak2016-lgtm/open-universe
-cd open-universe/server
-cargo build --release</code></pre>
-          <h3 style="margin-top:18px">Клиент на Unreal Engine 5</h3>
-          <pre class="codeblock"><code># сборка модуля (находит движок сам)
-powershell -File tools/build-client.ps1
-
-# запуск редактора
-& "D:\UE_5.5\Engine\Binaries\Win64\UnrealEditor.exe" `
-  "client\OpenUniverse.uproject"</code></pre>
-          <p class="dl-note">Нужны UE 5.5+, Visual Studio 2022 (C++) и .NET Framework SDK. Подробности — <code>client/BUILDING.md</code>.</p>
+          <h3 style="margin-top:18px">Исходники и отчёты</h3>
+          <ul class="dl-files">
+            <li><a href="https://github.com/andreyshpak2016-lgtm/open-universe" target="_blank" rel="noopener">Репозиторий на GitHub</a></li>
+            <li><a href="report.html">Отчёт о разработке</a></li>
+            <li><a href="https://github.com/andreyshpak2016-lgtm/open-universe/blob/main/docs/running.md" target="_blank" rel="noopener">Инструкция по запуску</a></li>
+          </ul>
         </aside>
+      </div>
+    </div>
+  </section>
       </div>
     </div>
   </section>
@@ -604,7 +597,7 @@ powershell -File tools/build-client.ps1
     <span aria-hidden="true">❤</span> Стать спонсором
   </a>
 
-  <script src="data.js?v=0.25.1"></script>
-  <script src="app.js?v=0.25.1"></script>
+  <script src="data.js?v=0.25.2"></script>
+  <script src="app.js?v=0.25.2"></script>
 </body>
 </html>
