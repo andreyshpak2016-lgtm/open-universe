@@ -1,27 +1,27 @@
-//! # ou-render
+﻿//! # ou-render
 //!
-//! Софтверный рендерер Open Universe: настоящая трассировка лучей на CPU,
-//! без GPU и без внешних библиотек.
+//! РЎРѕС„С‚РІРµСЂРЅС‹Р№ СЂРµРЅРґРµСЂРµСЂ Open Universe: РЅР°СЃС‚РѕСЏС‰Р°СЏ С‚СЂР°СЃСЃРёСЂРѕРІРєР° Р»СѓС‡РµР№ РЅР° CPU,
+//! Р±РµР· GPU Рё Р±РµР· РІРЅРµС€РЅРёС… Р±РёР±Р»РёРѕС‚РµРє.
 //!
-//! ## Зачем
-//! Наш клиент по ADR-0001 — Unreal Engine 5. Но пока UE не установлен, а вся
-//! *логика* мира (позиции, ориентации, снапшоты) уже есть на сервере, нужен
-//! способ **увидеть** этот мир. Этот крейт рендерит сцену из того же состояния,
-//! что приходит по сети, и сохраняет кадр в PNG.
+//! ## Р—Р°С‡РµРј
+//! РќР°С€ РєР»РёРµРЅС‚ РїРѕ ADR-0001 вЂ” Unreal Engine 5. РќРѕ РїРѕРєР° UE РЅРµ СѓСЃС‚Р°РЅРѕРІР»РµРЅ, Р° РІСЃСЏ
+//! *Р»РѕРіРёРєР°* РјРёСЂР° (РїРѕР·РёС†РёРё, РѕСЂРёРµРЅС‚Р°С†РёРё, СЃРЅР°РїС€РѕС‚С‹) СѓР¶Рµ РµСЃС‚СЊ РЅР° СЃРµСЂРІРµСЂРµ, РЅСѓР¶РµРЅ
+//! СЃРїРѕСЃРѕР± **СѓРІРёРґРµС‚СЊ** СЌС‚РѕС‚ РјРёСЂ. Р­С‚РѕС‚ РєСЂРµР№С‚ СЂРµРЅРґРµСЂРёС‚ СЃС†РµРЅСѓ РёР· С‚РѕРіРѕ Р¶Рµ СЃРѕСЃС‚РѕСЏРЅРёСЏ,
+//! С‡С‚Рѕ РїСЂРёС…РѕРґРёС‚ РїРѕ СЃРµС‚Рё, Рё СЃРѕС…СЂР°РЅСЏРµС‚ РєР°РґСЂ РІ PNG.
 //!
-//! Компоненты (камера, floating origin, сфера-планета, блочный корабль, звёзды)
-//! переносятся в UE5 один-к-одному — математика здесь та же, что понадобится там.
+//! РљРѕРјРїРѕРЅРµРЅС‚С‹ (РєР°РјРµСЂР°, floating origin, СЃС„РµСЂР°-РїР»Р°РЅРµС‚Р°, Р±Р»РѕС‡РЅС‹Р№ РєРѕСЂР°Р±Р»СЊ, Р·РІС‘Р·РґС‹)
+//! РїРµСЂРµРЅРѕСЃСЏС‚СЃСЏ РІ UE5 РѕРґРёРЅ-Рє-РѕРґРЅРѕРјСѓ вЂ” РјР°С‚РµРјР°С‚РёРєР° Р·РґРµСЃСЊ С‚Р° Р¶Рµ, С‡С‚Рѕ РїРѕРЅР°РґРѕР±РёС‚СЃСЏ С‚Р°Рј.
 //!
-//! ## Что рендерится
-//! * звёздное небо (детерминированное, из хеша направления),
-//! * планета-сфера с процедурным шумом и освещением по Ламберту,
-//! * корабль как набор блоков (OBB) — в духе воксельных конструкций,
-//! * атмосферное свечение по краю планеты,
-//! * источник света (звезда) с бликом.
+//! ## Р§С‚Рѕ СЂРµРЅРґРµСЂРёС‚СЃСЏ
+//! * Р·РІС‘Р·РґРЅРѕРµ РЅРµР±Рѕ (РґРµС‚РµСЂРјРёРЅРёСЂРѕРІР°РЅРЅРѕРµ, РёР· С…РµС€Р° РЅР°РїСЂР°РІР»РµРЅРёСЏ),
+//! * РїР»Р°РЅРµС‚Р°-СЃС„РµСЂР° СЃ РїСЂРѕС†РµРґСѓСЂРЅС‹Рј С€СѓРјРѕРј Рё РѕСЃРІРµС‰РµРЅРёРµРј РїРѕ Р›Р°РјР±РµСЂС‚Сѓ,
+//! * РєРѕСЂР°Р±Р»СЊ РєР°Рє РЅР°Р±РѕСЂ Р±Р»РѕРєРѕРІ (OBB) вЂ” РІ РґСѓС…Рµ РІРѕРєСЃРµР»СЊРЅС‹С… РєРѕРЅСЃС‚СЂСѓРєС†РёР№,
+//! * Р°С‚РјРѕСЃС„РµСЂРЅРѕРµ СЃРІРµС‡РµРЅРёРµ РїРѕ РєСЂР°СЋ РїР»Р°РЅРµС‚С‹,
+//! * РёСЃС‚РѕС‡РЅРёРє СЃРІРµС‚Р° (Р·РІРµР·РґР°) СЃ Р±Р»РёРєРѕРј.
 //!
-//! ## Производительность
-//! Это учебный/отладочный рендер: он честно трассирует лучи, но не гоняется за
-//! кадрами в секунду. Он даёт **референсный кадр** для сверки и скриншот.
+//! ## РџСЂРѕРёР·РІРѕРґРёС‚РµР»СЊРЅРѕСЃС‚СЊ
+//! Р­С‚Рѕ СѓС‡РµР±РЅС‹Р№/РѕС‚Р»Р°РґРѕС‡РЅС‹Р№ СЂРµРЅРґРµСЂ: РѕРЅ С‡РµСЃС‚РЅРѕ С‚СЂР°СЃСЃРёСЂСѓРµС‚ Р»СѓС‡Рё, РЅРѕ РЅРµ РіРѕРЅСЏРµС‚СЃСЏ Р·Р°
+//! РєР°РґСЂР°РјРё РІ СЃРµРєСѓРЅРґСѓ. РћРЅ РґР°С‘С‚ **СЂРµС„РµСЂРµРЅСЃРЅС‹Р№ РєР°РґСЂ** РґР»СЏ СЃРІРµСЂРєРё Рё СЃРєСЂРёРЅС€РѕС‚.
 
 pub mod png;
 
@@ -29,10 +29,10 @@ use ou_protocol::Vec3;
 use ou_sim::{det_cos, det_sin};
 
 // ---------------------------------------------------------------------------
-// Математика
+// РњР°С‚РµРјР°С‚РёРєР°
 // ---------------------------------------------------------------------------
 
-/// Нормализовать вектор.
+/// РќРѕСЂРјР°Р»РёР·РѕРІР°С‚СЊ РІРµРєС‚РѕСЂ.
 fn norm(v: Vec3) -> Vec3 {
     let l = v.length();
     if l == 0.0 {
@@ -54,18 +54,18 @@ fn cross(a: Vec3, b: Vec3) -> Vec3 {
     )
 }
 
-/// Смешать два вектора.
+/// РЎРјРµС€Р°С‚СЊ РґРІР° РІРµРєС‚РѕСЂР°.
 #[allow(dead_code)]
 fn lerp3(a: Vec3, b: Vec3, t: f64) -> Vec3 {
     a.add(b.sub(a).scale(t))
 }
 
-/// Смешать два цвета.
+/// РЎРјРµС€Р°С‚СЊ РґРІР° С†РІРµС‚Р°.
 fn lerp_color(a: Color, b: Color, t: f64) -> Color {
     a.add(b.add(a.scale(-1.0)).scale(t))
 }
 
-/// Хеш решётки в [0,1).
+/// РҐРµС€ СЂРµС€С‘С‚РєРё РІ [0,1).
 fn lattice_hash(x: i64, y: i64, z: i64, seed: u64) -> f64 {
     let mut h = seed;
     for c in [x, y, z] {
@@ -76,12 +76,12 @@ fn lattice_hash(x: i64, y: i64, z: i64, seed: u64) -> f64 {
     (h >> 11) as f64 / (1u64 << 53) as f64
 }
 
-/// Плавная интерполяция (smoothstep).
+/// РџР»Р°РІРЅР°СЏ РёРЅС‚РµСЂРїРѕР»СЏС†РёСЏ (smoothstep).
 fn smooth(t: f64) -> f64 {
     t * t * (3.0 - 2.0 * t)
 }
 
-/// Трилинейный value noise: узлы решётки сглаживаются, поэтому нет «клеток».
+/// РўСЂРёР»РёРЅРµР№РЅС‹Р№ value noise: СѓР·Р»С‹ СЂРµС€С‘С‚РєРё СЃРіР»Р°Р¶РёРІР°СЋС‚СЃСЏ, РїРѕСЌС‚РѕРјСѓ РЅРµС‚ В«РєР»РµС‚РѕРєВ».
 fn value_noise(p: Vec3, freq: f64, seed: u64) -> f64 {
     let x = p.x * freq;
     let y = p.y * freq;
@@ -102,7 +102,7 @@ fn value_noise(p: Vec3, freq: f64, seed: u64) -> f64 {
     lerp(y0, y1, fz)
 }
 
-/// Фрактальный шум (несколько октав) — похоже на поверхность планеты.
+/// Р¤СЂР°РєС‚Р°Р»СЊРЅС‹Р№ С€СѓРј (РЅРµСЃРєРѕР»СЊРєРѕ РѕРєС‚Р°РІ) вЂ” РїРѕС…РѕР¶Рµ РЅР° РїРѕРІРµСЂС…РЅРѕСЃС‚СЊ РїР»Р°РЅРµС‚С‹.
 fn fbm(p: Vec3, seed: u64) -> f64 {
     let mut sum = 0.0;
     let mut amp = 1.0;
@@ -118,10 +118,10 @@ fn fbm(p: Vec3, seed: u64) -> f64 {
 }
 
 // ---------------------------------------------------------------------------
-// Сцена
+// РЎС†РµРЅР°
 // ---------------------------------------------------------------------------
 
-/// Цвет в линейном пространстве 0..1.
+/// Р¦РІРµС‚ РІ Р»РёРЅРµР№РЅРѕРј РїСЂРѕСЃС‚СЂР°РЅСЃС‚РІРµ 0..1.
 #[derive(Clone, Copy, Debug)]
 pub struct Color {
     pub r: f64,
@@ -144,46 +144,116 @@ impl Color {
         Color::rgb(self.r * o.r, self.g * o.g, self.b * o.b)
     }
     fn to_rgb8(self) -> [u8; 3] {
-        // Гамма-коррекция и ограничение.
+        // Р“Р°РјРјР°-РєРѕСЂСЂРµРєС†РёСЏ Рё РѕРіСЂР°РЅРёС‡РµРЅРёРµ.
         let g = |v: f64| (v.clamp(0.0, 1.0).powf(1.0 / 2.2) * 255.0).round() as u8;
         [g(self.r), g(self.g), g(self.b)]
     }
 }
 
-/// Ориентированный блок (деталь корабля).
+/// РњР°С‚СЂРёС†Р° РїРѕРІРѕСЂРѕС‚Р° 3Г—3 (СЃС‚РѕР»Р±С†С‹ вЂ” Р»РѕРєР°Р»СЊРЅС‹Рµ РѕСЃРё РІ РјРёСЂРѕРІС‹С… РєРѕРѕСЂРґРёРЅР°С‚Р°С…).
+#[derive(Clone, Copy, Debug)]
+pub struct Mat3 {
+    pub c0: Vec3,
+    pub c1: Vec3,
+    pub c2: Vec3,
+}
+
+impl Mat3 {
+    pub const IDENTITY: Mat3 = Mat3 {
+        c0: Vec3::new(1.0, 0.0, 0.0),
+        c1: Vec3::new(0.0, 1.0, 0.0),
+        c2: Vec3::new(0.0, 0.0, 1.0),
+    };
+
+    /// РџРѕРІРѕСЂРѕС‚ РёР· СѓРіР»РѕРІ СЂС‹СЃРєР°РЅРёСЏ Рё С‚Р°РЅРіР°Р¶Р° (РєР°Рє РІ СЃРёРјСѓР»СЏС†РёРё РєРѕСЂР°Р±Р»СЏ).
+    pub fn from_yaw_pitch(yaw: f64, pitch: f64) -> Self {
+        let (sy, cy) = (det_sin(yaw), det_cos(yaw));
+        let (sp, cp) = (det_sin(pitch), det_cos(pitch));
+        // Р‘Р°Р·РёСЃ: X вЂ” РІРїСЂР°РІРѕ, Y вЂ” РІРІРµСЂС… (СЃ СѓС‡С‘С‚РѕРј С‚Р°РЅРіР°Р¶Р°), Z вЂ” В«РІРїРµСЂС‘РґВ».
+        Mat3 {
+            c0: Vec3::new(cy, 0.0, -sy),
+            c1: Vec3::new(-sy * sp, cp, -cy * sp),
+            c2: Vec3::new(sy * cp, sp, cy * cp),
+        }
+    }
+
+    /// РЈРјРЅРѕР¶РёС‚СЊ РјР°С‚СЂРёС†Сѓ РЅР° РІРµРєС‚РѕСЂ (MВ·v).
+    pub fn mul_vec(self, v: Vec3) -> Vec3 {
+        Vec3::new(
+            self.c0.x * v.x + self.c1.x * v.y + self.c2.x * v.z,
+            self.c0.y * v.x + self.c1.y * v.y + self.c2.y * v.z,
+            self.c0.z * v.x + self.c1.z * v.y + self.c2.z * v.z,
+        )
+    }
+
+    /// РўСЂР°РЅСЃРїРѕРЅРёСЂРѕРІР°РЅРёРµ (РѕР±СЂР°С‚РЅР°СЏ РґР»СЏ РѕСЂС‚РѕРЅРѕСЂРјР°Р»СЊРЅРѕР№ РјР°С‚СЂРёС†С‹).
+    pub fn transposed(self) -> Mat3 {
+        Mat3 {
+            c0: Vec3::new(self.c0.x, self.c1.x, self.c2.x),
+            c1: Vec3::new(self.c0.y, self.c1.y, self.c2.y),
+            c2: Vec3::new(self.c0.z, self.c1.z, self.c2.z),
+        }
+    }
+}
+
+/// РћСЂРёРµРЅС‚РёСЂРѕРІР°РЅРЅС‹Р№ Р±Р»РѕРє (РґРµС‚Р°Р»СЊ РєРѕСЂР°Р±Р»СЏ).
 #[derive(Clone, Debug)]
 pub struct Block {
     pub center: Vec3,
     pub half: Vec3,
-    /// Базовый цвет.
+    /// Р‘Р°Р·РѕРІС‹Р№ С†РІРµС‚.
     pub color: Color,
+    /// РћСЂРёРµРЅС‚Р°С†РёСЏ РІ РјРёСЂРµ (РїРѕ СѓРјРѕР»С‡Р°РЅРёСЋ вЂ” Р±РµР· РїРѕРІРѕСЂРѕС‚Р°).
+    pub rot: Mat3,
 }
 
 impl Block {
-    /// Пересечение луча с OBB. Возвращает расстояние, если попали.
+    /// Р‘Р»РѕРє Р±РµР· РїРѕРІРѕСЂРѕС‚Р° (РѕСЃРё РІС‹СЂРѕРІРЅРµРЅС‹ РїРѕ РјРёСЂРѕРІС‹Рј).
+    pub fn axis(center: Vec3, half: Vec3, color: Color) -> Self {
+        Block { center, half, color, rot: Mat3::IDENTITY }
+    }
+
+    /// Р‘Р»РѕРє СЃ РѕСЂРёРµРЅС‚Р°С†РёРµР№.
+    pub fn oriented(center: Vec3, half: Vec3, color: Color, rot: Mat3) -> Self {
+        Block { center, half, color, rot }
+    }
+
+    /// РџРµСЂРµСЃРµС‡РµРЅРёРµ Р»СѓС‡Р° СЃ OBB. Р’РѕР·РІСЂР°С‰Р°РµС‚ СЂР°СЃСЃС‚РѕСЏРЅРёРµ Рё РјРёСЂРѕРІСѓСЋ РЅРѕСЂРјР°Р»СЊ.
     ///
-    /// Работаем в мире, где блоки выровнены по осям (для корабля ориентация
-    /// учитывается при построении). Так проще и достаточно для отладочного кадра.
-    fn hit(&self, origin: Vec3, dir: Vec3) -> Option<(f64, Vec3)> {
-        let min = self.center.sub(self.half);
-        let max = self.center.add(self.half);
+    /// Р›СѓС‡ РїРµСЂРµРІРѕРґРёС‚СЃСЏ РІ Р»РѕРєР°Р»СЊРЅС‹Рµ РєРѕРѕСЂРґРёРЅР°С‚С‹ Р±Р»РѕРєР° (С‚Р°Рј РѕРЅ СЃРЅРѕРІР° AABB),
+    /// РїРѕСЌС‚РѕРјСѓ РїРѕРІРѕСЂРѕС‚ РЅРµ РІР»РёСЏРµС‚ РЅР° СЃРєРѕСЂРѕСЃС‚СЊ РїСЂРѕРІРµСЂРєРё.
+    fn hit_ex(&self, origin: Vec3, dir: Vec3) -> Option<(f64, Vec3)> {
+        let inv = self.rot.transposed();
+        let lo = inv.mul_vec(origin.sub(self.center));
+        let ld = inv.mul_vec(dir);
+
         let mut tmin = f64::NEG_INFINITY;
         let mut tmax = f64::INFINITY;
+        let mut normal_axis = 0usize;
+        let mut normal_sign = 1.0;
         let axes = [
-            (origin.x, dir.x, min.x, max.x),
-            (origin.y, dir.y, min.y, max.y),
-            (origin.z, dir.z, min.z, max.z),
+            (lo.x, ld.x, self.half.x),
+            (lo.y, ld.y, self.half.y),
+            (lo.z, ld.z, self.half.z),
         ];
-        for (o, d, lo, hi) in axes {
+        for (i, (o, d, h)) in axes.iter().enumerate() {
             if d.abs() < 1e-9 {
-                if o < lo || o > hi {
+                if o.abs() > *h {
                     return None;
                 }
             } else {
-                let t1 = (lo - o) / d;
-                let t2 = (hi - o) / d;
-                let (near, far) = if t1 < t2 { (t1, t2) } else { (t2, t1) };
-                tmin = tmin.max(near);
+                let t1 = (-h - o) / d;
+                let t2 = (h - o) / d;
+                let (near, far, sign) = if t1 < t2 {
+                    (t1, t2, -1.0)
+                } else {
+                    (t2, t1, 1.0)
+                };
+                if near > tmin {
+                    tmin = near;
+                    normal_axis = i;
+                    normal_sign = sign;
+                }
                 tmax = tmax.min(far);
                 if tmin > tmax {
                     return None;
@@ -194,24 +264,32 @@ impl Block {
             return None;
         }
         let t = if tmin > 0.0 { tmin } else { tmax };
-        let p = origin.add(dir.scale(t));
-        Some((t, p))
+        let local_n = match normal_axis {
+            0 => Vec3::new(normal_sign, 0.0, 0.0),
+            1 => Vec3::new(0.0, normal_sign, 0.0),
+            _ => Vec3::new(0.0, 0.0, normal_sign),
+        };
+        Some((t, norm(self.rot.mul_vec(local_n))))
+    }
+
+    fn hit(&self, origin: Vec3, dir: Vec3) -> Option<(f64, Vec3)> {
+        self.hit_ex(origin, dir)
     }
 }
 
-/// Сфера (планета или звезда).
+/// РЎС„РµСЂР° (РїР»Р°РЅРµС‚Р° РёР»Рё Р·РІРµР·РґР°).
 #[derive(Clone, Debug)]
 pub struct Sphere {
     pub center: Vec3,
     pub radius: f64,
-    /// Цвет поверхности.
+    /// Р¦РІРµС‚ РїРѕРІРµСЂС…РЅРѕСЃС‚Рё.
     pub color: Color,
-    /// Есть ли процедурный рельеф (планета) или ровный цвет (звезда).
+    /// Р•СЃС‚СЊ Р»Рё РїСЂРѕС†РµРґСѓСЂРЅС‹Р№ СЂРµР»СЊРµС„ (РїР»Р°РЅРµС‚Р°) РёР»Рё СЂРѕРІРЅС‹Р№ С†РІРµС‚ (Р·РІРµР·РґР°).
     pub terrain: bool,
-    /// Собственное свечение (для звезды).
+    /// РЎРѕР±СЃС‚РІРµРЅРЅРѕРµ СЃРІРµС‡РµРЅРёРµ (РґР»СЏ Р·РІРµР·РґС‹).
     pub emissive: f64,
     pub seed: u64,
-    /// Толщина атмосферы (0 — нет).
+    /// РўРѕР»С‰РёРЅР° Р°С‚РјРѕСЃС„РµСЂС‹ (0 вЂ” РЅРµС‚).
     pub atmosphere: f64,
 }
 
@@ -234,19 +312,19 @@ impl Sphere {
     }
 }
 
-/// Камера.
+/// РљР°РјРµСЂР°.
 #[derive(Clone, Debug)]
 pub struct Camera {
     pub origin: Vec3,
-    /// Куда смотрит.
+    /// РљСѓРґР° СЃРјРѕС‚СЂРёС‚.
     pub forward: Vec3,
     pub up: Vec3,
-    /// Поле зрения по вертикали (радианы).
+    /// РџРѕР»Рµ Р·СЂРµРЅРёСЏ РїРѕ РІРµСЂС‚РёРєР°Р»Рё (СЂР°РґРёР°РЅС‹).
     pub fov: f64,
 }
 
 impl Camera {
-    /// Луч для пикселя (nx, ny ∈ [0,1]).
+    /// Р›СѓС‡ РґР»СЏ РїРёРєСЃРµР»СЏ (nx, ny в€€ [0,1]).
     fn ray(&self, nx: f64, ny: f64, aspect: f64) -> Vec3 {
         let f = norm(self.forward);
         let r = norm(cross(f, self.up));
@@ -259,23 +337,23 @@ impl Camera {
     }
 }
 
-/// Освещение.
+/// РћСЃРІРµС‰РµРЅРёРµ.
 #[derive(Clone, Debug)]
 pub struct Light {
     pub direction: Vec3,
     pub color: Color,
-    /// Направление, куда светит (нормализовано к источнику).
+    /// РќР°РїСЂР°РІР»РµРЅРёРµ, РєСѓРґР° СЃРІРµС‚РёС‚ (РЅРѕСЂРјР°Р»РёР·РѕРІР°РЅРѕ Рє РёСЃС‚РѕС‡РЅРёРєСѓ).
     pub intensity: f64,
 }
 
-/// Целиком сцена.
+/// Р¦РµР»РёРєРѕРј СЃС†РµРЅР°.
 #[derive(Clone, Debug)]
 pub struct Scene {
     pub camera: Camera,
     pub spheres: Vec<Sphere>,
     pub blocks: Vec<Block>,
     pub light: Light,
-    /// Цвет глубокого космоса.
+    /// Р¦РІРµС‚ РіР»СѓР±РѕРєРѕРіРѕ РєРѕСЃРјРѕСЃР°.
     pub space: Color,
     pub star_density: f64,
     pub star_seed: u64,
@@ -305,16 +383,16 @@ impl Scene {
 }
 
 // ---------------------------------------------------------------------------
-// Трассировка
+// РўСЂР°СЃСЃРёСЂРѕРІРєР°
 // ---------------------------------------------------------------------------
 
-/// Фон: звёзды точками, туманность и «галактическая полоса».
+/// Р¤РѕРЅ: Р·РІС‘Р·РґС‹ С‚РѕС‡РєР°РјРё, С‚СѓРјР°РЅРЅРѕСЃС‚СЊ Рё В«РіР°Р»Р°РєС‚РёС‡РµСЃРєР°СЏ РїРѕР»РѕСЃР°В».
 fn background(dir: Vec3, scene: &Scene) -> Color {
     let d = norm(dir);
     let mut col = scene.space;
 
-    // Звёзды: решётка направлений; в редких ячейках ставим точку и рисуем
-    // её как маленький гауссов ореол, поэтому звёзды круглые, а не квадратные.
+    // Р—РІС‘Р·РґС‹: СЂРµС€С‘С‚РєР° РЅР°РїСЂР°РІР»РµРЅРёР№; РІ СЂРµРґРєРёС… СЏС‡РµР№РєР°С… СЃС‚Р°РІРёРј С‚РѕС‡РєСѓ Рё СЂРёСЃСѓРµРј
+    // РµС‘ РєР°Рє РјР°Р»РµРЅСЊРєРёР№ РіР°СѓСЃСЃРѕРІ РѕСЂРµРѕР», РїРѕСЌС‚РѕРјСѓ Р·РІС‘Р·РґС‹ РєСЂСѓРіР»С‹Рµ, Р° РЅРµ РєРІР°РґСЂР°С‚РЅС‹Рµ.
     let cell = 90.0;
     let xf = d.x * cell;
     let yf = d.y * cell;
@@ -332,15 +410,15 @@ fn background(dir: Vec3, scene: &Scene) -> Color {
                 if exist >= scene.star_density {
                     continue;
                 }
-                // Смещение звезды внутри ячейки.
+                // РЎРјРµС‰РµРЅРёРµ Р·РІРµР·РґС‹ РІРЅСѓС‚СЂРё СЏС‡РµР№РєРё.
                 let ox = lattice_hash(cx, cy, cz, scene.star_seed ^ 0x11);
                 let oy = lattice_hash(cx, cy, cz, scene.star_seed ^ 0x22);
-                // Положение звезды в пространстве ячеек.
+                // РџРѕР»РѕР¶РµРЅРёРµ Р·РІРµР·РґС‹ РІ РїСЂРѕСЃС‚СЂР°РЅСЃС‚РІРµ СЏС‡РµРµРє.
                 let sx = cx as f64 + ox - xf;
                 let sy = cy as f64 + oy - yf;
                 let sz = cz as f64 - zf;
                 let dist2 = sx * sx + sy * sy + sz * sz;
-                // Ореол: чем ближе к точке, тем ярче.
+                // РћСЂРµРѕР»: С‡РµРј Р±Р»РёР¶Рµ Рє С‚РѕС‡РєРµ, С‚РµРј СЏСЂС‡Рµ.
                 let bright = ((0.16 - dist2) / 0.16).max(0.0);
                 if bright <= 0.0 {
                     continue;
@@ -357,7 +435,7 @@ fn background(dir: Vec3, scene: &Scene) -> Color {
         }
     }
 
-    // Туманность: низкочастотный шум по направлению.
+    // РўСѓРјР°РЅРЅРѕСЃС‚СЊ: РЅРёР·РєРѕС‡Р°СЃС‚РѕС‚РЅС‹Р№ С€СѓРј РїРѕ РЅР°РїСЂР°РІР»РµРЅРёСЋ.
     let n = fbm(Vec3::new(d.x * 2.2, d.y * 2.2, d.z * 2.2), scene.star_seed ^ 0xABCD);
     if n > 0.55 {
         let t = ((n - 0.55) / 0.45).min(1.0);
@@ -365,7 +443,7 @@ fn background(dir: Vec3, scene: &Scene) -> Color {
         col = lerp_color(col, neb, t * 0.6);
     }
 
-    // Галактическая полоса — мягкая светлая полоса поперёк неба.
+    // Р“Р°Р»Р°РєС‚РёС‡РµСЃРєР°СЏ РїРѕР»РѕСЃР° вЂ” РјСЏРіРєР°СЏ СЃРІРµС‚Р»Р°СЏ РїРѕР»РѕСЃР° РїРѕРїРµСЂС‘Рє РЅРµР±Р°.
     let band = (d.y * 3.2).abs();
     if band < 0.5 {
         let t = 1.0 - band / 0.5;
@@ -374,13 +452,13 @@ fn background(dir: Vec3, scene: &Scene) -> Color {
     col
 }
 
-/// Осветить точку поверхности: ambient + diffuse + блик.
+/// РћСЃРІРµС‚РёС‚СЊ С‚РѕС‡РєСѓ РїРѕРІРµСЂС…РЅРѕСЃС‚Рё: ambient + diffuse + Р±Р»РёРє.
 fn shade(base: Color, n: Vec3, view: Vec3, ldir: Vec3, light: &Light, specular: f64) -> Color {
     let ndl = dot(n, ldir).max(0.0);
     let ambient = 0.06;
     let mut col = base.mul(light.color).scale((ambient + (1.0 - ambient) * ndl) * light.intensity);
 
-    // Блик (Блинн-Фонг).
+    // Р‘Р»РёРє (Р‘Р»РёРЅРЅ-Р¤РѕРЅРі).
     if specular > 0.0 && ndl > 0.0 {
         let h = norm(ldir.add(view));
         let ndh = dot(n, h).max(0.0);
@@ -390,13 +468,13 @@ fn shade(base: Color, n: Vec3, view: Vec3, ldir: Vec3, light: &Light, specular: 
     col
 }
 
-/// Трассировать один луч и вернуть цвет.
+/// РўСЂР°СЃСЃРёСЂРѕРІР°С‚СЊ РѕРґРёРЅ Р»СѓС‡ Рё РІРµСЂРЅСѓС‚СЊ С†РІРµС‚.
 pub fn trace(scene: &Scene, origin: Vec3, dir: Vec3, aspect: f64) -> Color {
     let _ = aspect;
     let ldir = norm(scene.light.direction);
     let view = norm(dir.scale(-1.0));
 
-    // Ближайшее пересечение.
+    // Р‘Р»РёР¶Р°Р№С€РµРµ РїРµСЂРµСЃРµС‡РµРЅРёРµ.
     let mut best_t = f64::INFINITY;
     let mut best_color = background(dir, scene);
     let mut shaded = false;
@@ -406,12 +484,12 @@ pub fn trace(scene: &Scene, origin: Vec3, dir: Vec3, aspect: f64) -> Color {
             if t < best_t {
                 best_t = t;
                 if s.emissive > 0.0 {
-                    // Собственное свечение (звезда).
+                    // РЎРѕР±СЃС‚РІРµРЅРЅРѕРµ СЃРІРµС‡РµРЅРёРµ (Р·РІРµР·РґР°).
                     best_color = s.color.scale(s.emissive);
                     shaded = true;
                 } else {
                     let n = norm(rel);
-                    // Рельеф: суша/океан по процедурному шуму.
+                    // Р РµР»СЊРµС„: СЃСѓС€Р°/РѕРєРµР°РЅ РїРѕ РїСЂРѕС†РµРґСѓСЂРЅРѕРјСѓ С€СѓРјСѓ.
                     let base = if s.terrain {
                         let land = fbm(rel.scale(1.0 / s.radius * 7.0), s.seed);
                         if land > 0.5 {
@@ -428,7 +506,7 @@ pub fn trace(scene: &Scene, origin: Vec3, dir: Vec3, aspect: f64) -> Color {
                         s.color
                     };
                     let mut col = shade(base, n, view, ldir, &scene.light, 0.05);
-                    // Атмосферное свечение по краю (френель).
+                    // РђС‚РјРѕСЃС„РµСЂРЅРѕРµ СЃРІРµС‡РµРЅРёРµ РїРѕ РєСЂР°СЋ (С„СЂРµРЅРµР»СЊ).
                     if s.atmosphere > 0.0 {
                         let fres = (1.0 - dot(n, view).abs()).powf(2.5);
                         let ndl = dot(n, ldir).max(0.0);
@@ -443,30 +521,19 @@ pub fn trace(scene: &Scene, origin: Vec3, dir: Vec3, aspect: f64) -> Color {
         }
     }
 
-    // Блоки (детали корабля, астероиды).
+    // Р‘Р»РѕРєРё (РґРµС‚Р°Р»Рё РєРѕСЂР°Р±Р»СЏ, Р°СЃС‚РµСЂРѕРёРґС‹).
     for b in &scene.blocks {
-        if let Some((t, p)) = b.hit(origin, dir) {
+        if let Some((t, n)) = b.hit_ex(origin, dir) {
             if t < best_t {
                 best_t = t;
-                // Нормаль по ближайшей грани OBB.
-                let rel = p.sub(b.center);
-                let ax = rel.x.abs() / b.half.x;
-                let ay = rel.y.abs() / b.half.y;
-                let az = rel.z.abs() / b.half.z;
-                let n = if ax >= ay && ax >= az {
-                    Vec3::new(rel.x.signum(), 0.0, 0.0)
-                } else if ay >= az {
-                    Vec3::new(0.0, rel.y.signum(), 0.0)
-                } else {
-                    Vec3::new(0.0, 0.0, rel.z.signum())
-                };
-                // Каждый блок чуть отличается оттенком — «воксельная» текстура.
+                let p = origin.add(dir.scale(t));
+                // РљР°Р¶РґС‹Р№ Р±Р»РѕРє С‡СѓС‚СЊ РѕС‚Р»РёС‡Р°РµС‚СЃСЏ РѕС‚С‚РµРЅРєРѕРј вЂ” В«РІРѕРєСЃРµР»СЊРЅР°СЏВ» С‚РµРєСЃС‚СѓСЂР°.
                 let tnoise = 0.9 + 0.25 * value_noise(p, 6.0, 0x7777);
-                // У блочных поверхностей слабый ambient, иначе камни «тонут».
+                // РЈ Р±Р»РѕС‡РЅС‹С… РїРѕРІРµСЂС…РЅРѕСЃС‚РµР№ СЃР»Р°Р±С‹Р№ ambient, РёРЅР°С‡Рµ РєР°РјРЅРё В«С‚РѕРЅСѓС‚В».
                 let ndl = dot(n, ldir).max(0.0);
                 let lit = b.color.scale(tnoise).scale(0.32 + 0.9 * ndl);
                 let mut col = lit.mul(scene.light.color).scale(scene.light.intensity);
-                // Лёгкий блик по грани.
+                // Р›С‘РіРєРёР№ Р±Р»РёРє РїРѕ РіСЂР°РЅРё.
                 let h = norm(ldir.add(view));
                 let spec = dot(n, h).max(0.0).powf(24.0) * 0.18;
                 col = col.add(scene.light.color.scale(spec));
@@ -480,14 +547,14 @@ pub fn trace(scene: &Scene, origin: Vec3, dir: Vec3, aspect: f64) -> Color {
     best_color
 }
 
-/// Отрендерить сцену в RGB-буфер.
+/// РћС‚СЂРµРЅРґРµСЂРёС‚СЊ СЃС†РµРЅСѓ РІ RGB-Р±СѓС„РµСЂ.
 pub fn render(scene: &Scene, width: u32, height: u32) -> Vec<u8> {
     let aspect = width as f64 / height as f64;
     let mut buf = vec![0u8; width as usize * height as usize * 3];
     let cam = &scene.camera;
     for y in 0..height {
         for x in 0..width {
-            // Сглаживание 2×2 (SSAA) — дешевле, чем постобработка.
+            // РЎРіР»Р°Р¶РёРІР°РЅРёРµ 2Г—2 (SSAA) вЂ” РґРµС€РµРІР»Рµ, С‡РµРј РїРѕСЃС‚РѕР±СЂР°Р±РѕС‚РєР°.
             let mut acc = Color::rgb(0.0, 0.0, 0.0);
             for sy in [0.0, 0.5] {
                 for sx in [0.0, 0.5] {
@@ -511,13 +578,13 @@ pub fn render(scene: &Scene, width: u32, height: u32) -> Vec<u8> {
 }
 
 // ---------------------------------------------------------------------------
-// Готовые сцены
+// Р“РѕС‚РѕРІС‹Рµ СЃС†РµРЅС‹
 // ---------------------------------------------------------------------------
 
-/// Сцена «корабль у планеты»: корабль крупным планом, планета и звезда в фоне.
+/// РЎС†РµРЅР° В«РєРѕСЂР°Р±Р»СЊ Сѓ РїР»Р°РЅРµС‚С‹В»: РєРѕСЂР°Р±Р»СЊ РєСЂСѓРїРЅС‹Рј РїР»Р°РЅРѕРј, РїР»Р°РЅРµС‚Р° Рё Р·РІРµР·РґР° РІ С„РѕРЅРµ.
 pub fn scene_ship_and_planet() -> Scene {
     let mut s = Scene::new();
-    // Планета справа-снизу — крупный фон.
+    // РџР»Р°РЅРµС‚Р° СЃРїСЂР°РІР°-СЃРЅРёР·Сѓ вЂ” РєСЂСѓРїРЅС‹Р№ С„РѕРЅ.
     s.spheres.push(Sphere {
         center: Vec3::new(2600.0, -1500.0, 7000.0),
         radius: 2400.0,
@@ -527,7 +594,7 @@ pub fn scene_ship_and_planet() -> Scene {
         seed: 12345,
         atmosphere: 1.1,
     });
-    // Звезда слева-сверху — источник света.
+    // Р—РІРµР·РґР° СЃР»РµРІР°-СЃРІРµСЂС…Сѓ вЂ” РёСЃС‚РѕС‡РЅРёРє СЃРІРµС‚Р°.
     s.spheres.push(Sphere {
         center: Vec3::new(-5200.0, 2600.0, 5000.0),
         radius: 380.0,
@@ -539,57 +606,37 @@ pub fn scene_ship_and_planet() -> Scene {
     });
     s.light.direction = norm(Vec3::new(-5200.0, 2600.0, 5000.0));
 
-    // Корабль — блочная конструкция «прямо по курсу», крупным планом.
+    // РљРѕСЂР°Р±Р»СЊ вЂ” Р±Р»РѕС‡РЅР°СЏ РєРѕРЅСЃС‚СЂСѓРєС†РёСЏ В«РїСЂСЏРјРѕ РїРѕ РєСѓСЂСЃСѓВ», РєСЂСѓРїРЅС‹Рј РїР»Р°РЅРѕРј.
     let hull = Color::rgb(0.74, 0.77, 0.82);
     let hull_dark = Color::rgb(0.42, 0.46, 0.55);
     let accent = Color::rgb(0.16, 0.62, 0.72);
     let glass = Color::rgb(0.12, 0.2, 0.34);
     let engine = Color::rgb(0.35, 0.95, 1.0);
 
-    // Корпус вдоль +Z (носом от камеры), сужается к носу.
+    // РљРѕСЂРїСѓСЃ РІРґРѕР»СЊ +Z (РЅРѕСЃРѕРј РѕС‚ РєР°РјРµСЂС‹), СЃСѓР¶Р°РµС‚СЃСЏ Рє РЅРѕСЃСѓ.
     for i in -8..=8i64 {
         let z = 1500.0 + i as f64 * 62.0;
         let w = if i.abs() > 6 { 26.0 } else if i.abs() > 3 { 46.0 } else { 58.0 };
-        s.blocks.push(Block {
-            center: Vec3::new(0.0, 0.0, z),
-            half: Vec3::new(w, 30.0, 32.0),
-            color: if i % 2 == 0 { hull } else { hull_dark },
-        });
+        s.blocks.push(Block::axis(Vec3::new(0.0, 0.0, z), Vec3::new(w, 30.0, 32.0), if i % 2 == 0 { hull } else { hull_dark }));
     }
-    // Верхний гребень.
+    // Р’РµСЂС…РЅРёР№ РіСЂРµР±РµРЅСЊ.
     for i in -4..=4i64 {
-        s.blocks.push(Block {
-            center: Vec3::new(0.0, 34.0, 1560.0 + i as f64 * 60.0),
-            half: Vec3::new(20.0, 10.0, 26.0),
-            color: hull_dark,
-        });
+        s.blocks.push(Block::axis(Vec3::new(0.0, 34.0, 1560.0 + i as f64 * 60.0), Vec3::new(20.0, 10.0, 26.0), hull_dark));
     }
-    // Крылья с акцентной полосой.
+    // РљСЂС‹Р»СЊСЏ СЃ Р°РєС†РµРЅС‚РЅРѕР№ РїРѕР»РѕСЃРѕР№.
     for side in [-1.0, 1.0] {
         for i in 0..4i64 {
-            s.blocks.push(Block {
-                center: Vec3::new(side * (86.0 + i as f64 * 62.0), -6.0, 1440.0 + i as f64 * 36.0),
-                half: Vec3::new(30.0, 9.0, 100.0),
-                color: if i == 0 { accent } else { hull_dark },
-            });
+            s.blocks.push(Block::axis(Vec3::new(side * (86.0 + i as f64 * 62.0), -6.0, 1440.0 + i as f64 * 36.0), Vec3::new(30.0, 9.0, 100.0), if i == 0 { accent } else { hull_dark }));
         }
     }
-    // Кабина (тёмное стекло).
-    s.blocks.push(Block {
-        center: Vec3::new(0.0, 40.0, 1660.0),
-        half: Vec3::new(34.0, 18.0, 70.0),
-        color: glass,
-    });
-    // Светящиеся двигатели сзади.
+    // РљР°Р±РёРЅР° (С‚С‘РјРЅРѕРµ СЃС‚РµРєР»Рѕ).
+    s.blocks.push(Block::axis(Vec3::new(0.0, 40.0, 1660.0), Vec3::new(34.0, 18.0, 70.0), glass));
+    // РЎРІРµС‚СЏС‰РёРµСЃСЏ РґРІРёРіР°С‚РµР»Рё СЃР·Р°РґРё.
     for side in [-1.0, 1.0] {
-        s.blocks.push(Block {
-            center: Vec3::new(side * 40.0, 0.0, 980.0),
-            half: Vec3::new(24.0, 24.0, 30.0),
-            color: engine,
-        });
+        s.blocks.push(Block::axis(Vec3::new(side * 40.0, 0.0, 980.0), Vec3::new(24.0, 24.0, 30.0), engine));
     }
 
-    // Камера чуть сзади и выше, смотрит на корабль и планету.
+    // РљР°РјРµСЂР° С‡СѓС‚СЊ СЃР·Р°РґРё Рё РІС‹С€Рµ, СЃРјРѕС‚СЂРёС‚ РЅР° РєРѕСЂР°Р±Р»СЊ Рё РїР»Р°РЅРµС‚Сѓ.
     s.camera.origin = Vec3::new(-120.0, 120.0, 300.0);
     s.camera.forward = norm(Vec3::new(0.06, -0.04, 1.0));
     s.camera.fov = 1.0;
@@ -597,10 +644,10 @@ pub fn scene_ship_and_planet() -> Scene {
     s
 }
 
-/// Сцена «чёрная дыра»: тёмная сфера, яркий аккреционный диск и гравитационная линза.
+/// РЎС†РµРЅР° В«С‡С‘СЂРЅР°СЏ РґС‹СЂР°В»: С‚С‘РјРЅР°СЏ СЃС„РµСЂР°, СЏСЂРєРёР№ Р°РєРєСЂРµС†РёРѕРЅРЅС‹Р№ РґРёСЃРє Рё РіСЂР°РІРёС‚Р°С†РёРѕРЅРЅР°СЏ Р»РёРЅР·Р°.
 pub fn scene_black_hole() -> Scene {
     let mut s = Scene::new();
-    // Горизонт событий — почти идеально чёрный шар.
+    // Р“РѕСЂРёР·РѕРЅС‚ СЃРѕР±С‹С‚РёР№ вЂ” РїРѕС‡С‚Рё РёРґРµР°Р»СЊРЅРѕ С‡С‘СЂРЅС‹Р№ С€Р°СЂ.
     s.spheres.push(Sphere {
         center: Vec3::new(0.0, 0.0, 4000.0),
         radius: 520.0,
@@ -611,13 +658,13 @@ pub fn scene_black_hole() -> Scene {
         atmosphere: 0.0,
     });
 
-    // Аккреционный диск: несколько концентрических колец из блоков.
-    // Внутренние — горячее (бело-голубые), внешние — холоднее (оранжевые).
+    // РђРєРєСЂРµС†РёРѕРЅРЅС‹Р№ РґРёСЃРє: РЅРµСЃРєРѕР»СЊРєРѕ РєРѕРЅС†РµРЅС‚СЂРёС‡РµСЃРєРёС… РєРѕР»РµС† РёР· Р±Р»РѕРєРѕРІ.
+    // Р’РЅСѓС‚СЂРµРЅРЅРёРµ вЂ” РіРѕСЂСЏС‡РµРµ (Р±РµР»Рѕ-РіРѕР»СѓР±С‹Рµ), РІРЅРµС€РЅРёРµ вЂ” С…РѕР»РѕРґРЅРµРµ (РѕСЂР°РЅР¶РµРІС‹Рµ).
     let rings = 6;
     for ring in 0..rings {
         let r0 = 640.0 + ring as f64 * 150.0;
         let per_ring = 44 + ring * 20;
-        // Цвет кольца: от голубовато-белого внутри к оранжевому снаружи.
+        // Р¦РІРµС‚ РєРѕР»СЊС†Р°: РѕС‚ РіРѕР»СѓР±РѕРІР°С‚Рѕ-Р±РµР»РѕРіРѕ РІРЅСѓС‚СЂРё Рє РѕСЂР°РЅР¶РµРІРѕРјСѓ СЃРЅР°СЂСѓР¶Рё.
         let t = ring as f64 / (rings - 1) as f64;
         let col = if t < 0.4 {
             lerp_color(Color::rgb(1.0, 0.98, 0.92), Color::rgb(1.0, 0.85, 0.5), t / 0.4)
@@ -627,16 +674,12 @@ pub fn scene_black_hole() -> Scene {
         for i in 0..per_ring {
             let a = i as f64 / per_ring as f64 * 6.283185307 + ring as f64 * 0.3;
             let r = r0 + (((i * 61) % 100) as f64 / 100.0 - 0.5) * 60.0;
-            // Диск наклонён: z сжат, y чуть приподнят для объёма.
+            // Р”РёСЃРє РЅР°РєР»РѕРЅС‘РЅ: z СЃР¶Р°С‚, y С‡СѓС‚СЊ РїСЂРёРїРѕРґРЅСЏС‚ РґР»СЏ РѕР±СЉС‘РјР°.
             let x = r * det_cos(a);
             let z = 4000.0 + r * det_sin(a) * 0.30;
             let y = (((i * 37) % 40) as f64 / 40.0 - 0.5) * 30.0;
             let h = 12.0 + ((i * 13) % 22) as f64;
-            s.blocks.push(Block {
-                center: Vec3::new(x, y, z),
-                half: Vec3::new(20.0, h, 20.0),
-                color: col,
-            });
+            s.blocks.push(Block::axis(Vec3::new(x, y, z), Vec3::new(20.0, h, 20.0), col));
         }
     }
 
@@ -649,10 +692,10 @@ pub fn scene_black_hole() -> Scene {
     s
 }
 
-/// Сцена «астероиды»: неровные каменные глыбы на фоне звезды.
+/// РЎС†РµРЅР° В«Р°СЃС‚РµСЂРѕРёРґС‹В»: РЅРµСЂРѕРІРЅС‹Рµ РєР°РјРµРЅРЅС‹Рµ РіР»С‹Р±С‹ РЅР° С„РѕРЅРµ Р·РІРµР·РґС‹.
 pub fn scene_asteroids() -> Scene {
     let mut s = Scene::new();
-    // Дальняя звезда — источник света.
+    // Р”Р°Р»СЊРЅСЏСЏ Р·РІРµР·РґР° вЂ” РёСЃС‚РѕС‡РЅРёРє СЃРІРµС‚Р°.
     s.spheres.push(Sphere {
         center: Vec3::new(3000.0, 1400.0, 8000.0),
         radius: 220.0,
@@ -664,14 +707,14 @@ pub fn scene_asteroids() -> Scene {
     });
     s.light.direction = norm(Vec3::new(3000.0, 1400.0, 8000.0));
 
-    // Детерминированный генератор.
+    // Р”РµС‚РµСЂРјРёРЅРёСЂРѕРІР°РЅРЅС‹Р№ РіРµРЅРµСЂР°С‚РѕСЂ.
     let mut h = 0x1234_5678u64;
     let mut rnd = move || {
         h = h.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
         (h >> 11) as f64 / (1u64 << 53) as f64
     };
 
-    // Каждый астероид — кластер из 3–5 блоков, поэтому силуэт неровный.
+    // РљР°Р¶РґС‹Р№ Р°СЃС‚РµСЂРѕРёРґ вЂ” РєР»Р°СЃС‚РµСЂ РёР· 3вЂ“5 Р±Р»РѕРєРѕРІ, РїРѕСЌС‚РѕРјСѓ СЃРёР»СѓСЌС‚ РЅРµСЂРѕРІРЅС‹Р№.
     for _ in 0..34 {
         let cx = (rnd() - 0.5) * 3400.0;
         let cy = (rnd() - 0.5) * 1600.0;
@@ -687,13 +730,9 @@ pub fn scene_asteroids() -> Scene {
             let hx = scale * (0.35 + rnd() * 0.5);
             let hy = scale * (0.3 + rnd() * 0.5);
             let hz = scale * (0.35 + rnd() * 0.5);
-            // Чуть разный оттенок у частей — камень выглядит неоднородным.
+            // Р§СѓС‚СЊ СЂР°Р·РЅС‹Р№ РѕС‚С‚РµРЅРѕРє Сѓ С‡Р°СЃС‚РµР№ вЂ” РєР°РјРµРЅСЊ РІС‹РіР»СЏРґРёС‚ РЅРµРѕРґРЅРѕСЂРѕРґРЅС‹Рј.
             let v = 0.8 + rnd() * 0.4;
-            s.blocks.push(Block {
-                center: Vec3::new(cx + ox, cy + oy, cz + oz),
-                half: Vec3::new(hx, hy, hz),
-                color: base.scale(v),
-            });
+            s.blocks.push(Block::axis(Vec3::new(cx + ox, cy + oy, cz + oz), Vec3::new(hx, hy, hz), base.scale(v)));
         }
     }
     s.camera.origin = Vec3::ZERO;
@@ -701,6 +740,190 @@ pub fn scene_asteroids() -> Scene {
     s.camera.fov = 1.25;
     s.star_density = 0.1;
     s
+}
+
+// ---------------------------------------------------------------------------
+// Корабль из состояния симуляции
+// ---------------------------------------------------------------------------
+
+/// Описание корабля, пришедшее из симуляции: где он и как повёрнут.
+///
+/// Это прямой мост: `EntityState` из протокола → блоки для рендера.
+#[derive(Clone, Copy, Debug)]
+pub struct ShipPose {
+    pub pos: Vec3,
+    pub yaw: f64,
+    pub pitch: f64,
+}
+
+impl ShipPose {
+    /// Из состояния сущности (позиция + углы).
+    pub fn from_state(e: &ou_protocol::EntityState) -> Self {
+        ShipPose { pos: e.pos, yaw: e.yaw as f64, pitch: e.pitch as f64 }
+    }
+}
+
+/// Локальный «план» корабля: список деталей (центр, половинные размеры, цвет).
+///
+/// Отдельно от мира, поэтому одна и та же форма используется и для сцен, и для
+/// кораблей из симуляции.
+fn ship_parts() -> Vec<(Vec3, Vec3, Color)> {
+    let hull = Color::rgb(0.74, 0.77, 0.82);
+    let hull_dark = Color::rgb(0.42, 0.46, 0.55);
+    let accent = Color::rgb(0.16, 0.62, 0.72);
+    let glass = Color::rgb(0.12, 0.2, 0.34);
+    let engine = Color::rgb(0.35, 0.95, 1.0);
+
+    let mut parts = Vec::with_capacity(40);
+    // Корпус вдоль +Z.
+    for i in -8..=8i64 {
+        let z = 40.0 + i as f64 * 16.0;
+        let w = if i.abs() > 6 { 7.0 } else if i.abs() > 3 { 12.0 } else { 15.0 };
+        parts.push((
+            Vec3::new(0.0, 0.0, z),
+            Vec3::new(w, 8.0, 8.5),
+            if i % 2 == 0 { hull } else { hull_dark },
+        ));
+    }
+    // Верхний гребень.
+    for i in -4..=4i64 {
+        parts.push((
+            Vec3::new(0.0, 9.0, 55.0 + i as f64 * 16.0),
+            Vec3::new(5.0, 2.6, 7.0),
+            hull_dark,
+        ));
+    }
+    // Крылья.
+    for side in [-1.0, 1.0] {
+        for i in 0..4i64 {
+            parts.push((
+                Vec3::new(side * (22.0 + i as f64 * 16.0), -1.6, 25.0 + i as f64 * 9.0),
+                Vec3::new(8.0, 2.4, 26.0),
+                if i == 0 { accent } else { hull_dark },
+            ));
+        }
+    }
+    // Кабина.
+    parts.push((Vec3::new(0.0, 10.5, 82.0), Vec3::new(9.0, 4.8, 18.0), glass));
+    // Двигатели.
+    for side in [-1.0, 1.0] {
+        parts.push((
+            Vec3::new(side * 10.0, 0.0, -20.0),
+            Vec3::new(6.0, 6.0, 7.5),
+            engine,
+        ));
+    }
+    parts
+}
+
+/// Построить блоки корабля по его позе в мире.
+///
+/// Форма корабля задана локально (вдоль +Z), а затем поворачивается и
+/// переносится в мировые координаты через [`Mat3`] и `pos`. Именно так это
+/// будет работать в UE5: локальная геометрия + трансформ сущности.
+pub fn ship_blocks(pose: ShipPose, scale: f64) -> Vec<Block> {
+    let rot = Mat3::from_yaw_pitch(pose.yaw, pose.pitch);
+    ship_parts()
+        .into_iter()
+        .map(|(center, half, color)| {
+            Block::oriented(pose.pos.add(rot.mul_vec(center.scale(scale))), half.scale(scale), color, rot)
+        })
+        .collect()
+}
+
+/// Планета с рельефом и атмосферой (сокращение для сцен).
+pub fn planet(center: Vec3, radius: f64, seed: u64) -> Sphere {
+    Sphere {
+        center,
+        radius,
+        color: Color::rgb(0.2, 0.4, 0.6),
+        terrain: true,
+        emissive: 0.0,
+        seed,
+        atmosphere: 1.1,
+    }
+}
+
+/// Звезда: источник света и яркая точка (сокращение для сцен).
+pub fn star(center: Vec3, radius: f64) -> Sphere {
+    Sphere {
+        center,
+        radius,
+        color: Color::rgb(1.0, 0.93, 0.8),
+        terrain: false,
+        emissive: 2.6,
+        seed: 1,
+        atmosphere: 0.0,
+    }
+}
+
+/// Сцена: мир симуляции. Корабли берутся из состояний, камера — рядом с ними.
+///
+/// `states` — те же `EntityState`, что сервер шлёт по сети. Это и есть
+/// «рендер реального мира»: ничего искусственного, только данные симуляции.
+pub fn scene_from_states(states: &[ou_protocol::EntityState], focus_id: u32) -> Scene {
+    let mut s = Scene::new();
+    // Планета на фоне.
+    s.spheres.push(planet(Vec3::new(2200.0, -1600.0, 6000.0), 2100.0, 12345));
+    // Звезда-светило.
+    let star_pos = Vec3::new(-4800.0, 3000.0, 4200.0);
+    s.spheres.push(star(star_pos, 340.0));
+    s.light.direction = norm(star_pos);
+    s.star_density = 0.09;
+
+    // Корабли: свой — крупнее, чужие — меньше (это визуальное различие).
+    for st in states {
+        let scale = if st.id == focus_id { 0.95 } else { 0.75 };
+        s.blocks.extend(ship_blocks(ShipPose::from_state(st), scale));
+    }
+
+    // Камера смотрит на корабль игрока сзади-сверху.
+    if let Some(me) = states.iter().find(|e| e.id == focus_id) {
+        let rot = Mat3::from_yaw_pitch(me.yaw as f64, me.pitch as f64);
+        let back = Vec3::new(0.0, 70.0, -330.0);
+        s.camera.origin = me.pos.add(rot.mul_vec(back));
+        s.camera.forward = rot.mul_vec(Vec3::new(0.0, -0.08, 1.0));
+    } else if let Some(first) = states.first() {
+        s.camera.origin = first.pos.add(Vec3::new(0.0, 60.0, -320.0));
+        s.camera.forward = Vec3::new(0.0, -0.08, 1.0);
+    }
+    s.camera.fov = 1.0;
+    s
+}
+
+// ---------------------------------------------------------------------------
+// Анимация
+// ---------------------------------------------------------------------------
+
+/// Собрать APNG-подобную последовательность кадров в одно изображение-лист
+/// (контактный лист), чтобы показать движение одним файлом.
+pub fn contact_sheet(frames: &[(u32, u32, Vec<u8>)], cols: usize) -> Option<(u32, u32, Vec<u8>)> {
+    if frames.is_empty() {
+        return None;
+    }
+    let (fw, fh, _) = (frames[0].0, frames[0].1, frames[0].2.len());
+    let cols = cols.max(1);
+    let rows = (frames.len() + cols - 1) / cols;
+    let w = fw * cols as u32;
+    let h = fh * rows as u32;
+    let mut out = vec![0u8; w as usize * h as usize * 3];
+    for (i, (fw_i, fh_i, data)) in frames.iter().enumerate() {
+        let cx = (i % cols) as u32;
+        let cy = (i / cols) as u32;
+        for y in 0..*fh_i {
+            let dst_y = cy * fh + y;
+            for x in 0..*fw_i {
+                let src = ((y * *fw_i + x) * 3) as usize;
+                let dst = ((dst_y * w + (cx * fw + x)) * 3) as usize;
+                if dst + 3 <= out.len() && src + 3 <= data.len() {
+                    out[dst] = data[src];
+                    out[dst + 1] = data[src + 1];
+                    out[dst + 2] = data[src + 2];
+                }
+            }
+        }
+    }
+    Some((w, h, out))
 }
 
 #[cfg(test)]
@@ -740,11 +963,7 @@ mod tests {
 
     #[test]
     fn ray_hits_block() {
-        let b = Block {
-            center: Vec3::new(0.0, 0.0, 50.0),
-            half: Vec3::new(5.0, 5.0, 5.0),
-            color: Color::rgb(1.0, 1.0, 1.0),
-        };
+        let b = Block::axis(Vec3::new(0.0, 0.0, 50.0), Vec3::new(5.0, 5.0, 5.0), Color::rgb(1.0, 1.0, 1.0));
         assert!(b.hit(Vec3::ZERO, Vec3::new(0.0, 0.0, 1.0)).is_some());
         assert!(b.hit(Vec3::ZERO, Vec3::new(1.0, 0.0, 0.0)).is_none());
     }
@@ -767,24 +986,24 @@ mod tests {
     #[test]
     fn emissive_star_is_bright() {
         let s = scene_ship_and_planet();
-        // Берём координаты звезды прямо из сцены (они меняются вместе с ней).
+        // Р‘РµСЂС‘Рј РєРѕРѕСЂРґРёРЅР°С‚С‹ Р·РІРµР·РґС‹ РїСЂСЏРјРѕ РёР· СЃС†РµРЅС‹ (РѕРЅРё РјРµРЅСЏСЋС‚СЃСЏ РІРјРµСЃС‚Рµ СЃ РЅРµР№).
         let star = s
             .spheres
             .iter()
             .find(|sp| sp.emissive > 0.0)
-            .expect("в сцене должна быть звезда");
+            .expect("РІ СЃС†РµРЅРµ РґРѕР»Р¶РЅР° Р±С‹С‚СЊ Р·РІРµР·РґР°");
         let dir = norm(star.center);
         let c = trace(&s, Vec3::ZERO, dir, 1.0);
         let lum = c.r + c.g + c.b;
-        assert!(lum > 0.5, "звезда должна быть яркой, получено {lum}");
+        assert!(lum > 0.5, "Р·РІРµР·РґР° РґРѕР»Р¶РЅР° Р±С‹С‚СЊ СЏСЂРєРѕР№, РїРѕР»СѓС‡РµРЅРѕ {lum}");
     }
 
     #[test]
     fn background_has_stars_or_empty_space() {
         let s = Scene::new();
-        // Смотрим в «пустое» направление.
+        // РЎРјРѕС‚СЂРёРј РІ В«РїСѓСЃС‚РѕРµВ» РЅР°РїСЂР°РІР»РµРЅРёРµ.
         let c = trace(&s, Vec3::ZERO, Vec3::new(0.1, 0.2, 0.97), 1.0);
-        // Космос тёмный, но не обязан быть абсолютно нулевым.
+        // РљРѕСЃРјРѕСЃ С‚С‘РјРЅС‹Р№, РЅРѕ РЅРµ РѕР±СЏР·Р°РЅ Р±С‹С‚СЊ Р°Р±СЃРѕР»СЋС‚РЅРѕ РЅСѓР»РµРІС‹Рј.
         assert!(c.r < 1.0 && c.g < 1.0 && c.b < 1.0);
     }
 
@@ -793,7 +1012,7 @@ mod tests {
         for i in 0..200 {
             let p = Vec3::new(i as f64 * 3.1, i as f64 * 1.7, i as f64 * 0.9);
             let n = fbm(p, 42);
-            assert!((0.0..=1.0).contains(&n), "шум вне диапазона: {n}");
+            assert!((0.0..=1.0).contains(&n), "С€СѓРј РІРЅРµ РґРёР°РїР°Р·РѕРЅР°: {n}");
         }
     }
 
@@ -805,5 +1024,92 @@ mod tests {
         let meta = std::fs::metadata(&dir).unwrap();
         assert!(meta.len() > 8);
         let _ = std::fs::remove_file(&dir);
+    }
+
+    // --- ориентация и корабль из симуляции ---
+
+    #[test]
+    fn rotation_changes_obb_hit() {
+        // Блок, повёрнутый на 90° вокруг Y, должен по-разному пересекаться
+        // лучом, идущим по X, по сравнению с невыровненным блоком.
+        let rot = Mat3::from_yaw_pitch(std::f64::consts::FRAC_PI_2, 0.0);
+        let b = Block::oriented(Vec3::new(0.0, 0.0, 50.0), Vec3::new(20.0, 2.0, 2.0), Color::rgb(1.0, 1.0, 1.0), rot);
+        // До поворота длинная ось была вдоль X; после поворота — вдоль Z.
+        // Луч по Z теперь должен попадать.
+        assert!(b.hit_ex(Vec3::ZERO, Vec3::new(0.0, 0.0, 1.0)).is_some());
+    }
+
+    #[test]
+    fn identity_rotation_matches_axis_block() {
+        let a = Block::axis(Vec3::new(0.0, 0.0, 50.0), Vec3::new(5.0, 5.0, 5.0), Color::rgb(1.0, 1.0, 1.0));
+        let b = Block::oriented(Vec3::new(0.0, 0.0, 50.0), Vec3::new(5.0, 5.0, 5.0), Color::rgb(1.0, 1.0, 1.0), Mat3::IDENTITY);
+        let ra = a.hit_ex(Vec3::ZERO, Vec3::new(0.1, 0.0, 1.0));
+        let rb = b.hit_ex(Vec3::ZERO, Vec3::new(0.1, 0.0, 1.0));
+        assert_eq!(ra.is_some(), rb.is_some());
+        if let (Some((ta, _)), Some((tb, _))) = (ra, rb) {
+            assert!((ta - tb).abs() < 1e-9);
+        }
+    }
+
+    #[test]
+    fn ship_blocks_follow_position_and_rotation() {
+        let pose = ShipPose { pos: Vec3::new(1000.0, 50.0, -300.0), yaw: 0.7, pitch: 0.1 };
+        let blocks = ship_blocks(pose, 1.0);
+        assert!(blocks.len() > 20, "корабль должен состоять из многих блоков");
+        // Все блоки рядом с позицией корабля (не разлетелись).
+        for b in &blocks {
+            let d = b.center.distance(pose.pos);
+            assert!(d < 200.0, "блок улетел от корабля: {d}");
+        }
+        // Поворот меняет положение: без поворота блоки стояли бы по-другому.
+        let straight = ship_blocks(ShipPose { yaw: 0.0, ..pose }, 1.0);
+        assert_ne!(blocks[0].center.to_wire(), straight[0].center.to_wire());
+    }
+
+    #[test]
+    fn scene_from_states_places_camera_at_focus() {
+        let states = vec![
+            ou_protocol::EntityState { id: 1, pos: Vec3::new(0.0, 0.0, 0.0), vel: Vec3::ZERO, yaw: 0.0, pitch: 0.0 },
+            ou_protocol::EntityState { id: 2, pos: Vec3::new(0.0, 0.0, -500.0), vel: Vec3::ZERO, yaw: 0.0, pitch: 0.0 },
+        ];
+        let s = scene_from_states(&states, 1);
+        // Камера — позади корабля 1 (по −Z), значит её z меньше нуля.
+        assert!(s.camera.origin.z < 0.0, "камера должна быть позади: {:?}", s.camera.origin);
+        // Оба корабля дали блоки.
+        assert!(s.blocks.len() > 40);
+    }
+
+    #[test]
+    fn render_from_states_is_deterministic() {
+        let states = vec![ou_protocol::EntityState {
+            id: 1,
+            pos: Vec3::new(0.0, 0.0, 0.0),
+            vel: Vec3::ZERO,
+            yaw: 0.3,
+            pitch: 0.05,
+        }];
+        let a = render(&scene_from_states(&states, 1), 48, 32);
+        let b = render(&scene_from_states(&states, 1), 48, 32);
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn contact_sheet_tiles_frames() {
+        // Четыре кадра 2×2 → лист 4×4 при 2 колонках.
+        let frame = |v: u8| (2u32, 2u32, vec![v; 2 * 2 * 3]);
+        let frames = vec![frame(10), frame(20), frame(30), frame(40)];
+        let (w, h, data) = contact_sheet(&frames, 2).unwrap();
+        assert_eq!((w, h), (4, 4));
+        assert_eq!(data.len(), 4 * 4 * 3);
+        // Верхний левый пиксель — из первого кадра.
+        assert_eq!(data[0], 10);
+        // Пиксель во второй колонке верхней строки — из второго кадра.
+        let idx = (0 * 4 + 2) * 3;
+        assert_eq!(data[idx], 20);
+    }
+
+    #[test]
+    fn contact_sheet_handles_empty() {
+        assert!(contact_sheet(&[], 2).is_none());
     }
 }

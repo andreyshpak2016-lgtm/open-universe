@@ -252,12 +252,29 @@ VWAP = 26 · Всего сделок в журнале: 2</code></pre>
           <figure><img src="assets/render-asteroids.png" alt="Рендер: пояс астероидов" loading="lazy" /><figcaption>Пояс астероидов и добыча</figcaption></figure>
         </div>
 
-        <pre class="codeblock"><code>$ cargo run -p ou-render --release -- all 1280 720
-  ship       1280×720  1.26 с  (731991 пикс/с)  -> render-ship.png
-  blackhole  1280×720  7.29 с  (126413 пикс/с)  -> render-blackhole.png
-  asteroids  1280×720  2.30 с  (400216 пикс/с)  -> render-asteroids.png</code></pre>
+        <h3 style="margin:34px 0 10px;font-size:1.2rem">Мир из симуляции</h3>
+        <p class="lead" style="margin-bottom:18px">Этот кадр построен <b>не вручную</b>: рендерер взял состояние из той же симуляции, что гоняет сервер (`World` → `EntityState`), и нарисовал корабли по их позициям и углам. Свой корабль — в центре, союзник — слева.</p>
+        <figure class="diagram">
+          <img src="assets/render-sim.png" alt="Рендер мира из симуляции: два корабля и планета" />
+        </figure>
 
-        <p class="lead" style="margin-top:16px;font-size:.88rem">Код: <code>server/crates/render</code> (13 тестов). Компоненты — камера, floating origin, сфера-планета, блочная конструкция — переносятся в UE5 один-к-одному.</p>
+        <h3 style="margin:34px 0 10px;font-size:1.2rem">Движение: 10 кадров по 15 тиков</h3>
+        <p class="lead" style="margin-bottom:18px">Симуляция прокручена на 150 тиков, каждый 15-й кадр отрендерен и собран в контактный лист. Видно, как планета смещается относительно кораблей, а сам корабль маневрирует (рыскание и тангаж из <code>InputFrame</code>).</p>
+        <figure class="diagram">
+          <img src="assets/render-animation.png" alt="Контактный лист: 10 кадров симуляции" />
+        </figure>
+
+        <pre class="codeblock"><code>$ cargo run -p ou-render --release -- sim 1280 720
+  sim        1280×720  2.39 с  (2 кораблей)   # мир прямо из симуляции
+$ cargo run -p ou-render --release -- animation 480 270
+  animation  10 кадров → 960×1350  3.47 с     # движение: 10 кадров → лист
+
+$ cargo run -p ou-render --release -- all 1280 720
+  ship       1280×720  1.26 с  (731991 пикс/с)
+  blackhole  1280×720  7.29 с  (126413 пикс/с)
+  asteroids  1280×720  2.30 с  (400216 пикс/с)</code></pre>
+
+        <p class="lead" style="margin-top:16px;font-size:.88rem">Код: <code>server/crates/render</code> (20 тестов). Ориентация кораблей — через матрицу поворота (<code>Mat3</code>): локальная геометрия + трансформ сущности, как будет в UE5.</p>
       </div>
     </section>
 
