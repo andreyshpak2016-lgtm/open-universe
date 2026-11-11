@@ -300,6 +300,29 @@ VWAP = 26 · Всего сделок в журнале: 2</code></pre>
   трение тормозит скольжение по поверхности</code></pre>
         <p class="lead" style="margin-top:14px;font-size:.88rem">Состояния: <code>Flying</code> / <code>Landed</code> / <code>Crashed</code>. Рельеф детерминирован (octahedral mapping + value noise) — один и тот же на сервере, клиенте и в тестах.</p>
 
+        <h3>Каркас UE5-клиента (C++)</h3>
+        <p class="lead" style="margin-bottom:18px">Движок Unreal Engine 5 не установлен, но <b>каркас клиента готов</b>: проект, Build-скрипты и C++-классы, которые повторяют серверную логику. Откроется в UE сразу после установки движка.</p>
+        <div class="grid3" style="margin-bottom:20px">
+          <div class="card"><div class="ico">🌍</div><h3>Floating origin</h3><p>Мир живёт в <code>double</code>, акторы — в локальных <code>float</code>. Начало переносится, когда игрок улетает далеко: точность не теряется на планетарных масштабах.</p></div>
+          <div class="card"><div class="ico">📡</div><h3>Сеть как на сервере</h3><p><code>OUClientNet</code> говорит с Rust-сервером тем же бинарным протоколом: varint, zigzag, токен сессии, снапшоты.</p></div>
+          <div class="card"><div class="ico">🧮</div><h3>Общая математика</h3><p>Детерминированная тригонометрия и кинематика — те же формулы, что в Rust. Кинематика C++ дала <b>z = 23.101</b> против серверных <b>23.10086</b>.</p></div>
+        </div>
+        <pre class="codeblock"><code>client/
+├─ OpenUniverse.uproject              # проект (UE 5.5)
+├─ Config/                            # карта, GameMode, Lumen/Nanite
+└─ Source/OpenUniverse/
+   ├─ OpenUniverseTypes.h             # типы провода (совпадают с Rust)
+   ├─ OUDeterministic.h               # та же тригонометрия, бит-в-бит
+   ├─ OUOriginManager.h/.cpp          # floating origin (double)
+   ├─ OUClientNet.h/.cpp              # UDP-клиент к ou-netd
+   ├─ OUShipPawn.h/.cpp               # предсказание и реконсиляция
+   ├─ OUVoxelPlanet.h/.cpp            # воксельная планета (cube-to-sphere)
+   └─ OUGameMode.h/.cpp
+
+# сборка (после установки UE 5.5+ и VS 2022):
+powershell -File tools/build-client.ps1</code></pre>
+        <p class="lead" style="margin-top:14px;font-size:.9rem">Проверено: переносимая часть (тригонометрия, кинематика, рельеф, посадка) скомпилирована MSVC и даёт те же числа, что сервер. Подробности — <code>client/README.md</code>.</p>
+
         <p class="lead" style="margin-top:18px;font-size:.92rem">📊 Полный разбор с метриками и всеми скриншотами — на отдельной странице <a href="report.html">«Отчёт о разработке»</a>.</p>
 
         <pre class="codeblock"><code>$ cargo run -p ou-render --release -- sim 1280 720

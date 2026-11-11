@@ -18,6 +18,7 @@
 - `assets/er-data.svg` — ER-диаграмма данных (таблицы и связи)
 - `assets/seq-frame.svg` — sequence-диаграмма одного сетевого кадра
 - `docs/adr-0001-engine.md` — решение о выборе движка (Unreal Engine 5) и стека
+- `client/` — каркас клиента на UE5 (C++): floating origin, сеть, корабль, воксельные планеты
 - `server/` — рабочее серверное ядро на Rust (protocol, sim, server, client)
 
 ## Раздел «Архитектура» на сайте

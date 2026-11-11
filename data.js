@@ -26,7 +26,7 @@ window.PLAN = {
       "goal": "Клиентский модуль на Unreal Engine 5: воксель, планеты, floating origin.",
       "tasks": [
         { "title": "Каркас проекта на Unreal Engine 5 (C++) и сборка", "status": "in_progress" },
-        { "title": "Floating origin / double-precision (серверная часть)", "status": "done" },
+        { "title": "Floating origin / double-precision (AUOOriginManager)", "status": "done" },
         { "title": "Воксельный рендер с LOD (cube-to-sphere)", "status": "done" },
         { "title": "Планеты как сферы с искривлением воксель-сетки", "status": "done" },
         { "title": "Система небесных тел (звёзды, луны, чёрные дыры)", "status": "done" },
