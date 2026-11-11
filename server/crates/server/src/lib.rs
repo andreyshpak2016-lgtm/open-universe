@@ -9,6 +9,7 @@
 //! UDP‑транспорт подключается поверх (см. `Transport`).
 
 use ou_protocol::{EntityState, InputFrame, Message, NetId, Snapshot, Vec3};
+use ou_script::ScriptEngine;
 use ou_sim::World;
 use ou_spatial::SpatialGrid;
 use std::collections::{BTreeMap, BTreeSet};
@@ -49,6 +50,10 @@ pub struct Server {
     pub connections: BTreeMap<NetId, Connection>,
     /// Пространственный индекс: ускоряет interest management.
     pub grid: SpatialGrid,
+    /// Движок скриптов игроков (автопилоты, турели, логистика).
+    pub scripts: ScriptEngine,
+    /// Сущность → имя скрипта, который ей управляет.
+    pub scripted: BTreeMap<NetId, String>,
     next_entity_id: NetId,
 }
 
@@ -58,8 +63,18 @@ impl Server {
             world: World::new(),
             connections: BTreeMap::new(),
             grid: SpatialGrid::new(CELL_SIZE),
+            scripts: ScriptEngine::new(),
+            scripted: BTreeMap::new(),
             next_entity_id: 1,
         }
+    }
+
+    /// Назначить сущности скрипт (автопилот). С этого момента её ввод
+    /// вычисляет скрипт, а не игрок.
+    pub fn attach_script(&mut self, entity: NetId, script: &str, source: &str) -> Result<(), ou_script::Error> {
+        self.scripts.compile(script, source)?;
+        self.scripted.insert(entity, script.to_string());
+        Ok(())
     }
 
     /// Подключение игрока: создаёт его сущность и точку интереса.
@@ -116,6 +131,32 @@ impl Server {
         let mut inputs: BTreeMap<NetId, InputFrame> = BTreeMap::new();
         for conn in self.connections.values() {
             inputs.insert(conn.entity_id, conn.last_input);
+        }
+
+        // 1a. Сущности со скриптами: ввод вычисляет автопилот.
+        //     Порядок детерминирован (BTreeMap), время — из мира.
+        let scripted: Vec<(NetId, String)> =
+            self.scripted.iter().map(|(k, v)| (*k, v.clone())).collect();
+        for (entity, script) in scripted {
+            let Some(ent) = self.world.entities.get(&entity) else {
+                continue;
+            };
+            let state = ou_script::ScriptState {
+                speed: ent.state.vel.length(),
+                altitude: ent.state.pos.length(),
+                heading: ent.state.yaw as f64,
+                target_distance: 0.0,
+            };
+            let seq = self.world.tick as u32;
+            match self.scripts.run_ship(&script, state, seq) {
+                Ok(out) => {
+                    inputs.insert(entity, out.input);
+                }
+                Err(e) => {
+                    // Ошибка скрипта не должна ронять мир: логируем и продолжаем.
+                    eprintln!("[скрипт '{script}'] {e}");
+                }
+            }
         }
 
         // 2. Шаг симуляции.
@@ -271,5 +312,41 @@ mod tests {
         }).unwrap();
         // Движущаяся сущность 2 должна попасть в дельту.
         assert!(snap.entities.iter().any(|e| e.id == 2), "движение не реплицировалось");
+    }
+
+    #[test]
+    fn scripted_entity_flies_by_autopilot() {
+        let mut s = Server::new();
+        let e = s.connect(1, Vec3::ZERO);
+        // Автопилот всегда даёт полную тягу.
+        s.attach_script(e, "auto", "thrust(1)").unwrap();
+        for _ in 0..30 {
+            s.tick();
+        }
+        let ent = s.world.entities.get(&e).unwrap();
+        assert!(ent.state.pos.length() > 1.0, "автопилот должен разогнать корабль");
+    }
+
+    #[test]
+    fn scripted_entity_without_input_still_moves() {
+        // Игрок не отправляет ввод — движение обеспечивает скрипт.
+        let mut s = Server::new();
+        let e = s.connect(1, Vec3::ZERO);
+        s.attach_script(e, "auto", "thrust(1)").unwrap();
+        let plan = s.tick();
+        assert!(plan.messages.contains_key(&1));
+        let ent = s.world.entities.get(&e).unwrap();
+        assert!(ent.state.vel.length() > 0.0, "скрипт должен задать скорость");
+    }
+
+    #[test]
+    fn broken_script_does_not_crash_world() {
+        let mut s = Server::new();
+        let e = s.connect(1, Vec3::ZERO);
+        // Скрипт с ошибкой выполнения: деление на ноль.
+        s.attach_script(e, "bad", "local x = 1 / 0").unwrap();
+        // Мир должен пережить тик без паники.
+        let plan = s.tick();
+        assert!(plan.messages.contains_key(&1));
     }
 }
