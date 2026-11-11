@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Open Universe — отчёт о разработке</title>
+  <meta name="description" content="Отчёт о разработке Open Universe: что сделано, скриншоты движка, метрики и результаты тестов." />
+  <link rel="icon" href="assets/blackhole.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="styles.css" />
+  <style>
+    .report { max-width: 1100px; margin: 0 auto; padding: 0 24px 80px; }
+    .report h1 { font-size: clamp(2rem, 5vw, 3rem); margin: 40px 0 8px; letter-spacing: -1px;
+      background: linear-gradient(180deg,#fff,#9fb8ff 70%,#4f6fd8); -webkit-background-clip: text;
+      background-clip: text; color: transparent; }
+    .report h2 { margin: 46px 0 10px; font-size: 1.6rem; }
+    .report h3 { margin: 30px 0 8px; font-size: 1.15rem; color: #cdd8ff; }
+    .report p { color: var(--muted); }
+    .meta { display: flex; gap: 22px; flex-wrap: wrap; margin: 18px 0 10px; }
+    .meta div b { display: block; font-size: 1.5rem; color: var(--accent2); }
+    .meta div span { color: var(--muted); font-size: .84rem; }
+    .shot { margin: 18px 0; border: 1px solid var(--panel-brd); border-radius: var(--radius); overflow: hidden; background: var(--panel); }
+    .shot img { display: block; width: 100%; }
+    .shot figcaption { padding: 12px 16px; color: var(--muted); font-size: .88rem; border-top: 1px solid var(--panel-brd); }
+    .two { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .done { list-style: none; padding: 0; }
+    .done li { padding: 8px 0 8px 30px; position: relative; color: #cdd8ff; border-bottom: 1px dashed rgba(255,255,255,.07); }
+    .done li::before { content: "✓"; position: absolute; left: 4px; color: var(--done); font-weight: 900; }
+    .next li::before { content: "○"; color: var(--wip); }
+    table.m { width: 100%; border-collapse: collapse; font-size: .9rem; }
+    table.m th, table.m td { padding: 9px 12px; text-align: left; border-bottom: 1px solid rgba(255,255,255,.07); }
+    table.m td:last-child { text-align: right; font-variant-numeric: tabular-nums; color: var(--accent2); }
+    .back { display: inline-block; margin-top: 40px; }
+  </style>
+</head>
+<body>
+
+  <header class="topbar">
+    <div class="brand">
+      <img src="assets/blackhole.svg" alt="Open Universe" />
+      <span>Open&nbsp;<span class="ou">Universe</span></span>
+    </div>
+    <nav>
+      <a href="index.html">← На главную</a>
+      <a href="index.html#download" class="nav-cta">⬇ Скачать</a>
+    </nav>
+  </header>
+
+  <main class="report">
+    <h1>Отчёт о разработке</h1>
+    <p style="font-size:1.05rem">Что уже работает, с доказательствами: скриншотами движка, метриками и результатами тестов. Версия <b id="ver">0.9.0</b>.</p>
+
+    <div class="meta">
+      <div><b id="m-tests">130</b><span>тестов проходит</span></div>
+      <div><b id="m-crates">11</b><span>модулей (крейтов)</span></div>
+      <div><b id="m-progress">52%</b><span>план выполнен</span></div>
+      <div><b id="m-version">v0.9.0</b><span>последний релиз</span></div>
+    </div>
+
+    <!-- ================= 1. Что сделано ================= -->
+    <h2>1. Что сделано</h2>
+    <ul class="done">
+      <li><b>Сайт-витрина</b> — план с живым прогрессом, галерея, диаграммы, раздел «Скачать».</li>
+      <li><b>Выбор движка (ADR-0001)</b> — клиент на Unreal Engine 5, сервер на Rust.</li>
+      <li><b>Сетевое ядро</b> — бинарный протокол, varint-сжатие, дельта-снимки, framing.</li>
+      <li><b>Детерминированная физика</b> — своя тригонометрия без <code>libm</code>, 30 Гц, контрольная сумма.</li>
+      <li><b>Netcode</b> — клиентское предсказание, реконсиляция, снапшот-интерполяция.</li>
+      <li><b>UDP-транспорт</b> — токен сессии, батчинг, отбрасывание повреждённых пакетов.</li>
+      <li><b>Interest management</b> — пространственный индекс (uniform grid).</li>
+      <li><b>Шардирование</b> — consistent hashing, миграция игроков между узлами.</li>
+      <li><b>Персистентность</b> — мир и экономика переживают перезапуск сервера.</li>
+      <li><b>Экономика</b> — рынок, стакан, сделки, производственные цепочки.</li>
+      <li><b>Боевые системы</b> — щит, броня, типы урона, территории и налоги.</li>
+      <li><b>Рендерер</b> — трассировка лучей на CPU, воксельные планеты с LOD, копание.</li>
+    </ul>
+
+    <!-- ================= 2. Скриншоты движка ================= -->
+    <h2>2. Скриншоты движка</h2>
+    <p>Все кадры ниже — реальный вывод трассировщика лучей из <code>server/crates/render</code>. Некоторые построены прямо из состояния симуляции.</p>
+
+    <figure class="shot">
+      <img src="assets/render-ship.png" alt="Блочный корабль у обитаемой планеты" />
+      <figcaption>Корабль у обитаемой планеты — блочная конструкция, планета с рельефом и атмосферным ореолом, звёздное поле.</figcaption>
+    </figure>
+
+    <div class="two">
+      <figure class="shot">
+        <img src="assets/render-blackhole.png" alt="Чёрная дыра с аккреционным диском" />
+        <figcaption>Чёрная дыра: горизонт событий и аккреционный диск из колец.</figcaption>
+      </figure>
+      <figure class="shot">
+        <img src="assets/render-asteroids.png" alt="Пояс астероидов" />
+        <figcaption>Пояс астероидов — неровные глыбы из кластеров блоков.</figcaption>
+      </figure>
+    </div>
+
+    <h3>Мир из симуляции</h3>
+    <figure class="shot">
+      <img src="assets/render-sim.png" alt="Мир из симуляции: два корабля и планета" />
+      <figcaption>Кадр построен из <code>EntityState</code> — того же состояния, что сервер шлёт по сети. Ничего не расставлено вручную.</figcaption>
+    </figure>
+
+    <h3>Движение: 10 кадров симуляции</h3>
+    <figure class="shot">
+      <img src="assets/render-animation.png" alt="Контактный лист: 10 кадров" />
+      <figcaption>Симуляция прокручена на 150 тиков; каждый 15-й кадр отрендерен и собран в лист.</figcaption>
+    </figure>
+
+    <h3>Воксельные планеты (Фаза 1)</h3>
+    <figure class="shot">
+      <img src="assets/render-voxel.png" alt="Воксельная планета" />
+      <figcaption>Кубическая сетка искривлена в сферу (cube-to-sphere), рельеф из двух октав шума, уровни: океан → песок → трава → камень → снег.</figcaption>
+    </figure>
+
+    <div class="two">
+      <figure class="shot">
+        <img src="assets/render-lod.png" alt="Сравнение LOD" />
+        <figcaption>LOD: слева грубая планета (<code>Far 4×4</code>), справа детальная (<code>Close 24×24</code>).</figcaption>
+      </figure>
+      <figure class="shot">
+        <img src="assets/render-dig.png" alt="Копание: до и после" />
+        <figcaption>Копание: слева поверхность до, справа — карьер с обнажённой породой.</figcaption>
+      </figure>
+    </div>
+
+    <!-- ================= 3. Метрики ================= -->
+    <h2>3. Метрики</h2>
+    <table class="m">
+      <thead><tr><th>Показатель</th><th>Значение</th></tr></thead>
+      <tbody>
+        <tr><td>Тесты ядра</td><td>130 пройдено</td></tr>
+        <tr><td>Модули (крейты)</td><td>11</td></tr>
+        <tr><td>Частота тика симуляции</td><td>30 Гц (149 тиков за 5 с)</td></tr>
+        <tr><td>Точность позиции по проводу</td><td>0.1 мм (i32, ±214 км)</td></tr>
+        <tr><td>Пустая дельта + ack</td><td>29 байт</td></tr>
+        <tr><td>Трафик на игрока (UDP)</td><td>≈ 202 байта/тик</td></tr>
+        <tr><td>Распределение зон по 4 узлам</td><td>21.8–28.2%</td></tr>
+        <tr><td>Макс. коррекция предсказания</td><td>0.006 у.е.</td></tr>
+        <tr><td>Вокселей на грань (LOD Close)</td><td>24×24</td></tr>
+        <tr><td>Скорость рендера (планета)</td><td>≈ 27 тыс. пикс/с</td></tr>
+      </tbody>
+    </table>
+
+    <!-- ================= 4. Результаты тестов ================= -->
+    <h2>4. Результаты тестов</h2>
+    <pre class="codeblock"><code>$ cargo test --workspace   →  130 passed (11 крейтов)
+
+protocol  6 · sim 10 · spatial 6 · net 5 · shard 9 · persist 14
+economy  17 · combat 17 · render 37 · server 4 · client 9
+
+$ cargo run -p ou-combat --bin ou-combat-demo
+=== Шанс попадания (1000 выстрелов) ===
+  автопушка  дальность 1500:  97%  80%  62%  44%  31%
+=== Дуэль: лазер против рельсотрона ===
+  тик 27: щит 0 (0%), броня 0 (0%)  ← уничтожен
+
+$ cargo run -p ou-economy --bin ou-market-demo
+  сделка: продавец 2 → покупатель 9, 60 шт по 25 (итого 1500)
+VWAP = 26 · Всего сделок в журнале: 2
+
+$ cargo run -p ou-render --release -- voxel 900 506
+  voxel      900×506  17.44 с
+
+$ cargo run -p ou-render --release -- dig 640 360
+  dig        2 кадра → 1280×360  18.52 с  -> render-dig.png</code></pre>
+
+    <!-- ================= 5. Что дальше ================= -->
+    <h2>5. Что дальше</h2>
+    <ul class="done next">
+      <li>Рендер по сети — рисовать входящие UDP-снапшоты в реальном времени.</li>
+      <li>Посадка корабля на воксельную поверхность (связь физики и рельефа).</li>
+      <li>Шардирование: миграция состояния между узлами (сейчас — маршрутизация).</li>
+      <li>Kubernetes и автомасштабирование (единственный пункт Фазы 3).</li>
+      <li>Lua-скриптинг конструкций (Фаза 8).</li>
+      <li>Каркас проекта на Unreal Engine 5 (ждёт установки UE).</li>
+    </ul>
+
+    <h2>6. Итог</h2>
+    <p>Проект прошёл путь от концепта до <b>работающего ядра на Rust</b>: детерминированная симуляция, сетевой код с предсказанием, экономика, бой, персистентность и собственный рендерер, который рисует воксельные планеты и реальный мир из симуляции. План выполнен на <b>52%</b>.</p>
+    <p>Репозиторий: <a href="https://github.com/andreyshpak2016-lgtm/open-universe">github.com/andreyshpak2016-lgtm/open-universe</a></p>
+
+    <a class="btn primary back" href="index.html">← Вернуться на главную</a>
+  </main>
+
+  <footer>
+    <div class="wrap">
+      <span>© <span id="year"></span> Open Universe — концепт-проект.</span>
+      <span>Отчёт обновлён: <span id="updated">2026-11-11</span></span>
+    </div>
+  </footer>
+
+  <script>
+    document.getElementById("year").textContent = new Date().getFullYear();
+  </script>
+</body>
+</html>

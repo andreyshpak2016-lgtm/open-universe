@@ -25,6 +25,7 @@
       <a href="#plan">План</a>
       <a href="#progress">Прогресс</a>
       <a href="#roadmap">Дорожная карта</a>
+      <a href="report.html" class="nav-report">📊 Отчёт</a>
       <a href="#download" class="nav-cta">⬇ Скачать</a>
     </nav>
   </header>
@@ -200,8 +201,8 @@
           <table id="codestats">
             <thead><tr><th>Показатель</th><th>Значение</th></tr></thead>
             <tbody>
-              <tr><td>Тесты ядра</td><td class="ok">97 пройдено</td></tr>
-              <tr><td>Крейты (модули)</td><td>10 (protocol, sim, spatial, net, shard, persist, economy, combat, server, client)</td></tr>
+              <tr><td>Тесты ядра</td><td class="ok">134 пройдено</td></tr>
+              <tr><td>Крейты (модули)</td><td>11 (protocol, sim, spatial, net, shard, persist, economy, combat, render, server, client)</td></tr>
               <tr><td>Частота тика симуляции</td><td>30 Гц (149 тиков за 5 с — проверено)</td></tr>
               <tr><td>Персистентность</td><td class="ok">мир и экономика переживают перезапуск</td></tr>
               <tr><td>Рынок</td><td>стакан, спред, VWAP, приоритет цены/времени</td></tr>
@@ -270,6 +271,14 @@ VWAP = 26 · Всего сделок в журнале: 2</code></pre>
           <figure><img src="assets/render-voxel.png" alt="Воксельная планета: искривление кубической сетки в сферу" loading="lazy" /><figcaption>Искривление воксельной сетки в сферу</figcaption></figure>
           <figure><img src="assets/render-lod.png" alt="Сравнение LOD: грубая и детальная планета" loading="lazy" /><figcaption>LOD: далеко (грубо) и близко (детально)</figcaption></figure>
         </div>
+
+        <h3 style="margin:34px 0 10px;font-size:1.2rem">Копание: воксель без границ</h3>
+        <p class="lead" style="margin-bottom:18px">Поверхность можно <b>разрушать</b>: направленное копание (<code>dig</code>) и взрывы (<code>explode</code>) проваливают воксели, обнажая породу. Слева — планета до выработки, справа — карьер.</p>
+        <figure class="diagram">
+          <img src="assets/render-dig.png" alt="Копание воксельной планеты: до и после" />
+        </figure>
+
+        <p class="lead" style="margin-top:18px;font-size:.92rem">📊 Полный разбор с метриками и всеми скриншотами — на отдельной странице <a href="report.html">«Отчёт о разработке»</a>.</p>
 
         <pre class="codeblock"><code>$ cargo run -p ou-render --release -- sim 1280 720
   sim        1280×720  2.39 с  (2 кораблей)   # мир прямо из симуляции

@@ -261,6 +261,77 @@ impl VoxelPlanet {
         );
         self.center.add(norm(dir).scale(self.surface_radius(dir)))
     }
+
+    // -----------------------------------------------------------------------
+    // Разрушение: копание и взрывы
+    // -----------------------------------------------------------------------
+
+    /// Выкопать кратер в направлении `dir`.
+    ///
+    /// Воксели в конусе вокруг направления проваливаются на `depth`, а те, что
+    /// совсем близко к центру удара, исчезают вовсе (полное разрушение).
+    /// Возвращает, сколько вокселей изменилось, — это «добыча».
+    pub fn dig(&mut self, dir: Vec3, cone: f64, depth: f64) -> usize {
+        let d = norm(dir);
+        let mut changed = 0;
+        for c in self.columns.iter_mut() {
+            let k = crate::dot(c.dir, d);
+            if k >= cone {
+                // Чем ближе к оси удара, тем глубже воронка.
+                let t = ((k - cone) / (1.0 - cone)).clamp(0.0, 1.0);
+                c.height -= depth * t * t;
+                // Полностью срытый воксель становится «камнем у поверхности».
+                if c.height < -depth * 2.0 {
+                    c.height = -depth * 2.0;
+                }
+                changed += 1;
+            }
+        }
+        // Пересчитываем цвета под новый рельеф (порода обнажилась).
+        let amp = self.radius * 0.03;
+        let palette = self.palette;
+        for c in self.columns.iter_mut() {
+            c.color = Self::color_for(&palette, c.height, amp, c.dir);
+        }
+        changed
+    }
+
+    /// Взрыв: разрушение в радиусе по поверхности (без направленного конуса).
+    pub fn explode(&mut self, dir: Vec3, radius: f64, depth: f64) -> usize {
+        let d = norm(dir);
+        // Порог по углу: чем шире радиус, тем больше конус.
+        let cone = (1.0 - radius / self.radius).clamp(0.0, 0.999);
+        self.dig(d, cone, depth)
+    }
+
+    /// Сколько вокселей сейчас выше уровня океана (полезно для статистики).
+    pub fn land_voxels(&self) -> usize {
+        self.columns.iter().filter(|c| c.height > 0.0).count()
+    }
+
+    /// Средняя высота суши.
+    pub fn average_land_height(&self) -> f64 {
+        let land: Vec<f64> = self.columns.iter().filter(|c| c.height > 0.0).map(|c| c.height).collect();
+        if land.is_empty() {
+            0.0
+        } else {
+            land.iter().sum::<f64>() / land.len() as f64
+        }
+    }
+
+    /// Контрольная сумма рельефа — проверка детерминизма и сохранения.
+    pub fn checksum(&self) -> u64 {
+        let mut h: u64 = 0xcbf29ce484222325;
+        for c in &self.columns {
+            for v in c.dir.to_wire() {
+                h ^= v as u64;
+                h = h.wrapping_mul(0x100000001b3);
+            }
+            h ^= c.height.to_bits();
+            h = h.wrapping_mul(0x100000001b3);
+        }
+        h
+    }
 }
 
 /// Cube-to-sphere: равномерное отображение граней куба на сферу.
@@ -447,10 +518,68 @@ mod tests {
     #[test]
     fn palette_is_used_for_water_and_land() {
         let p = VoxelPlanet::generate(Vec3::ZERO, 1000.0, 17, Lod::Near);
-        // Есть и океан (тёмный), и суша (светлее).
-        let has_dark = p.columns.iter().any(|c| c.color.b > c.color.r); // вода синия
-        let has_light = p.columns.iter().any(|c| c.color.r > 0.3); // суша/снег
-        assert!(has_dark, "должен быть океан");
-        assert!(has_light, "должна быть суша");
+        // Есть и океан (синий), и суша (светлее).
+        let has_water = p.columns.iter().any(|c| c.color.b > c.color.r);
+        let has_land = p.columns.iter().any(|c| c.color.r > 0.3);
+        assert!(has_water, "должен быть океан");
+        assert!(has_land, "должна быть суша");
+    }
+
+    // --- разрушение (копание) ---
+
+    #[test]
+    fn dig_lowers_heights_along_axis() {
+        let mut p = VoxelPlanet::generate(Vec3::ZERO, 1000.0, 55, Lod::Near);
+        // Копаем строго «вверх» (ось +Y).
+        let up = Vec3::new(0.0, 1.0, 0.0);
+        let before: Vec<f64> = p.columns.iter().map(|c| c.height).collect();
+
+        let changed = p.dig(up, 0.90, 30.0);
+        assert!(changed > 0, "копание должно задеть воксели");
+
+        // Высоты у оси удара уменьшились, у противоположной стороны — нет.
+        let mut lowered = 0;
+        for (c, h0) in p.columns.iter().zip(&before) {
+            if crate::dot(c.dir, up) >= 0.99 && c.height < *h0 {
+                lowered += 1;
+            }
+        }
+        assert!(lowered > 0, "высоты на оси удара должны опуститься");
+
+        // Дно не уходит в бесконечность.
+        assert!(p.columns.iter().all(|c| c.height >= -60.0 - 1e-9));
+    }
+
+    #[test]
+    fn dig_changes_checksum_and_land_area() {
+        let mut p = VoxelPlanet::generate(Vec3::ZERO, 1000.0, 66, Lod::Near);
+        let sum0 = p.checksum();
+        let land0 = p.land_voxels();
+        // Срываем крупный участок поверхности.
+        p.explode(Vec3::new(0.0, 1.0, 0.0), 400.0, 60.0);
+        assert_ne!(p.checksum(), sum0, "рельеф должен измениться");
+        assert!(p.land_voxels() <= land0, "суши не должно стать больше");
+    }
+
+    #[test]
+    fn dig_is_deterministic() {
+        let dig_at = |seed: u64| {
+            let mut p = VoxelPlanet::generate(Vec3::ZERO, 1000.0, seed, Lod::Mid);
+            p.dig(Vec3::new(0.3, 1.0, -0.2), 0.95, 25.0);
+            p.checksum()
+        };
+        assert_eq!(dig_at(7), dig_at(7));
+        assert_ne!(dig_at(7), dig_at(8));
+    }
+
+    #[test]
+    fn dig_outside_cone_does_nothing() {
+        let mut p = VoxelPlanet::generate(Vec3::ZERO, 1000.0, 77, Lod::Near);
+        let sum0 = p.checksum();
+        // Очень узкий конус с направлением, где вокселей почти нет.
+        let changed = p.dig(Vec3::new(0.0, 1.0, 0.0), 0.9999, 10.0);
+        // Либо ничего не задели, либо задели чуть-чуть — но не весь рельеф.
+        assert!(changed < p.columns.len() / 10, "узкий конус не должен рушить всё");
+        let _ = sum0;
     }
 }

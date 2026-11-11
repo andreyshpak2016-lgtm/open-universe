@@ -9,7 +9,7 @@
 
 use ou_render::{
     render, scene_asteroids, scene_black_hole, scene_from_states, scene_ship_and_planet, png,
-    contact_sheet, scene_voxel_planet, scene_voxel_lod_compare,
+    contact_sheet, scene_voxel_planet, scene_voxel_lod_compare, render_dig_before_after,
 };
 use ou_protocol::{EntityState, InputFrame, Vec3};
 use ou_sim::{det_cos, det_sin, World};
@@ -144,6 +144,20 @@ fn main() {
         }
         "animation" => {
             render_animation(w, h, "render-animation.png");
+        }
+        "dig" => {
+            // Копание: два кадра (до/после) в один контактный лист.
+            let t0 = Instant::now();
+            let (a, b) = render_dig_before_after(w, h);
+            if let Some((sw, sh, data)) = contact_sheet(&[a, b], 2) {
+                match png::write_png("render-dig.png", sw, sh, &data) {
+                    Ok(()) => println!(
+                        "  dig        2 кадра → {sw}×{sh}  {:.2} с  -> render-dig.png",
+                        t0.elapsed().as_secs_f64()
+                    ),
+                    Err(e) => eprintln!("  dig: ошибка записи: {e}"),
+                }
+            }
         }
         single => {
             let path = out.unwrap_or_else(|| format!("render-{single}.png"));

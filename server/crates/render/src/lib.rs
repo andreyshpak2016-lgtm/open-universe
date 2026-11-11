@@ -937,6 +937,46 @@ pub fn scene_voxel_planet() -> Scene {
     s
 }
 
+/// Сцена «копание»: сравнивает поверхность до и после выработки.
+///
+/// Возвращает два кадра: (до, после) — их удобно положить рядом в отчёте.
+pub fn render_dig_before_after(w: u32, h: u32) -> ((u32, u32, Vec<u8>), (u32, u32, Vec<u8>)) {
+    use crate::voxel::{Lod, VoxelPlanet};
+    let radius = 900.0;
+
+    let mk_scene = |vp: &VoxelPlanet| {
+        let mut s = Scene::new();
+        s.spheres.push(Sphere {
+            center: vp.center,
+            radius: radius - radius * 0.025,
+            color: Color::rgb(0.06, 0.14, 0.30),
+            terrain: false,
+            emissive: 0.0,
+            seed: 0,
+            atmosphere: 1.3,
+        });
+        s.blocks.extend(vp.to_blocks());
+        let star_pos = Vec3::new(-8000.0, 6000.0, 5000.0);
+        s.spheres.push(star(star_pos, 360.0));
+        s.light.direction = norm(star_pos);
+        s.light.intensity = 1.25;
+        s.star_density = 0.08;
+        // Камера смотрит на «верхний полюс», где будем копать.
+        let cam_dir = norm(Vec3::new(0.6, 0.55, 1.0));
+        s.camera.origin = cam_dir.scale(radius * 2.6);
+        s.camera.forward = norm(Vec3::ZERO.sub(s.camera.origin));
+        s.camera.fov = 0.95;
+        s
+    };
+
+    let mut planet = VoxelPlanet::generate(Vec3::ZERO, radius, 0xC0FFEE, Lod::Near);
+    let before = render(&mk_scene(&planet), w, h);
+    // Выработка у полюса: глубокий карьер с обнажённой породой.
+    planet.explode(Vec3::new(0.0, 1.0, 0.0), 300.0, 120.0);
+    let after = render(&mk_scene(&planet), w, h);
+    ((w, h, before), (w, h, after))
+}
+
 /// Сцена сравнения LOD: слева грубая планета, справа детальная.
 pub fn scene_voxel_lod_compare() -> Scene {
     use crate::voxel::{Lod, VoxelPlanet};
