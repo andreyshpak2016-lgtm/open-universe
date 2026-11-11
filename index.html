@@ -199,11 +199,12 @@
           <table id="codestats">
             <thead><tr><th>Показатель</th><th>Значение</th></tr></thead>
             <tbody>
-              <tr><td>Тесты ядра</td><td class="ok">58 пройдено</td></tr>
-              <tr><td>Крейты (модули)</td><td>8 (protocol, sim, spatial, net, shard, persist, server, client)</td></tr>
+              <tr><td>Тесты ядра</td><td class="ok">80 пройдено</td></tr>
+              <tr><td>Крейты (модули)</td><td>9 (protocol, sim, spatial, net, shard, persist, economy, server, client)</td></tr>
               <tr><td>Частота тика симуляции</td><td>30 Гц (149 тиков за 5 с — проверено)</td></tr>
-              <tr><td>Персистентность</td><td class="ok">мир переживает перезапуск сервера</td></tr>
-              <tr><td>Снимок мира (2 сущности)</td><td>66–106 байт, атомарная запись</td></tr>
+              <tr><td>Персистентность</td><td class="ok">мир и экономика переживают перезапуск</td></tr>
+              <tr><td>Рынок</td><td>стакан, спред, VWAP, приоритет цены/времени</td></tr>
+              <tr><td>Производство</td><td>7-ступенчатая цепочка: руда → корабль</td></tr>
               <tr><td>Точность позиции по проводу</td><td>0.1 мм (i32, ±214 км)</td></tr>
               <tr><td>Сжатие снапшотов</td><td>varint + zigzag (мелкие числа — 1–3 байта)</td></tr>
               <tr><td>Пустая дельта + ack (вне зоны видимости)</td><td>29 байт</td></tr>
@@ -214,22 +215,20 @@
           </table>
         </div>
 
-        <pre class="codeblock"><code>$ cargo test --workspace
-protocol 6 · sim 10 · spatial 6 · net 5 · shard 9 · persist 9 · server 4 · client 9
-→  58 passed
+        <pre class="codeblock"><code>$ cargo test --workspace   →  80 passed (9 крейтов)
+
+$ cargo run -p ou-economy --bin ou-market-demo
+=== Стакан руды ===
+  продажи (от лучшей): [(25, 60), (28, 100), (30, 40)]
+=== Покупатель берёт 100 руды по лимиту 30 ===
+  сделка: продавец 2 → покупатель 9, 60 шт по 25 (итого 1500)
+  сделка: продавец 3 → покупатель 9, 40 шт по 28 (итого 1120)
+VWAP = 26 · Всего сделок в журнале: 2
 
 $ cargo run -p ou-server --bin ou-netd -- 127.0.0.1:7777 10 ./world
-=== ЗАПУСК 1 (новый мир) ===
-мир пуст — начинаем новый
-[выход] мир сохранён: 66 байт, тик 179
-
 === ЗАПУСК 2 (загрузка мира) ===
 мир загружен: 1 сущностей, тик 179
-игрок 2 «pilot» вошёл (сущность 2)   # id не конфликтует
-[выход] мир сохранён: 106 байт, тик 477
-
-$ cargo run -p ou-shard --bin ou-shard-demo
-Переехало зон: 5 из 8 · Всего миграций за полёт: 4</code></pre>
+[выход] мир сохранён: 106 байт, тик 477</code></pre>
 
         <p class="lead" style="margin-top:16px;font-size:.88rem">Исходники: <code>server/crates/{protocol,sim,server,client}</code> · описание — <code>server/README.md</code>.</p>
       </div>
@@ -291,6 +290,7 @@ $ cargo run -p ou-shard --bin ou-shard-demo
             <li><code>ou-worldgen.exe</code> — генератор звёздных систем</li>
             <li><code>ou-shard-demo.exe</code> — шардирование и миграции</li>
             <li><code>ou-persist-demo.exe</code> — сохранение и восстановление мира</li>
+            <li><code>ou-market-demo.exe</code> — рынок, стакан, сделки, производство</li>
           </ul>
           <p class="dl-meta">Размер: <b id="dl-size">~0.2 МБ</b> · Платформа: Windows 10+ · Дата: <span id="dl-date">—</span></p>
           <div class="dl-actions">

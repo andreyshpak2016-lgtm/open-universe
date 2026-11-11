@@ -390,6 +390,216 @@ pub fn snapshot_stats(snap: &WorldSnapshot) -> BTreeMap<&'static str, u64> {
     m
 }
 
+// ===========================================================================
+// Экономика: снимок инвентаря и рынка
+// ===========================================================================
+
+use ou_economy::{Inventory, ItemId, Market, Order, OrderId, OwnerId, Side, SystemId};
+
+/// Магия файла экономики: "OUEC".
+pub const ECON_MAGIC: [u8; 4] = *b"OUEC";
+/// Версия формата экономики.
+pub const ECON_VERSION: u16 = 1;
+
+fn side_to_u8(s: Side) -> u8 {
+    match s {
+        Side::Buy => 0,
+        Side::Sell => 1,
+    }
+}
+
+fn side_from_u8(b: u8) -> Side {
+    if b == 0 {
+        Side::Buy
+    } else {
+        Side::Sell
+    }
+}
+
+/// Снимок экономики: инвентарь всех владельцев и активные ордера рынка.
+#[derive(Clone, Debug, PartialEq)]
+pub struct EconomySnapshot {
+    pub version: u16,
+    /// (владелец, система, предмет, количество)
+    pub stock: Vec<(OwnerId, SystemId, ItemId, u64)>,
+    /// Активные ордера.
+    pub orders: Vec<Order>,
+    /// Следующий свободный id ордера.
+    pub next_order_id: OrderId,
+}
+
+impl EconomySnapshot {
+    /// Снять снимок с инвентаря и рынка.
+    pub fn capture(inv: &Inventory, market: &Market) -> Self {
+        let mut stock = Vec::new();
+        for ((owner, system), bag) in inv.iter_slots() {
+            for (item, qty) in bag {
+                if *qty > 0 {
+                    stock.push((*owner, *system, *item, *qty));
+                }
+            }
+        }
+        stock.sort_unstable();
+        EconomySnapshot {
+            version: ECON_VERSION,
+            stock,
+            orders: market.all_orders(),
+            next_order_id: market.next_order_id(),
+        }
+    }
+
+    /// Восстановить инвентарь и рынок.
+    pub fn restore(&self) -> (Inventory, Market) {
+        let mut inv = Inventory::new();
+        for (owner, system, item, qty) in &self.stock {
+            inv.add(*owner, *system, *item, *qty);
+        }
+        let mut market = Market::new();
+        for o in &self.orders {
+            market.restore_order(o.clone());
+        }
+        // Сохраняем счётчик id даже если ордеров нет.
+        market.set_next_order_id(self.next_order_id);
+        (inv, market)
+    }
+
+    pub fn to_bytes(&self) -> Vec<u8> {
+        let mut body = Vec::with_capacity(32 + self.stock.len() * 12 + self.orders.len() * 40);
+        body.extend_from_slice(&ECON_MAGIC);
+        body.extend_from_slice(&self.version.to_le_bytes());
+        body.extend_from_slice(&(self.stock.len() as u32).to_le_bytes());
+        body.extend_from_slice(&(self.orders.len() as u32).to_le_bytes());
+        body.extend_from_slice(&self.next_order_id.to_le_bytes());
+        for (owner, system, item, qty) in &self.stock {
+            body.extend_from_slice(&owner.to_le_bytes());
+            body.extend_from_slice(&system.to_le_bytes());
+            body.extend_from_slice(&item.to_le_bytes());
+            body.extend_from_slice(&qty.to_le_bytes());
+        }
+        for o in &self.orders {
+            body.extend_from_slice(&o.id.to_le_bytes());
+            body.extend_from_slice(&o.system.to_le_bytes());
+            body.extend_from_slice(&o.item.to_le_bytes());
+            body.extend_from_slice(&o.owner.to_le_bytes());
+            body.push(side_to_u8(o.side));
+            body.extend_from_slice(&o.price.to_le_bytes());
+            body.extend_from_slice(&o.qty.to_le_bytes());
+            body.extend_from_slice(&o.placed_tick.to_le_bytes());
+        }
+        let sum = fnv1a(&body);
+        let mut out = body;
+        out.extend_from_slice(&sum.to_le_bytes());
+        out
+    }
+
+    pub fn from_bytes(buf: &[u8]) -> Result<Self, PersistError> {
+        const TRAILER: usize = 8;
+        if buf.len() < 4 + 2 + 4 + 4 + 8 + TRAILER {
+            return Err(PersistError::Truncated { expected: 30, got: buf.len() });
+        }
+        if buf[0..4] != ECON_MAGIC {
+            return Err(PersistError::BadMagic);
+        }
+        let (body, sum_bytes) = buf.split_at(buf.len() - TRAILER);
+        let expected = u64::from_le_bytes(sum_bytes.try_into().unwrap());
+        let got = fnv1a(body);
+        if expected != got {
+            return Err(PersistError::ChecksumMismatch { expected, got });
+        }
+        let version = u16::from_le_bytes([body[4], body[5]]);
+        if version != ECON_VERSION {
+            return Err(PersistError::UnsupportedVersion(version));
+        }
+        let n_stock = u32::from_le_bytes(body[6..10].try_into().unwrap()) as usize;
+        let n_orders = u32::from_le_bytes(body[10..14].try_into().unwrap()) as usize;
+        let next_order_id = u64::from_le_bytes(body[14..22].try_into().unwrap());
+        let need = 22 + n_stock * 20 + n_orders * 45;
+        if body.len() < need {
+            return Err(PersistError::Truncated { expected: need, got: body.len() });
+        }
+
+        let mut off = 22;
+        let mut stock = Vec::with_capacity(n_stock);
+        for _ in 0..n_stock {
+            let owner = u32::from_le_bytes(body[off..off + 4].try_into().unwrap());
+            let system = u32::from_le_bytes(body[off + 4..off + 8].try_into().unwrap());
+            let item = u32::from_le_bytes(body[off + 8..off + 12].try_into().unwrap());
+            let qty = u64::from_le_bytes(body[off + 12..off + 20].try_into().unwrap());
+            off += 20;
+            stock.push((owner, system, item, qty));
+        }
+        let mut orders = Vec::with_capacity(n_orders);
+        for _ in 0..n_orders {
+            let id = u64::from_le_bytes(body[off..off + 8].try_into().unwrap());
+            let system = u32::from_le_bytes(body[off + 8..off + 12].try_into().unwrap());
+            let item = u32::from_le_bytes(body[off + 12..off + 16].try_into().unwrap());
+            let owner = u32::from_le_bytes(body[off + 16..off + 20].try_into().unwrap());
+            let side = side_from_u8(body[off + 20]);
+            let price = u64::from_le_bytes(body[off + 21..off + 29].try_into().unwrap());
+            let qty = u64::from_le_bytes(body[off + 29..off + 37].try_into().unwrap());
+            let placed_tick = u64::from_le_bytes(body[off + 37..off + 45].try_into().unwrap());
+            off += 45;
+            orders.push(Order { id, system, item, owner, side, price, qty, placed_tick });
+        }
+        Ok(EconomySnapshot { version, stock, orders, next_order_id })
+    }
+}
+
+/// Файловое хранилище экономики (отдельный слот рядом с миром).
+#[derive(Clone, Debug)]
+pub struct EconomyFileStore {
+    dir: PathBuf,
+}
+
+impl EconomyFileStore {
+    pub fn open(dir: impl AsRef<Path>) -> Result<Self, PersistError> {
+        let dir = dir.as_ref().to_path_buf();
+        std::fs::create_dir_all(&dir)?;
+        Ok(EconomyFileStore { dir })
+    }
+
+    fn path(&self) -> PathBuf {
+        self.dir.join("economy.snapshot")
+    }
+
+    fn tmp(&self) -> PathBuf {
+        self.dir.join("economy.snapshot.tmp")
+    }
+
+    pub fn save(&self, snap: &EconomySnapshot) -> Result<u64, PersistError> {
+        let bytes = snap.to_bytes();
+        let n = bytes.len() as u64;
+        {
+            let mut f = std::fs::File::create(self.tmp())?;
+            f.write_all(&bytes)?;
+            f.sync_all()?;
+        }
+        std::fs::rename(self.tmp(), self.path())?;
+        Ok(n)
+    }
+
+    pub fn load(&self) -> Result<Option<EconomySnapshot>, PersistError> {
+        let p = self.path();
+        if !p.exists() {
+            return Ok(None);
+        }
+        let mut buf = Vec::new();
+        std::fs::File::open(&p)?.read_to_end(&mut buf)?;
+        Ok(Some(EconomySnapshot::from_bytes(&buf)?))
+    }
+}
+
+/// Удобный экспорт экономики в JSON (для отладки).
+pub fn economy_to_json(snap: &EconomySnapshot) -> String {
+    let mut s = String::new();
+    s.push_str("{\n");
+    s.push_str(&format!("  \"stock\": {},\n", snap.stock.len()));
+    s.push_str(&format!("  \"orders\": {},\n", snap.orders.len()));
+    s.push_str(&format!("  \"next_order_id\": {}\n", snap.next_order_id));
+    s.push_str("}\n");
+    s
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -524,5 +734,92 @@ mod tests {
         assert!(json.contains("\"entities\""));
         assert!(json.contains("\"id\": 1"));
         assert!(json.contains("\"id\": 2"));
+    }
+
+    // --- экономика ---
+
+    fn econ_fixture() -> (Inventory, Market) {
+        use ou_economy::{MatchingEngine, Side};
+        let mut inv = Inventory::new();
+        inv.add(1, 10, 5, 100);
+        inv.add(2, 10, 5, 50);
+        inv.add(1, 10, 7, 20);
+        let mut eng = MatchingEngine::new(Market::new(), inv);
+        // Оставляем неисполненные ордера в стакане.
+        eng.place_sell(10, 5, 1, 30, 10, 1).unwrap();
+        eng.place_buy(10, 7, 2, 15, 5, 2).unwrap();
+        let _ = Side::Buy;
+        // Возвращаем инвентарь и рынок как есть.
+        (eng.inventory, eng.market)
+    }
+
+    #[test]
+    fn economy_snapshot_roundtrip() {
+        let (inv, market) = econ_fixture();
+        let snap = EconomySnapshot::capture(&inv, &market);
+        let bytes = snap.to_bytes();
+        let back = EconomySnapshot::from_bytes(&bytes).unwrap();
+        assert_eq!(snap, back);
+
+        // Восстановленный инвентарь и рынок сохраняют объёмы.
+        let (inv2, market2) = back.restore();
+        assert_eq!(inv2.amount(1, 10, 5), inv.amount(1, 10, 5));
+        assert_eq!(inv2.amount(2, 10, 5), inv.amount(2, 10, 5));
+        assert_eq!(
+            market2.best_ask(10, 5).map(|l| l.qty),
+            market.best_ask(10, 5).map(|l| l.qty)
+        );
+        assert_eq!(
+            market2.best_bid(10, 7).map(|l| l.price),
+            market.best_bid(10, 7).map(|l| l.price)
+        );
+    }
+
+    #[test]
+    fn economy_snapshot_preserves_order_counter() {
+        let (inv, market) = econ_fixture();
+        let next_before = market.next_order_id();
+        let snap = EconomySnapshot::capture(&inv, &market);
+        let (_, market2) = EconomySnapshot::from_bytes(&snap.to_bytes()).unwrap().restore();
+        assert_eq!(market2.next_order_id(), next_before, "счётчик id ордеров сохранён");
+    }
+
+    #[test]
+    fn economy_snapshot_rejects_corruption() {
+        let (inv, market) = econ_fixture();
+        let mut bytes = EconomySnapshot::capture(&inv, &market).to_bytes();
+        let n = bytes.len();
+        bytes[n / 2] ^= 0xAA;
+        assert!(matches!(
+            EconomySnapshot::from_bytes(&bytes).unwrap_err(),
+            PersistError::ChecksumMismatch { .. }
+        ));
+    }
+
+    #[test]
+    fn economy_file_store_saves_and_loads() {
+        let dir = std::env::temp_dir().join(format!("ou-econ-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let store = EconomyFileStore::open(&dir).unwrap();
+        assert!(store.load().unwrap().is_none());
+
+        let (inv, market) = econ_fixture();
+        let snap = EconomySnapshot::capture(&inv, &market);
+        let n = store.save(&snap).unwrap();
+        assert!(n > 0);
+        let back = store.load().unwrap().unwrap();
+        assert_eq!(back, snap);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn empty_economy_snapshot_is_valid() {
+        let snap = EconomySnapshot::capture(&Inventory::new(), &Market::new());
+        assert!(snap.stock.is_empty());
+        assert!(snap.orders.is_empty());
+        let back = EconomySnapshot::from_bytes(&snap.to_bytes()).unwrap();
+        assert_eq!(back, snap);
+        assert_eq!(back.next_order_id, 1);
     }
 }

@@ -1,0 +1,14 @@
+[package]
+name = "ou-economy"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Open Universe: экономика — предметы, инвентарь, рынок, производство"
+
+[lib]
+name = "ou_economy"
+path = "src/lib.rs"
+
+[dependencies]
+ou-protocol = { path = "../protocol" }
+ou-sim = { path = "../sim" }

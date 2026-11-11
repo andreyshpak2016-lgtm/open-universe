@@ -7,6 +7,7 @@ members = [
   "crates/net",
   "crates/shard",
   "crates/persist",
+  "crates/economy",
   "crates/server",
   "crates/client",
 ]

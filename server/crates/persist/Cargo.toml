@@ -12,3 +12,4 @@ path = "src/lib.rs"
 [dependencies]
 ou-protocol = { path = "../protocol" }
 ou-sim = { path = "../sim" }
+ou-economy = { path = "../economy" }
