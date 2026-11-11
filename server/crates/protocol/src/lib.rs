@@ -202,9 +202,28 @@ mod wire {
             self.u16(b.len() as u16);
             self.buf.extend_from_slice(b);
         }
+        /// Varint (LEB128): маленькие числа занимают 1 байт вместо 8.
+        pub fn varint(&mut self, mut v: u64) {
+            while v >= 0x80 {
+                self.buf.push((v as u8) | 0x80);
+                v >>= 7;
+            }
+            self.buf.push(v as u8);
+        }
+        /// Знаковый varint (zigzag): −1 → 1, 1 → 2, поэтому мелкие модули дешевы.
+        pub fn svarint(&mut self, v: i64) {
+            let zz = ((v << 1) ^ (v >> 63)) as u64;
+            self.varint(zz);
+        }
         pub fn vec3_q(&mut self, v: Vec3) {
             for c in v.to_wire() {
                 self.i32(c);
+            }
+        }
+        /// Вектор через zigzag-varint: компактнее для умеренных координат.
+        pub fn vec3_qv(&mut self, v: Vec3) {
+            for c in v.to_wire() {
+                self.svarint(c as i64);
             }
         }
         pub fn unit(&mut self, v: f32) {
@@ -224,6 +243,7 @@ mod wire {
         BadTag(u8),
         Utf8,
         TooLarge(usize),
+        VarintOverflow,
     }
 
     impl<'a> Reader<'a> {
@@ -273,8 +293,33 @@ mod wire {
             let b = self.take(n)?;
             String::from_utf8(b.to_vec()).map_err(|_| WireError::Utf8)
         }
+        pub fn varint(&mut self) -> Result<u64, WireError> {
+            let mut result: u64 = 0;
+            let mut shift = 0u32;
+            loop {
+                let b = self.u8()?;
+                result |= ((b & 0x7F) as u64) << shift;
+                if b & 0x80 == 0 {
+                    return Ok(result);
+                }
+                shift += 7;
+                if shift >= 64 {
+                    return Err(WireError::VarintOverflow);
+                }
+            }
+        }
+        pub fn svarint(&mut self) -> Result<i64, WireError> {
+            let zz = self.varint()?;
+            Ok(((zz >> 1) as i64) ^ -((zz & 1) as i64))
+        }
         pub fn vec3_q(&mut self) -> Result<Vec3, WireError> {
             Ok(Vec3::from_wire([self.i32()?, self.i32()?, self.i32()?]))
+        }
+        pub fn vec3_qv(&mut self) -> Result<Vec3, WireError> {
+            let x = self.svarint()? as i32;
+            let y = self.svarint()? as i32;
+            let z = self.svarint()? as i32;
+            Ok(Vec3::from_wire([x, y, z]))
         }
         pub fn unit(&mut self) -> Result<f32, WireError> {
             Ok(self.i16()? as f32 / UNIT_SCALE)
@@ -285,6 +330,7 @@ mod wire {
     const TAG_INPUT: u8 = 2;
     const TAG_SNAPSHOT: u8 = 3;
     const TAG_ACK: u8 = 4;
+    const TAG_SNAPSHOT_V2: u8 = 5;
 
     pub fn encode(msg: &Message) -> Vec<u8> {
         let mut w = Writer::new();
@@ -306,15 +352,15 @@ mod wire {
                 }
             }
             Message::ServerSnapshot(s) => {
-                w.u8(TAG_SNAPSHOT);
-                w.u64(s.tick);
-                w.u32(s.ack_input_seq);
+                w.u8(TAG_SNAPSHOT_V2);
+                w.varint(s.tick);
+                w.varint(s.ack_input_seq as u64);
                 w.bool(s.baseline);
-                w.u16(s.entities.len() as u16);
+                w.varint(s.entities.len() as u64);
                 for e in &s.entities {
-                    w.u32(e.id);
-                    w.vec3_q(e.pos);
-                    w.vec3_q(e.vel);
+                    w.varint(e.id as u64);
+                    w.vec3_qv(e.pos);
+                    w.vec3_qv(e.vel);
                     w.f32(e.yaw);
                     w.f32(e.pitch);
                 }
@@ -347,20 +393,37 @@ mod wire {
                 }
                 Ok(Message::ClientInput { inputs })
             }
-            TAG_SNAPSHOT => {
-                let tick = r.u64()?;
-                let ack_input_seq = r.u32()?;
-                let baseline = r.bool()?;
-                let n = r.u16()? as usize;
+            TAG_SNAPSHOT | TAG_SNAPSHOT_V2 => {
+                let compact = tag == TAG_SNAPSHOT_V2;
+                let (tick, ack_input_seq, baseline, n) = if compact {
+                    (
+                        r.varint()?,
+                        r.varint()? as u32,
+                        r.bool()?,
+                        r.varint()? as usize,
+                    )
+                } else {
+                    (r.u64()?, r.u32()?, r.bool()?, r.u16()? as usize)
+                };
                 let mut entities = Vec::with_capacity(n);
                 for _ in 0..n {
-                    entities.push(EntityState {
-                        id: r.u32()?,
-                        pos: r.vec3_q()?,
-                        vel: r.vec3_q()?,
-                        yaw: r.f32()?,
-                        pitch: r.f32()?,
-                    });
+                    if compact {
+                        entities.push(EntityState {
+                            id: r.varint()? as u32,
+                            pos: r.vec3_qv()?,
+                            vel: r.vec3_qv()?,
+                            yaw: r.f32()?,
+                            pitch: r.f32()?,
+                        });
+                    } else {
+                        entities.push(EntityState {
+                            id: r.u32()?,
+                            pos: r.vec3_q()?,
+                            vel: r.vec3_q()?,
+                            yaw: r.f32()?,
+                            pitch: r.f32()?,
+                        });
+                    }
                 }
                 Ok(Message::ServerSnapshot(Snapshot { tick, ack_input_seq, baseline, entities }))
             }
@@ -501,5 +564,59 @@ mod tests {
         let mut dg = frame(&m);
         dg.truncate(dg.len() - 2);
         assert!(matches!(deframe(&dg), Err(WireError::UnexpectedEof)));
+    }
+
+    #[test]
+    fn compact_snapshot_is_smaller_and_roundtrips() {
+        // Небольшие координаты — типичный случай в локальной зоне.
+        let snap = Snapshot {
+            tick: 1000,
+            ack_input_seq: 25,
+            baseline: false,
+            entities: vec![
+                EntityState {
+                    id: 7,
+                    pos: Vec3::new(120.5, -30.25, 8.0),
+                    vel: Vec3::new(1.0, 0.0, -2.0),
+                    yaw: 0.5,
+                    pitch: -0.25,
+                },
+                EntityState {
+                    id: 8,
+                    pos: Vec3::new(-300.0, 12.0, 40.0),
+                    vel: Vec3::new(0.0, 3.0, 1.0),
+                    yaw: -1.0,
+                    pitch: 0.1,
+                },
+            ],
+        };
+        let bytes = encode(&Message::ServerSnapshot(snap.clone()));
+        // Varint-вариант должен быть заметно компактнее «широкого».
+        let wide = 8 /*tick*/ + 4 /*ack*/ + 1 + 2 + 2 * (4 + 12 + 12 + 4 + 4);
+        assert!(bytes.len() < wide, "compact={} wide={}", bytes.len(), wide);
+        assert_eq!(decode(&bytes).unwrap(), Message::ServerSnapshot(snap));
+    }
+
+    #[test]
+    fn varint_and_zigzag_roundtrip() {
+        let values: [i64; 9] = [0, 1, -1, 63, 64, -64, 1_000_000, -1_000_000, i32::MAX as i64];
+        let mut w = Writer::new();
+        for v in values {
+            w.svarint(v);
+        }
+        let mut r = Reader::new(&w.buf);
+        for v in values {
+            assert_eq!(r.svarint().unwrap(), v);
+        }
+    }
+
+    #[test]
+    fn varint_is_compact_for_small_numbers() {
+        let mut w = Writer::new();
+        w.varint(5);
+        w.varint(200);
+        w.varint(100_000);
+        // 5 → 1 байт, 200 → 2 байта, 100000 → 3 байта.
+        assert_eq!(w.buf.len(), 6);
     }
 }

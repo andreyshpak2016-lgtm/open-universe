@@ -33,6 +33,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "ou-shard"
+version = "0.1.0"
+dependencies = [
+ "ou-protocol",
+ "ou-sim",
+ "ou-spatial",
+]
+
+[[package]]
 name = "ou-sim"
 version = "0.1.0"
 dependencies = [

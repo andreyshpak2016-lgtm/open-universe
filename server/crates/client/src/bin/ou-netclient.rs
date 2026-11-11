@@ -54,30 +54,29 @@ fn main() {
                             first
                         });
                         // На клиенте хранится ровно одна сущность — его корабль.
-                        match client.as_mut() {
-                            None => {
-                                // Первый снимок: клиент встаёт на авторитетную точку
-                                // без предсказания — это инициализация, не расхождение.
-                                let mut c = PredictedClient::new(id);
-                                if let Some(e) = snap.entities.iter().find(|e| e.id == id) {
-                                    if let Some(ent) = c.world.entities.get_mut(&id) {
-                                        ent.state = *e;
-                                    }
+                        let c = client.get_or_insert_with(|| {
+                            let mut c = PredictedClient::new(id);
+                            if let Some(e) = snap.entities.iter().find(|e| e.id == id) {
+                                if let Some(ent) = c.world.entities.get_mut(&id) {
+                                    ent.state = *e;
                                 }
-                                client = Some(c);
                             }
-                            Some(c) => {
-                                let before = c.world.entities.get(&id).map(|e| e.state.pos);
-                                c.reconcile(&snap.entities, id, snap.ack_input_seq);
-                                reconciles += 1;
-                                if let (Some(b), Some(a)) =
-                                    (before, c.world.entities.get(&id).map(|e| e.state.pos))
-                                {
-                                    let d = b.distance(a);
-                                    total_correction += d;
-                                    if d > max_correction {
-                                        max_correction = d;
-                                    }
+                            c
+                        });
+                        // Буферизуем снимок для интерполяции удалённых сущностей.
+                        c.push_snapshot(&snap);
+                        // Реконсиляция: только если это не первая инициализация.
+                        if c.last_acked_seq != 0 || snap.ack_input_seq != 0 {
+                            let before = c.world.entities.get(&id).map(|e| e.state.pos);
+                            c.reconcile(&snap.entities, id, snap.ack_input_seq);
+                            reconciles += 1;
+                            if let (Some(b), Some(a)) =
+                                (before, c.world.entities.get(&id).map(|e| e.state.pos))
+                            {
+                                let d = b.distance(a);
+                                total_correction += d;
+                                if d > max_correction {
+                                    max_correction = d;
                                 }
                             }
                         }

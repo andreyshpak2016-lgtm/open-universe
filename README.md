@@ -43,10 +43,11 @@ management и генерация мира.
 
 ```bash
 cd server
-cargo test --workspace                  # 33 теста
+cargo test --workspace                  # 49 тестов
 cargo run -p ou-server                  # демо interest management и дельт
 cargo run -p ou-client                  # демо предсказания и реконсиляции
 cargo run -p ou-sim --bin ou-worldgen   # генерация звёздных систем
+cargo run -p ou-shard --bin ou-shard-demo   # шардирование и миграции
 
 # реальный UDP-обмен (в двух терминалах):
 cargo run -p ou-server --bin ou-netd -- 127.0.0.1:7777 10

@@ -5,6 +5,7 @@ members = [
   "crates/sim",
   "crates/spatial",
   "crates/net",
+  "crates/shard",
   "crates/server",
   "crates/client",
 ]

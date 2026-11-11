@@ -199,30 +199,35 @@
           <table id="codestats">
             <thead><tr><th>Показатель</th><th>Значение</th></tr></thead>
             <tbody>
-              <tr><td>Тесты ядра</td><td class="ok">33 пройдено</td></tr>
-              <tr><td>Крейты (модули)</td><td>6 (protocol, sim, spatial, net, server, client)</td></tr>
+              <tr><td>Тесты ядра</td><td class="ok">49 пройдено</td></tr>
+              <tr><td>Крейты (модули)</td><td>7 (protocol, sim, spatial, net, shard, server, client)</td></tr>
               <tr><td>Частота тика симуляции</td><td>30 Гц (149 тиков за 5 с — проверено)</td></tr>
               <tr><td>Точность позиции по проводу</td><td>0.1 мм (i32, ±214 км)</td></tr>
-              <tr><td>Снапшот одной сущности</td><td>52 байта</td></tr>
+              <tr><td>Сжатие снапшотов</td><td>varint + zigzag (мелкие числа — 1–3 байта)</td></tr>
+              <tr><td>Снапшот одной сущности</td><td>52 байта (до сжатия)</td></tr>
               <tr><td>Пустая дельта + ack (вне зоны видимости)</td><td class="ok">29 байт</td></tr>
               <tr><td>Реальный UDP: трафик на игрока</td><td>≈ 202 байта/тик</td></tr>
-              <tr><td>Макс. коррекция предсказания (UDP)</td><td class="ok">0.006 у.е. (ровная сеть)</td></tr>
-              <tr><td>Сгенерировано в демо-кластере</td><td>6 систем, 58 тел</td></tr>
+              <tr><td>Распределение зон по 4 узлам</td><td class="ok">21.8–28.2% (ровно)</td></tr>
+              <tr><td>Буфер интерполяции клиента</td><td>2 тика (≈66 мс) задержки</td></tr>
             </tbody>
           </table>
         </div>
 
         <pre class="codeblock"><code>$ cargo test --workspace
-protocol 6 · sim 10 · spatial 6 · net 5 · server 4 · client 2   →  33 passed
+protocol 6 · sim 10 · spatial 6 · net 5 · shard 9 · server 4 · client 9  →  49 passed
+
+$ cargo run -p ou-shard --bin ou-shard-demo
+=== Добавляем узел 3 (масштабирование) ===
+Переехало зон: 5 из 8 (consistent hashing двигает минимум)
+  узел 1: 2 зон | узел 2: 1 зон | узел 3: 5 зон
+=== Полёт игрока через весь кластер ===
+  x = 1406250 -> миграция с узла 1 на узел 2
+  x = 1640625 -> миграция с узла 2 на узел 3
+Всего миграций за полёт: 4
 
 $ cargo run -p ou-sim --bin ou-worldgen
-Bera-1   центр: звезда      | тел: 5  (планет 3, поясов 1) | ресурсов: 4736
-Elar-4   центр: чёрная дыра | тел: 8  (планет 3, поясов 3) | ресурсов: 7831
 Итого: 6 систем, 58 тел, 1 чёрная дыра
-Повторная генерация идентична -> true
-
-$ cargo run -p ou-server --bin ou-netd -- 127.0.0.1:7777 5   # реальный UDP
-тиков симуляции: 149 | игроков: 2 | снапшотов: 244 | трафик: 202 байт/тик</code></pre>
+Повторная генерация идентична -> true</code></pre>
 
         <p class="lead" style="margin-top:16px;font-size:.88rem">Исходники: <code>server/crates/{protocol,sim,server,client}</code> · описание — <code>server/README.md</code>.</p>
       </div>
@@ -282,6 +287,7 @@ $ cargo run -p ou-server --bin ou-netd -- 127.0.0.1:7777 5   # реальный 
             <li><code>ou-netclient.exe</code> — клиент с предсказанием и реконсиляцией</li>
             <li><code>ou-server.exe</code> / <code>ou-client.exe</code> — демо-режимы</li>
             <li><code>ou-worldgen.exe</code> — генератор звёздных систем</li>
+            <li><code>ou-shard-demo.exe</code> — шардирование и миграции</li>
           </ul>
           <p class="dl-meta">Размер: <b id="dl-size">~0.2 МБ</b> · Платформа: Windows 10+ · Дата: <span id="dl-date">—</span></p>
           <div class="dl-actions">

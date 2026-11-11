@@ -4,8 +4,9 @@
 //! предсказание и реконсиляция. Здесь нет рендера — только логика, которая
 //! потом переедет в UE5.
 
-use ou_protocol::{InputFrame, NetId};
+use ou_protocol::{EntityState, InputFrame, NetId, Snapshot};
 use ou_sim::World;
+use std::collections::VecDeque;
 
 /// Клиентская копия мира: предсказывает движение, чтобы играть без задержки.
 pub struct PredictedClient {
@@ -13,13 +14,20 @@ pub struct PredictedClient {
     /// Кадры, отправленные, но ещё не подтверждённые сервером.
     pub pending: Vec<InputFrame>,
     pub last_acked_seq: u32,
+    /// Буфер входящих снимков для интерполяции удалённых сущностей.
+    pub snapshots: VecDeque<Snapshot>,
 }
 
 impl PredictedClient {
     pub fn new(entity: NetId) -> Self {
         let mut world = World::new();
         world.spawn(entity, ou_protocol::Vec3::ZERO);
-        PredictedClient { world, pending: Vec::new(), last_acked_seq: 0 }
+        PredictedClient {
+            world,
+            pending: Vec::new(),
+            last_acked_seq: 0,
+            snapshots: VecDeque::new(),
+        }
     }
 
     /// Локальный ввод: сразу применяем (предсказание) и ставим в очередь на отправку.
@@ -48,6 +56,7 @@ impl PredictedClient {
         entity: NetId,
         ack_seq: u32,
     ) {
+
         // 1. Убрать подтверждённые кадры.
         self.ack(ack_seq);
 
@@ -66,6 +75,87 @@ impl PredictedClient {
             self.world.step(&inputs);
         }
     }
+
+    /// Добавить входящий снимок в буфер интерполяции.
+    ///
+    /// Снимки хранятся отсортированными по тику; дубликаты тиков отбрасываются.
+    pub fn push_snapshot(&mut self, snap: &ou_protocol::Snapshot) {
+        if self.snapshots.iter().any(|s| s.tick == snap.tick) {
+            return;
+        }
+        self.snapshots.push_back(snap.clone());
+        // Держим разумную глубину буфера.
+        while self.snapshots.len() > MAX_SNAPSHOTS {
+            self.snapshots.pop_front();
+        }
+    }
+
+    /// Интерполированное состояние чужой сущности в момент `render_time`.
+    ///
+    /// Идея: клиент отрисовывает мир с задержкой в один-два тика и плавно
+    /// смешивает два соседних снимка. Без этого удалённые игроки «телепортируются»
+    /// на 30 Гц. Собственный корабль не интерполируется — он предсказывается.
+    pub fn interpolate(&self, id: NetId, render_time: f64) -> Option<EntityState> {
+        if self.snapshots.is_empty() {
+            return self.world.entities.get(&id).map(|e| e.state);
+        }
+        // Ищем пару снимков, между которыми лежит render_time.
+        let mut before: Option<&ou_protocol::Snapshot> = None;
+        let mut after: Option<&ou_protocol::Snapshot> = None;
+        for s in &self.snapshots {
+            let t = s.tick as f64 * ou_protocol::TICK_DT;
+            if t <= render_time {
+                before = Some(s);
+            } else {
+                after = Some(s);
+                break;
+            }
+        }
+        let a = before.or(after)?;
+        let b = after.unwrap_or(a);
+        let ea = a.entities.iter().find(|e| e.id == id)?;
+        if a.tick == b.tick {
+            return Some(*ea);
+        }
+        let eb = match b.entities.iter().find(|e| e.id == id) {
+            Some(e) => *e,
+            None => return Some(*ea),
+        };
+        let ta = a.tick as f64 * ou_protocol::TICK_DT;
+        let tb = b.tick as f64 * ou_protocol::TICK_DT;
+        let mut alpha = if tb > ta { (render_time - ta) / (tb - ta) } else { 0.0 };
+        if alpha < 0.0 {
+            alpha = 0.0;
+        } else if alpha > 1.0 {
+            alpha = 1.0;
+        }
+        Some(EntityState {
+            id,
+            pos: ea.pos.add(eb.pos.sub(ea.pos).scale(alpha)),
+            vel: ea.vel.add(eb.vel.sub(ea.vel).scale(alpha)),
+            yaw: lerp_f32(ea.yaw, eb.yaw, alpha),
+            pitch: lerp_f32(ea.pitch, eb.pitch, alpha),
+        })
+    }
+
+    /// Время рендера: серверное время минус буфер задержки (в тиках).
+    pub fn render_time(&self) -> f64 {
+        match self.snapshots.back() {
+            Some(s) => (s.tick as f64 - INTERP_DELAY_TICKS) * ou_protocol::TICK_DT,
+            None => 0.0,
+        }
+    }
+}
+
+/// Глубина буфера интерполяции.
+const MAX_SNAPSHOTS: usize = 32;
+/// На сколько тиков клиент отстаёт от сервера, чтобы было чем сглаживать.
+/// Значение задано в тиках (30 Гц): 2 тика ≈ 66 мс.
+const INTERP_DELAY_TICKS: f64 = 2.0;
+
+#[inline]
+fn lerp_f32(a: f32, b: f32, t: f64) -> f32 {
+    (a as f64 + (b as f64 - a as f64) * t) as f32
 }
 
 #[cfg(test)]
@@ -145,5 +235,81 @@ mod tests {
             client.world.checksum(),
             "после доставки вводов предсказание должно сойтись с сервером"
         );
+    }
+
+    // --- снапшот-интерполяция ---
+
+    fn snap_at(tick: u64, id: NetId, x: f64) -> Snapshot {
+        Snapshot {
+            tick,
+            ack_input_seq: 0,
+            baseline: false,
+            entities: vec![EntityState {
+                id,
+                pos: ou_protocol::Vec3::new(x, 0.0, 0.0),
+                vel: ou_protocol::Vec3::ZERO,
+                yaw: 0.0,
+                pitch: 0.0,
+            }],
+        }
+    }
+
+    #[test]
+    fn interpolation_is_between_snapshots() {
+        let mut c = PredictedClient::new(1);
+        c.push_snapshot(&snap_at(10, 2, 0.0));
+        c.push_snapshot(&snap_at(12, 2, 20.0));
+
+        // На середине между тиками 10 и 12 (t = 11/30 с) позиция ≈ 10.
+        let mid_t = 11.0 * ou_protocol::TICK_DT;
+        let p = c.interpolate(2, mid_t).unwrap();
+        assert!((p.pos.x - 10.0).abs() < 1e-9, "x={}", p.pos.x);
+
+        // На точках снимков — точные значения.
+        let p0 = c.interpolate(2, 10.0 * ou_protocol::TICK_DT).unwrap();
+        let p1 = c.interpolate(2, 12.0 * ou_protocol::TICK_DT).unwrap();
+        assert!((p0.pos.x - 0.0).abs() < 1e-9);
+        assert!((p1.pos.x - 20.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn interpolation_clamps_outside_range() {
+        let mut c = PredictedClient::new(1);
+        c.push_snapshot(&snap_at(10, 2, 0.0));
+        c.push_snapshot(&snap_at(12, 2, 20.0));
+        // Раньше первого снимка → берём первый.
+        assert_eq!(c.interpolate(2, 0.0).unwrap().pos.x, 0.0);
+        // Позже последнего → берём последний.
+        assert_eq!(c.interpolate(2, 100.0).unwrap().pos.x, 20.0);
+    }
+
+    #[test]
+    fn interpolation_buffer_is_bounded_and_dedup() {
+        let mut c = PredictedClient::new(1);
+        for t in 0..100u64 {
+            c.push_snapshot(&snap_at(t, 2, t as f64));
+        }
+        assert!(c.snapshots.len() <= 32, "буфер не должен расти бесконечно");
+        // Повторный тик не добавляется.
+        let len_before = c.snapshots.len();
+        let last_tick = c.snapshots.back().unwrap().tick;
+        c.push_snapshot(&snap_at(last_tick, 2, 999.0));
+        assert_eq!(c.snapshots.len(), len_before);
+    }
+
+    #[test]
+    fn interpolation_smooths_motion_continuously() {
+        // Плавность: между снимками позиция монотонно растёт (нет «телепортов»).
+        let mut c = PredictedClient::new(1);
+        c.push_snapshot(&snap_at(0, 2, 0.0));
+        c.push_snapshot(&snap_at(4, 2, 40.0));
+        let mut prev = -1.0;
+        let mut t = 0.0;
+        while t <= 4.0 * ou_protocol::TICK_DT {
+            let x = c.interpolate(2, t).unwrap().pos.x;
+            assert!(x >= prev - 1e-9, "немонотонно: {prev} -> {x}");
+            prev = x;
+            t += ou_protocol::TICK_DT / 4.0;
+        }
     }
 }
