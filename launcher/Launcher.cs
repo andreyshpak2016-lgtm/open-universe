@@ -329,6 +329,23 @@ namespace OpenUniverseLauncher
         public string GameSetupTag;
         public double GameSetupSizeMb;
         public string LauncherUrl;
+        /// <summary>Страница релиза (…/releases/tag/vX.Y.Z) — база для ассетов.</summary>
+        public string PageUrl;
+    }
+
+    /// <summary>Один файл в манифесте игры: путь, размер, SHA-256.</summary>
+    internal sealed class ManifestFile
+    {
+        public string P;   // относительный путь (прямые слэши)
+        public long S;     // размер, байт
+        public string H;   // SHA-256 hex (нижний регистр)
+    }
+
+    /// <summary>Манифест сборки игры: версия + список файлов с хешами.</summary>
+    internal sealed class GameManifest
+    {
+        public string Version;
+        public List<ManifestFile> Files;
     }
 
     internal sealed class LauncherForm : Form
@@ -339,6 +356,8 @@ namespace OpenUniverseLauncher
             "https://api.github.com/repos/andreyshpak2016-lgtm/open-universe/releases?per_page=10";
         private const string StatusUrl =
             "https://andreyshpak2016-lgtm.github.io/open-universe/status.json";
+        private const string ManifestUrl =
+            "https://andreyshpak2016-lgtm.github.io/open-universe/manifests/latest.json";
         private const string SiteUrl = "https://andreyshpak2016-lgtm.github.io/open-universe/";
 
         private const int WM_NCLBUTTONDOWN = 0xA1;
@@ -436,6 +455,12 @@ namespace OpenUniverseLauncher
             L("status.installFail", "Не удалось установить игру: ", "Could not install the game: ");
             L("status.launching", "Игра запускается…", "Launching the game…");
             L("status.launchingServer", "Запускаю локальный сервер и игру…", "Starting the local server and the game…");
+            L("status.integrityOk", "Файлы игры проверены, версия {0} — обновлений нет.", "Game files verified, version {0} - no updates.");
+            L("status.patching", "Загружаю обновление: {0:N0} / {1:N0} МБ", "Downloading the update: {0:N0} / {1:N0} MB");
+            L("status.patched", "Обновлено файлов: {0}. Версия {1}.", "Updated files: {0}. Version {1}.");
+            L("status.patchFail", "Не удалось применить обновление: ", "Could not apply the update: ");
+            L("prompt.patch", "Обнаружены изменения ({0} файл(ов)). Скачать только их до версии {1}?",
+                "Changes detected ({0} file(s)). Download only these to version {1}?");
             L("status.launchFail", "Не удалось запустить игру: ", "Could not launch the game: ");
             L("status.updateError", "Ошибка проверки обновлений: ", "Update check error: ");
             L("status.needSignIn", "Сначала войдите или зарегистрируйтесь.", "Please sign in or register first.");
@@ -1369,6 +1394,61 @@ namespace OpenUniverseLauncher
                 _latestGameDisplay = gameTag;
                 _header.Invalidate();
 
+                // --- Инкрементальное обновление по манифесту ---
+                // Если игровой каталог есть и доступен манифест, сверяем хеши и
+                // докачиваем только изменения. Полный установщик — лишь запасной
+                // путь (первая установка или манифест недоступен).
+                var manifest = await LoadManifestAsync();
+                bool gameInstalled = GameExe() != null;
+
+                if (manifest != null && gameInstalled)
+                {
+                    var missing = new List<ManifestFile>();
+                    bool intact = VerifyGame(manifest, missing);
+
+                    if (intact)
+                    {
+                        // Всё на месте: ничего качать не нужно.
+                        if (!silent) SetStatus(string.Format(T("status.integrityOk"),
+                            Pretty(manifest.Version)), false);
+                        UpdatePlayButton();
+                        return;
+                    }
+
+                    // Есть расхождения: пробуем патч релиза, иначе — полный установщик.
+                    string patchUrl = FindPatchUrl(_releases, manifest.Version);
+                    if (patchUrl != null)
+                    {
+                        if (!silent)
+                        {
+                            string whatP = string.Format(T("prompt.patch"),
+                                missing.Count, Pretty(manifest.Version));
+                            if (MessageBox.Show(this, whatP, T("prompt.title"),
+                                    MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
+                            {
+                                UpdatePlayButton();
+                                return;
+                            }
+                        }
+                        _progress.Visible = true; _progress.Value = 0;
+                        try
+                        {
+                            int n = await ApplyPatchAsync(manifest, patchUrl, missing);
+                            SetStatus(string.Format(T("status.patched"), n, Pretty(manifest.Version)), false);
+                            _installedDisplay = InstalledVersion();
+                            _header.Invalidate();
+                        }
+                        catch (Exception ex)
+                        {
+                            SetStatus(T("status.patchFail") + ex.Message, true);
+                        }
+                        finally { _progress.Visible = false; }
+                        UpdatePlayButton();
+                        return;
+                    }
+                    // Патча нет — падаем на полный установщик ниже.
+                }
+
                 if (installable == null)
                 {
                     if (!silent) SetStatus(T("status.noInstaller"), true);
@@ -1379,7 +1459,8 @@ namespace OpenUniverseLauncher
                 bool upToDate = !string.IsNullOrEmpty(_installedDisplay)
                     && Norm(_installedDisplay) == Norm(gameTag);
 
-                if (upToDate)
+                // Если манифест недоступен и версия совпадает — ничего не делаем.
+                if (upToDate && manifest == null)
                 {
                     if (!silent) SetStatus(string.Format(T("status.upToDate"), Pretty(gameTag)), false);
                     UpdatePlayButton();
@@ -1624,6 +1705,162 @@ namespace OpenUniverseLauncher
             else _play.Text = T("btn.play");
         }
 
+        // ---------------- Инкрементальное обновление по манифесту ----------------
+
+        /// <summary>
+        /// Скачать манифест игры (версия + хеши файлов). null — не удалось.
+        /// </summary>
+        private async Task<GameManifest> LoadManifestAsync()
+        {
+            try
+            {
+                using (var client = new WebClient())
+                {
+                    client.Headers[HttpRequestHeader.UserAgent] = "OpenUniverseLauncher/1.4";
+                    string json = await client.DownloadStringTaskAsync(ManifestUrl);
+                    // Формат: { "version": "...", "files": [ {"p":..,"s":..,"h":..}, ... ] }
+                    var man = new GameManifest { Version = null, Files = new List<ManifestFile>() };
+                    man.Version = JsonString(json, "version");
+                    foreach (var obj in JsonObjects(json, "files"))
+                    {
+                        man.Files.Add(new ManifestFile
+                        {
+                            P = JsonString(obj, "p"),
+                            S = JsonLong(obj, "s"),
+                            H = JsonString(obj, "h")
+                        });
+                    }
+                    return man.Files.Count > 0 ? man : null;
+                }
+            }
+            catch { return null; }
+        }
+
+        /// <summary>Сверить локальные файлы игры с манифестом.</summary>
+        /// <param name="missing">Файлы, которых нет или хеш не совпал (нужно скачать/починить).</param>
+        /// <returns>true — целостность в порядке (все файлы на месте и совпадают).</returns>
+        private bool VerifyGame(GameManifest man, List<ManifestFile> missing)
+        {
+            string dir = GameDir();
+            missing.Clear();
+            foreach (var f in man.Files)
+            {
+                string path = Path.Combine(dir, f.P.Replace('/', Path.DirectorySeparatorChar));
+                if (!File.Exists(path)) { missing.Add(f); continue; }
+                var fi = new FileInfo(path);
+                if (fi.Length != f.S) { missing.Add(f); continue; }
+                // Хеш считаем только если размер совпал (дешевле, чем всегда).
+                if (!string.Equals(HashFile(path), f.H, StringComparison.OrdinalIgnoreCase))
+                {
+                    missing.Add(f);
+                }
+            }
+            return missing.Count == 0;
+        }
+
+        private static string HashFile(string path)
+        {
+            using (var sha = System.Security.Cryptography.SHA256.Create())
+            using (var fs = File.OpenRead(path))
+            {
+                var h = sha.ComputeHash(fs);
+                var sb = new StringBuilder(h.Length * 2);
+                foreach (var b in h) sb.Append(b.ToString("x2"));
+                return sb.ToString();
+            }
+        }
+
+        /// <summary>
+        /// Инкрементальное обновление: качаем только отсутствующие/изменённые
+        /// файлы из патча, остальное не трогаем. Возвращает число обновлённых.
+        /// </summary>
+        private async Task<int> ApplyPatchAsync(GameManifest man, string patchUrl, List<ManifestFile> missing)
+        {
+            string tmp = Path.Combine(Path.GetTempPath(), "ou-patch-" + Guid.NewGuid().ToString("N") + ".zip");
+            try
+            {
+                using (var client = new WebClient())
+                {
+                    client.Headers[HttpRequestHeader.UserAgent] = "OpenUniverseLauncher/1.4";
+                    client.DownloadProgressChanged += (s, e) =>
+                    {
+                        _progress.Value = Math.Min(100, e.ProgressPercentage);
+                        SetStatus(string.Format(T("status.patching"),
+                            e.BytesReceived / 1048576.0, e.TotalBytesToReceive / 1048576.0), false);
+                    };
+                    var tcs = new TaskCompletionSource<bool>();
+                    client.DownloadFileCompleted += (s, e) =>
+                    {
+                        if (e.Error != null) tcs.TrySetException(e.Error);
+                        else if (e.Cancelled) tcs.TrySetCanceled();
+                        else tcs.TrySetResult(true);
+                    };
+                    client.DownloadFileAsync(new Uri(patchUrl), tmp);
+                    await tcs.Task;
+                }
+
+                // Распаковываем патч во временный каталог, затем копируем нужные
+                // файлы поверх игры — атомарно по каждому файлу.
+                string stage = Path.Combine(Path.GetTempPath(), "ou-stage-" + Guid.NewGuid().ToString("N"));
+                if (Directory.Exists(stage)) Directory.Delete(stage, true);
+                System.IO.Compression.ZipFile.ExtractToDirectory(tmp, stage);
+
+                string dir = GameDir();
+                var need = new HashSet<string>(missing.ConvertAll(m => m.P.Replace('\\', '/')), StringComparer.OrdinalIgnoreCase);
+                int done = 0;
+                foreach (var f in man.Files)
+                {
+                    if (!need.Contains(f.P)) continue;
+                    string src = Path.Combine(stage, f.P.Replace('/', Path.DirectorySeparatorChar));
+                    if (!File.Exists(src)) continue;   // нет в патче — пропускаем
+                    string dst = Path.Combine(dir, f.P.Replace('/', Path.DirectorySeparatorChar));
+                    Directory.CreateDirectory(Path.GetDirectoryName(dst));
+                    File.Copy(src, dst, true);
+                    done++;
+                }
+                try { Directory.Delete(stage, true); } catch { }
+                return done;
+            }
+            finally
+            {
+                try { if (File.Exists(tmp)) File.Delete(tmp); } catch { }
+            }
+        }
+
+        // ---------------- Мини-разбор JSON (без сторонних зависимостей) ----------------
+
+        private static string JsonString(string json, string key)
+        {
+            var m = System.Text.RegularExpressions.Regex.Match(json,
+                "\"" + key + "\"\\s*:\\s*\"([^\"]*)\"");
+            return m.Success ? m.Groups[1].Value : null;
+        }
+
+        private static long JsonLong(string json, string key)
+        {
+            var m = System.Text.RegularExpressions.Regex.Match(json,
+                "\"" + key + "\"\\s*:\\s*(-?\\d+)");
+            long v;
+            return m.Success && long.TryParse(m.Groups[1].Value, out v) ? v : 0;
+        }
+
+        /// <summary>Достать объекты из массива "files": [...] как отдельные строки.</summary>
+        private static IEnumerable<string> JsonObjects(string json, string key)
+        {
+            int k = json.IndexOf("\"" + key + "\"", StringComparison.Ordinal);
+            if (k < 0) yield break;
+            int arr = json.IndexOf('[', k);
+            if (arr < 0) yield break;
+            int depth = 0, start = -1;
+            for (int i = arr; i < json.Length; i++)
+            {
+                char c = json[i];
+                if (c == '{') { if (depth == 0) start = i; depth++; }
+                else if (c == '}') { depth--; if (depth == 0 && start >= 0) yield return json.Substring(start, i - start + 1); }
+                else if (c == ']' && depth == 0) yield break;
+            }
+        }
+
         private void OnPlay(object sender, EventArgs e)
         {
             if (_profile == null) { SetStatus(T("status.needSignIn"), true); return; }
@@ -1722,7 +1959,8 @@ namespace OpenUniverseLauncher
                     Notes = FirstNonEmpty(Str(d, "notes"), Str(d, "name")),
                     GameSetupUrl = Str(d, "gameSetup"),
                     GameSetupTag = Str(d, "gameSetupTag"),
-                    LauncherUrl = Str(d, "launcher")
+                    LauncherUrl = Str(d, "launcher"),
+                    PageUrl = Str(d, "page")
                 };
                 DateTime dt;
                 if (DateTime.TryParse(Str(d, "date"), out dt)) info.Date = dt;
@@ -1786,6 +2024,21 @@ namespace OpenUniverseLauncher
             foreach (var r in rels)
                 if (!string.IsNullOrEmpty(r.GameSetupUrl)) return r;
             return null;
+        }
+
+        /// <summary>
+        /// URL патча (только изменения) для версии манифеста. Патч — asset
+        /// `patch-<version>.zip` релиза с тегом `v<version>`.
+        /// </summary>
+        private static string FindPatchUrl(List<ReleaseInfo> rels, string version)
+        {
+            if (string.IsNullOrEmpty(version)) return null;
+            // Патч публикуется в ассетах релиза с тегом v<version>, поэтому URL
+            // строим от страницы релиза (надёжнее, чем угадывать по установщику,
+            // который мог остаться от более старого релиза).
+            const string baseUrl =
+                "https://github.com/andreyshpak2016-lgtm/open-universe/releases/download/";
+            return baseUrl + "v" + Norm(version) + "/patch-" + Norm(version) + ".zip";
         }
 
         private static string Str(Dictionary<string, object> d, string key)

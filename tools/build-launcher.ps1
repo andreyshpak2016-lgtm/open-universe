@@ -54,6 +54,7 @@ $iconArg = if (Test-Path $ico) { "/win32icon:$ico" } else { $null }
 & $csc /nologo /target:winexe /optimize+ "/out:$out" $iconArg `
   "/r:$sys" "/r:$drw" "/r:$web" `
   /r:System.dll /r:System.Core.dll /r:System.Net.Http.dll `
+  /r:System.IO.Compression.dll /r:System.IO.Compression.FileSystem.dll `
   "$src" "$infoPath"
 if ($LASTEXITCODE -ne 0) { throw "Компиляция не удалась" }
 

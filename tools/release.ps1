@@ -135,6 +135,22 @@ if ($iscc) {
 # а не только на архив. Только реальные исполняемые файлы.
 $exes = $files | Where-Object { $_ -match '\.exe$' -and (Test-Path $_) }
 
+# 3b2. Манифест игровых файлов + патч (только изменения) — для лаунчера.
+# Лаунчер по манифесту сверяет хеши и качает лишь изменённые файлы.
+$patchZip = $null
+if (Test-Path (Join-Path $root 'client\Packaged\Windows\OpenUniverse.exe')) {
+  Write-Host "--> манифест игры и патч обновления" -ForegroundColor Yellow
+  try {
+    & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'make-manifest.ps1') -Version $Version -MakePatch
+    $patchZip = Join-Path $dist "patch-$Version.zip"
+    if (Test-Path $patchZip) {
+      Write-Host ("Патч: {0} ({1:N1} МБ)" -f $patchZip, ((Get-Item $patchZip).Length / 1MB)) -ForegroundColor Green
+    }
+  } catch {
+    Write-Host "манифест/патч не собраны: $_" -ForegroundColor DarkYellow
+  }
+}
+
 # 3c. Самопроверка «сервер+клиент» → свежий status.json для сайта и лаунчера.
 Write-Host "--> самопроверка сервер+клиент" -ForegroundColor Yellow
 try {
@@ -172,6 +188,7 @@ if ($Publish) {
   if (Test-Path $launcherExe) { $upload = @($launcherExe) + $upload }
   if (Test-Path $setup) { $upload = @($setup) + $upload }
   if (Test-Path $gameSetup) { $upload = @($gameSetup) + $upload }
+  if ($patchZip -and (Test-Path $patchZip)) { $upload = @($patchZip) + $upload }
   $upload = $upload + @($zip)
   $seen = @{}
   $upload = $upload | Where-Object {
@@ -206,8 +223,8 @@ if ($Publish) {
   Write-Host "--> обновляю releases.json" -ForegroundColor Yellow
   try {
     & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'releases-json.ps1')
-    & git -C $root add releases.json status.json
-    & git -C $root commit -m "chore: releases.json $Version + status.json" | Out-Null
+    & git -C $root add releases.json status.json manifests
+    & git -C $root commit -m "chore: releases.json $Version + status.json + manifests" | Out-Null
     & git -C $root push origin HEAD
   } catch {
     Write-Host "releases.json не обновлён: $_" -ForegroundColor DarkYellow
