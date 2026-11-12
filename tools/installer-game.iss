@@ -53,6 +53,15 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 [Dirs]
 Name: "{app}\server\world"
 
+[InstallDelete]
+; Убираем ярлыки от старых версий (у них были другие имена).
+Type: files; Name: "{group}\Open Universe — лаунчер.lnk"
+Type: files; Name: "{group}\Open Universe (напрямую).lnk"
+Type: files; Name: "{group}\Open Universe — игра (UE5).lnk"
+Type: files; Name: "{group}\Сервер (для игры по сети).lnk"
+Type: files; Name: "{group}\Open Universe — сервер.lnk"
+Type: files; Name: "{group}\Быстрый запуск (сервер + игроки).lnk"
+
 [Files]
 ; Вся собранная игра: лаунчер OpenUniverse.exe, папки OpenUniverse\ и Engine\.
 Source: "{#SourceRoot}\client\Packaged\Windows\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
