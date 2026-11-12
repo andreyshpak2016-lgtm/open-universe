@@ -8,6 +8,7 @@
 #include "OUVoxelPlanet.generated.h"
 
 class UProceduralMeshComponent;
+class UStaticMeshComponent;
 
 /** Уровень детализации (совпадает с серверным LOD). */
 UENUM(BlueprintType)
@@ -26,16 +27,18 @@ enum class EOUVoxelLod : uint8
 UENUM(BlueprintType)
 enum class EOUPlanetType : uint8
 {
-	/** Землеподобная: океан, трава, снег (домашняя планета игрока). */
+	/** Землеподобная: океан, трава, снег, плотная атмосфера и облака. */
 	Terran UMETA(DisplayName = "Землеподобная"),
-	/** Пустынная: пески, каньоны, без воды. */
+	/** Пустынная: пески, дюны, каньоны; тонкая пыльная атмосфера, без облаков. */
 	Desert UMETA(DisplayName = "Пустынная"),
-	/** Ледяная: снег и голубой лёд. */
+	/** Ледяная: снег и голубой лёд; атмосфера и облака. */
 	Ice UMETA(DisplayName = "Ледяная"),
-	/** Вулканическая: тёмная порода и раскалённые трещины. */
+	/** Вулканическая: тёмная порода и раскалённые трещины; плотная дымка. */
 	Volcanic UMETA(DisplayName = "Вулканическая"),
-	/** Газовая: без рельефа, полосы (юпитер-подобная). */
-	GasGiant UMETA(DisplayName = "Газовый гигант")
+	/** Газовая: без рельефа, полосы (юпитер-подобная); плотная атмосфера. */
+	GasGiant UMETA(DisplayName = "Газовый гигант"),
+	/** Безвоздушная (луна): голый камень и кратеры, НЕТ атмосферы и облаков. */
+	Airless UMETA(DisplayName = "Безвоздушная")
 };
 
 /**
@@ -129,6 +132,27 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Open Universe|Planet")
 	static FVector HomeSpawn(float Clearance);
 
+	// --- Атмосфера и облака ---
+
+	/** Есть ли у этого типа планеты атмосфера (газовый слой и свечение). */
+	UFUNCTION(BlueprintPure, Category = "Open Universe|Planet")
+	static bool TypeHasAtmosphere(EOUPlanetType Type);
+
+	/** Есть ли у этого типа планеты облака. */
+	UFUNCTION(BlueprintPure, Category = "Open Universe|Planet")
+	static bool TypeHasClouds(EOUPlanetType Type);
+
+	/** Цвет атмосферы (даёт ореол вида планеты). */
+	UFUNCTION(BlueprintPure, Category = "Open Universe|Planet")
+	static FLinearColor AtmosphereTint(EOUPlanetType Type);
+
+	/** Собрать/обновить атмосферу и облака по типу планеты. */
+	UFUNCTION(BlueprintCallable, CallInEditor, Category = "Open Universe|Planet")
+	void BuildAtmosphere();
+
+	/** Максимум облачных «клубов» на планету (пул создаётся в конструкторе). */
+	static constexpr int32 MaxCloudPuffs = 160;
+
 protected:
 	virtual void BeginPlay() override;
 
@@ -138,6 +162,14 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Open Universe|Planet")
 	UProceduralMeshComponent* Mesh = nullptr;
 
+	/** Слой атмосферы: чуть больше планеты, полупрозрачный ореол. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Open Universe|Planet")
+	UStaticMeshComponent* AtmosphereMesh = nullptr;
+
+	/** Облака: пул сфер над поверхностью (показываются по типу планеты). */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Open Universe|Planet")
+	TArray<UStaticMeshComponent*> CloudPuffs;
+
 	/** Материал планеты (назначается на все секции меша). */
 	UPROPERTY(Transient)
 	TObjectPtr<class UMaterialInterface> PlanetMaterial = nullptr;
@@ -145,7 +177,25 @@ protected:
 	/** Цвет поверхности по высоте и типу планеты. */
 	FLinearColor SurfaceColor(float Height) const;
 
+	/**
+	 * Высота рельефа для ВИЗУАЛЬНОГО меша с учётом характера типа планеты.
+	 * Для домашней планеты совпадает с физической высотой (иначе игрок
+	 * «висел» бы над землёй); для декоративных — добавляет дюны/кратеры/полосы.
+	 */
+	float VisualHeight(const FVector& DirUE) const;
+
 private:
 	/** Детерминированный шум рельефа (совпадает с сервером). */
 	float Noise(float U, float V) const;
+
+	/** Детерминированный шум для облаков (независимый канал). */
+	float CloudNoise(const FVector& Dir) const;
+
+	/** Кэш базовых ассетов (сфера/материалы) — грузим лениво. */
+	UPROPERTY(Transient)
+	TObjectPtr<class UStaticMesh> CloudSphereMesh = nullptr;
+	UPROPERTY(Transient)
+	TObjectPtr<class UMaterialInterface> CloudMaterial = nullptr;
+	UPROPERTY(Transient)
+	TObjectPtr<class UMaterialInterface> AtmosphereMaterial = nullptr;
 };

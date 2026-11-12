@@ -87,6 +87,63 @@ AOUVoxelPlanet::AOUVoxelPlanet()
 	{
 		PlanetMaterial = FallbackMat.Object;
 	}
+
+	// --- Атмосфера и облака ---
+	// Атмосфера — тонкая сфера чуть больше планеты, полупрозрачный материал.
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> Sphere(
+		TEXT("/Engine/BasicShapes/Sphere.Sphere"));
+	if (Sphere.Succeeded())
+	{
+		CloudSphereMesh = Sphere.Object;
+	}
+	static ConstructorHelpers::FObjectFinder<UMaterialInterface> AtmoMat(
+		TEXT("/Engine/EngineDebugMaterials/M_SimpleUnlitTranslucent.M_SimpleUnlitTranslucent"));
+	if (AtmoMat.Succeeded())
+	{
+		AtmosphereMaterial = AtmoMat.Object;
+	}
+	static ConstructorHelpers::FObjectFinder<UMaterialInterface> CloudMat(
+		TEXT("/Engine/EngineDebugMaterials/M_SimpleUnlitTranslucent.M_SimpleUnlitTranslucent"));
+	if (CloudMat.Succeeded())
+	{
+		CloudMaterial = CloudMat.Object;
+	}
+
+	// Слой атмосферы: сфера, по умолчанию скрыта (включается по типу планеты).
+	AtmosphereMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("Atmosphere"));
+	AtmosphereMesh->SetupAttachment(Mesh);
+	AtmosphereMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	AtmosphereMesh->SetCastShadow(false);
+	if (CloudSphereMesh)
+	{
+		AtmosphereMesh->SetStaticMesh(CloudSphereMesh);
+	}
+	if (AtmosphereMaterial)
+	{
+		AtmosphereMesh->SetMaterial(0, AtmosphereMaterial);
+	}
+	AtmosphereMesh->SetVisibility(false);
+
+	// Пул облачных «клубов»: видимость включается только у планет с облаками.
+	CloudPuffs.Reserve(MaxCloudPuffs);
+	for (int32 i = 0; i < MaxCloudPuffs; ++i)
+	{
+		UStaticMeshComponent* Puff = CreateDefaultSubobject<UStaticMeshComponent>(
+			*FString::Printf(TEXT("Cloud%d"), i));
+		Puff->SetupAttachment(Mesh);
+		Puff->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		Puff->SetCastShadow(false);
+		if (CloudSphereMesh)
+		{
+			Puff->SetStaticMesh(CloudSphereMesh);
+		}
+		if (CloudMaterial)
+		{
+			Puff->SetMaterial(0, CloudMaterial);
+		}
+		Puff->SetVisibility(false);
+		CloudPuffs.Add(Puff);
+	}
 }
 
 void AOUVoxelPlanet::BeginPlay()
@@ -158,6 +215,47 @@ float AOUVoxelPlanet::SurfaceRadiusAt(const FVector& Direction) const
 	return Radius + HeightAt(Direction);
 }
 
+float AOUVoxelPlanet::VisualHeight(const FVector& DirUE) const
+{
+	const float Base = HeightAt(DirUE);
+	// Домашняя планета: физика и картинка совпадают (по ней ходит игрок).
+	if (bHomePlanet)
+	{
+		return Base;
+	}
+	const FVector D = DirUE.GetSafeNormal();
+	const float T = FMath::Clamp(Base / (Amplitude * 2.f) + 0.5f, 0.f, 1.f);
+	switch (PlanetType)
+	{
+	case EOUPlanetType::Desert:
+	{
+		// Дюны: направленные волны поверх обычного рельефа.
+		const float Dune = FMath::Sin(D.X * 22.f + D.Z * 14.f) * 0.5f
+			+ FMath::Sin(D.Y * 18.f - D.Z * 10.f) * 0.5f;
+		return Base * 0.7f + Dune * Amplitude * 0.35f;
+	}
+	case EOUPlanetType::Airless:
+	{
+		// Луна: неровный «кратерный» рельеф с крутыми перепадами.
+		const float Crat = FMath::Abs(FMath::Sin(D.X * 31.f) * FMath::Sin(D.Y * 27.f) * FMath::Sin(D.Z * 29.f));
+		return Base * 0.6f + (Crat - 0.4f) * Amplitude * 0.9f;
+	}
+	case EOUPlanetType::GasGiant:
+	{
+		// Газовый гигант: почти гладкие полосы, без резких гор.
+		return Base * 0.15f;
+	}
+	case EOUPlanetType::Volcanic:
+	{
+		// Вулканический: резкие пики и глубокие разломы.
+		const float Ridge = 1.f - FMath::Abs(FMath::Sin(D.X * 17.f + D.Z * 13.f));
+		return Base * 0.8f + Ridge * Amplitude * 0.6f;
+	}
+	default:
+		return Base;
+	}
+}
+
 FLinearColor AOUVoxelPlanet::SurfaceColor(float Height) const
 {
 	const float T = FMath::Clamp(Height / (Amplitude * 2.f), 0.f, 1.f);
@@ -195,6 +293,16 @@ FLinearColor AOUVoxelPlanet::SurfaceColor(float Height) const
 		const FLinearColor Basalt(0.12f, 0.10f, 0.11f);
 		const FLinearColor Ash(0.35f, 0.30f, 0.30f);
 		return FLinearColor::LerpUsingHSV(Basalt, Ash, T);
+	}
+	case EOUPlanetType::Airless:
+	{
+		// Безвоздушная луна: серый реголит и кратеры, без воды и трав.
+		const FLinearColor Regolith(0.42f, 0.40f, 0.38f);
+		const FLinearColor Basalt(0.22f, 0.21f, 0.22f);
+		const FLinearColor Bright(0.62f, 0.60f, 0.56f);
+		return T < 0.5f
+			? FLinearColor::LerpUsingHSV(Basalt, Regolith, T / 0.5f)
+			: FLinearColor::LerpUsingHSV(Regolith, Bright, (T - 0.5f) / 0.5f);
 	}
 	case EOUPlanetType::GasGiant:
 	{
@@ -351,8 +459,8 @@ void AOUVoxelPlanet::BuildPlanet()
 				Cube[Third] = Vv;
 
 				const FVector Dir = CubeToSphere(Cube);
-				const float Height = HeightAt(Dir);
-				Verts.Add(Dir * SurfaceRadiusAt(Dir));
+				const float Height = VisualHeight(Dir);
+				Verts.Add(Dir * (Radius + Height));
 
 				Normals.Add(Dir);
 				UVs.Add(FVector2D(U * 0.5f + 0.5f, Vv * 0.5f + 0.5f));
@@ -400,4 +508,174 @@ void AOUVoxelPlanet::BuildPlanet()
 	}
 
 	UE_LOG(LogOUPlanet, Log, TEXT("Планета построена: LOD сегментов %d, секций %d"), Seg, SectionIndex);
+
+	// Атмосфера и облака зависят от типа планеты (у безвоздушных их нет).
+	BuildAtmosphere();
+}
+
+bool AOUVoxelPlanet::TypeHasAtmosphere(EOUPlanetType Type)
+{
+	// Воздух есть у всех типов, КРОМЕ безвоздушной луны.
+	return Type != EOUPlanetType::Airless;
+}
+
+bool AOUVoxelPlanet::TypeHasClouds(EOUPlanetType Type)
+{
+	switch (Type)
+	{
+	case EOUPlanetType::Terran:  return true;    // плотные облака
+	case EOUPlanetType::Ice:     return true;    // облака/туман
+	case EOUPlanetType::GasGiant:return true;    // полосы и вихри
+	case EOUPlanetType::Volcanic:return true;    // дымка из пепла
+	case EOUPlanetType::Desert:  return false;   // тонкая пыль, облаков нет
+	case EOUPlanetType::Airless: return false;   // вакуум
+	default:                     return false;
+	}
+}
+
+FLinearColor AOUVoxelPlanet::AtmosphereTint(EOUPlanetType Type)
+{
+	switch (Type)
+	{
+	case EOUPlanetType::Terran:  return FLinearColor(0.35f, 0.60f, 1.00f);   // голубое небо
+	case EOUPlanetType::Desert:  return FLinearColor(0.85f, 0.65f, 0.40f);   // пыльная дымка
+	case EOUPlanetType::Ice:     return FLinearColor(0.70f, 0.88f, 1.00f);   // морозная дымка
+	case EOUPlanetType::Volcanic:return FLinearColor(0.70f, 0.30f, 0.15f);   // пепел
+	case EOUPlanetType::GasGiant:return FLinearColor(0.95f, 0.85f, 0.65f);   // тёплые полосы
+	case EOUPlanetType::Airless: return FLinearColor(0.0f, 0.0f, 0.0f);       // нет атмосферы
+	default:                     return FLinearColor(0.5f, 0.6f, 0.8f);
+	}
+}
+
+float AOUVoxelPlanet::CloudNoise(const FVector& Dir) const
+{
+	// Независимый от рельефа шум облаков: другое семя и масштаб.
+	const FVector D = Dir.GetSafeNormal();
+	const float U = D.X * 6.0f + D.Y * 3.0f;
+	const float V = D.Z * 6.0f - D.Y * 2.0f;
+	const float A = ValueNoise(U, V, Seed ^ 0xC10D);
+	const float B = ValueNoise(U * 2.7f, V * 2.7f, Seed ^ 0xBEEF);
+	return A * 0.6f + B * 0.4f;
+}
+
+void AOUVoxelPlanet::BuildAtmosphere()
+{
+	const bool bAtmo = TypeHasAtmosphere(PlanetType) && AtmosphereMesh != nullptr;
+	const bool bClouds = TypeHasClouds(PlanetType);
+
+	// --- Атмосферный слой: тонкая сфера чуть больше планеты ---
+	// У домашней планеты оболочку НЕ рисуем: игрок стоит ВНУТРИ неё, и сфера
+	// «заливала» бы весь кадр. Небо домашней планеты даёт SkyAtmosphere, а
+	// оболочка-ореол нужна дальним планетам, которые видны как диски снаружи.
+	const bool bShell = bAtmo && !bHomePlanet;
+	if (bShell)
+	{
+		const float AtmoRadius = Radius + Amplitude * 2.0f + Radius * 0.03f;
+		const float Scale = AtmoRadius / 50.f;   // базовая сфера UE — радиус 50 см
+		AtmosphereMesh->SetRelativeScale3D(FVector(Scale));
+		const FLinearColor Tint = AtmosphereTint(PlanetType);
+		// Атмосфера — мягкое свечение: цвет берём и как base, и как эмиссию.
+		AtmosphereMesh->SetVectorParameterValueOnMaterials(TEXT("Color"),
+			FVector(Tint.R, Tint.G, Tint.B));
+		AtmosphereMesh->SetVectorParameterValueOnMaterials(TEXT("Emissive"),
+			FVector(Tint.R, Tint.G, Tint.B));
+		AtmosphereMesh->SetVisibility(true);
+		AtmosphereMesh->SetCastShadow(false);
+	}
+	else if (AtmosphereMesh)
+	{
+		AtmosphereMesh->SetVisibility(false);
+	}
+
+	// --- Облака ---
+	// Домашняя планета: облака высоко в небе (игрок смотрит вверх).
+	// Дальние планеты: облачные пятна у самой поверхности — так они читаются
+	// прямо на диске планеты.
+	if (CloudPuffs.Num() == 0)
+	{
+		return;
+	}
+	if (!bClouds)
+	{
+		for (UStaticMeshComponent* Puff : CloudPuffs)
+		{
+			if (Puff) { Puff->SetVisibility(false); }
+		}
+		return;
+	}
+
+	const FLinearColor Tint = AtmosphereTint(PlanetType);
+	const FLinearColor CloudColor = FLinearColor::LerpUsingHSV(
+		FLinearColor(0.99f, 1.0f, 1.0f), Tint, 0.15f);
+	const float CloudAlt = bHomePlanet
+		? Radius + Radius * 0.02f                  // ~2 км над поверхностью
+		: Radius + Amplitude * 0.15f;              // у поверхности — на диске планеты
+	const float CloudSize = bHomePlanet
+		? Radius * 0.006f                          // ~600 м: разрозненные облака
+		: Radius * 0.05f;
+
+	// Раскладываем облака детерминированно по направлениям, где шум выше
+	// порога. Каждое «облако» — кластер из нескольких перекрывающихся сфер
+	// (объёмная кучка, а не плоский диск).
+	const int32 PuffCount = CloudPuffs.Num();
+	int32 Placed = 0;
+	const int32 GridN = 14;
+	const int32 ClusterSize = 4;   // сфер на одно облако
+	for (int32 GridI = 0; GridI < GridN && Placed < PuffCount; ++GridI)
+	{
+		for (int32 GridJ = 0; GridJ < GridN && Placed < PuffCount; ++GridJ)
+		{
+			// Направление по сетке (детерминированно, без ГПСЧ).
+			// Оси UE: вверх = +Z (меш планеты тоже построен в UE-осях).
+			const float A = (GridI + 0.5f) / GridN * 2.f * PI;
+			const float B = (GridJ + 0.5f) / GridN * PI;
+			const FVector Dir(
+				FMath::Sin(B) * FMath::Cos(A),
+				FMath::Sin(B) * FMath::Sin(A),
+				FMath::Cos(B));
+			const float N = CloudNoise(Dir);
+			if (N < 0.46f)
+			{
+				continue;   // здесь ясно
+			}
+			// Касательный базис для разброса сфер внутри кластера.
+			const FVector Up = Dir.GetSafeNormal();
+			FVector T1 = FVector::CrossProduct(Up, FVector::UpVector);
+			if (T1.SizeSquared() < 1e-4f) { T1 = FVector::CrossProduct(Up, FVector::RightVector); }
+			T1 = T1.GetSafeNormal();
+			const FVector T2 = FVector::CrossProduct(Up, T1).GetSafeNormal();
+			const float Base = CloudSize * (0.9f + N * 1.6f);
+
+			const int32 InCluster = FMath::Min(ClusterSize, PuffCount - Placed);
+			for (int32 C = 0; C < InCluster; ++C)
+			{
+				UStaticMeshComponent* Puff = CloudPuffs[Placed];
+				if (!Puff) { ++Placed; continue; }
+				// Разброс внутри кластера — детерминированный (по индексу).
+				const float FA = (C + 1) * 2.399f;   // золотой угол
+				const float FR = Base * 0.6f * ((C == 0) ? 0.f : 1.f);
+				const FVector Offset = (T1 * FMath::Cos(FA) + T2 * FMath::Sin(FA)) * FR;
+				const FVector Pos = Up * (CloudAlt + Offset.Size() * 0.f) + Offset;
+				Puff->SetRelativeLocation(Pos);
+				const float Size = Base * (C == 0 ? 1.15f : 0.8f);
+				Puff->SetRelativeScale3D(FVector(Size / 50.f));
+				Puff->SetVectorParameterValueOnMaterials(TEXT("Color"),
+					FVector(CloudColor.R, CloudColor.G, CloudColor.B));
+				Puff->SetVectorParameterValueOnMaterials(TEXT("Emissive"),
+					FVector(CloudColor.R, CloudColor.G, CloudColor.B));
+				Puff->SetVisibility(true);
+				Puff->SetCastShadow(false);
+				++Placed;
+			}
+		}
+	}
+	// Остальные клубы — скрыть.
+	for (int32 i = Placed; i < PuffCount; ++i)
+	{
+		if (CloudPuffs[i]) { CloudPuffs[i]->SetVisibility(false); }
+	}
+
+	UE_LOG(LogOUPlanet, Log, TEXT("Атмосфера: %s, облака: %s (%d пыхов), тип %d"),
+		bAtmo ? TEXT("да") : TEXT("нет"), bClouds ? TEXT("да") : TEXT("нет"),
+		Placed, static_cast<int32>(PlanetType));
 }

@@ -232,8 +232,8 @@ void AOUCharacterPawn::BeginPlay()
 	// Курс персонажа — «наружу» от базы (по Fwd).
 	const float LookYaw = FMath::Atan2(Fwd.Y, Fwd.X);
 	PlaceAt(CharPos, LookYaw);
-	// Слегка смотрим вниз, чтобы в кадр попадал и ландшафт/горизонт.
-	ViewPitch = -0.10f;
+	// Смотрим чуть вверх: в кадр попадают и земля, и небо с облаками.
+	ViewPitch = 0.10f;
 
 	// Корабль стоит рядом (между базой и персонажем).
 	if (!Ship)
