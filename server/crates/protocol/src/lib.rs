@@ -204,16 +204,25 @@ pub enum Message {
     ServerSystem { id: u32, name: String, bodies: Vec<SystemBodyDto> },
 }
 
-/// Тело системы в сообщении (плоская копия `sim::Body` без лишних полей).
+/// Тело системы в сообщении.
 #[derive(Clone, Debug, PartialEq)]
 pub struct SystemBodyDto {
     pub id: u32,
     /// Тип: 0 звезда, 1 планета, 2 луна, 3 газовый гигант, 4 пояс, 5 чёрная дыра.
     pub kind: u8,
-    /// Позиция относительно центра домашней планеты, в серверных единицах.
-    pub pos: Vec3,
-    /// Радиус тела, в серверных единицах.
+    /// Тип поверхности: 0 землеподобная, 1 пустынная, 2 ледяная, 3 вулканическая,
+    /// 4 газовый гигант, 5 безвоздушная. Задаёт палитру планеты на клиенте.
+    pub surface: u8,
+    /// Радиус тела, в серверных единицах (подсказка; клиент может задать свой).
     pub radius: f64,
+    /// Центр орбиты (для неподвижных тел — их позиция), серверные единицы.
+    pub center: Vec3,
+    /// Радиус орбиты, серверные единицы (0 — тело неподвижно).
+    pub orbit: f32,
+    /// Начальная фаза орбиты, радианы.
+    pub phase: f32,
+    /// Угловая скорость орбиты, рад/с.
+    pub omega: f32,
 }
 
 /// Состоявшийся выстрел (сервер → клиенты).
@@ -639,12 +648,16 @@ mod wire {
                 for b in bodies {
                     w.varint(b.id as u64);
                     w.u8(b.kind);
+                    w.u8(b.surface);
                     // ВАЖНО: позиции тел системы — за пределами ±214 км, которые
                     // выражает штатное квантование (i32, 0.1 мм). Поэтому шлём их
                     // как f32 в серверных единицах: диапазона и точности хватает.
-                    w.f32(b.pos.x as f32);
-                    w.f32(b.pos.y as f32);
-                    w.f32(b.pos.z as f32);
+                    w.f32(b.center.x as f32);
+                    w.f32(b.center.y as f32);
+                    w.f32(b.center.z as f32);
+                    w.f32(b.orbit);
+                    w.f32(b.phase);
+                    w.f32(b.omega);
                     w.f64(b.radius);
                 }
             }
@@ -799,7 +812,11 @@ mod wire {
                     bodies.push(SystemBodyDto {
                         id: r.varint()? as u32,
                         kind: r.u8()?,
-                        pos: Vec3::new(r.f32()? as f64, r.f32()? as f64, r.f32()? as f64),
+                        surface: r.u8()?,
+                        center: Vec3::new(r.f32()? as f64, r.f32()? as f64, r.f32()? as f64),
+                        orbit: r.f32()?,
+                        phase: r.f32()?,
+                        omega: r.f32()?,
                         radius: r.f64()?,
                     });
                 }
@@ -998,8 +1015,26 @@ mod tests {
             id: 7,
             name: "Alra-7".into(),
             bodies: vec![
-                SystemBodyDto { id: 0, kind: 0, pos: Vec3::new(0.0, 0.0, 0.0), radius: 500.0 },
-                SystemBodyDto { id: 1, kind: 1, pos: Vec3::new(2500.0, 0.0, 0.0), radius: 120.5 },
+                SystemBodyDto {
+                    id: 0,
+                    kind: 0,
+                    surface: 4,
+                    center: Vec3::new(0.0, 0.0, 0.0),
+                    orbit: 0.0,
+                    phase: 0.0,
+                    omega: 0.0,
+                    radius: 500.0,
+                },
+                SystemBodyDto {
+                    id: 1,
+                    kind: 1,
+                    surface: 2,
+                    center: Vec3::new(100.0, 0.0, 0.0),
+                    orbit: 2500.0,
+                    phase: 0.5,
+                    omega: 0.02,
+                    radius: 120.5,
+                },
             ],
         };
         assert_eq!(decode(&encode(&m)).unwrap(), m);

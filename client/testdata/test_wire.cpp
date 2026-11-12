@@ -335,7 +335,7 @@ int main(int argc, char** argv)
         Check(cp.Entity == 2 && std::fabs(cp.X - 125.0f) < 0.01f && std::fabs(cp.Z - 400.0f) < 0.01f && cp.Moving,
               "поля позы персонажа совпали");
 
-        // Система (тег 19): имя, тела с позицией и радиусом (f64).
+        // Система (тег 19): имя, тела с типом поверхности и параметрами орбиты.
         std::vector<uint8_t> sysb;
         sysb.push_back(OUWire::TagSystem);
         OUWire::push_varint(sysb, 7);           // id
@@ -346,21 +346,29 @@ int main(int argc, char** argv)
         OUWire::push_varint(sysb, 1);           // одно тело
         OUWire::push_varint(sysb, 1);           // body id
         sysb.push_back(1);                      // kind=планета
+        sysb.push_back(2);                      // surface=ледяная
         auto push_f32 = [&sysb](float f) {
             uint32_t bits = 0; std::memcpy(&bits, &f, 4);
             sysb.push_back(bits & 0xFF); sysb.push_back((bits >> 8) & 0xFF);
             sysb.push_back((bits >> 16) & 0xFF); sysb.push_back((bits >> 24) & 0xFF);
         };
-        push_f32(25.0f); push_f32(0.0f); push_f32(0.0f);  // pos (серверные ед.)
+        push_f32(25.0f); push_f32(0.0f); push_f32(0.0f);  // center (серверные ед.)
+        push_f32(2500.0f);                                // orbit
+        push_f32(0.5f);                                   // phase
+        push_f32(0.02f);                                  // omega
         double rad = 120.0;
         uint64_t radBits = 0; std::memcpy(&radBits, &rad, 8);
         for (int k = 0; k < 8; ++k) sysb.push_back((radBits >> (8 * k)) & 0xFF);
         OUWire::SystemInfo si;
         Check(OUWire::DecodeSystem(sysb.data(), sysb.size(), si), "система разобрана");
         Check(si.Id == 7 && si.Name == "Alra-7" && si.Bodies.size() == 1, "id/имя/число тел совпали");
-        Check(si.Bodies.size() == 1 && si.Bodies[0].Kind == 1 &&
-              std::fabs(si.Bodies[0].X - 25.0f) < 0.01f && std::fabs(si.Bodies[0].Radius - 120.0) < 1e-9,
-              "тело системы совпало (позиция в серверных единицах, f64 радиус)");
+        Check(si.Bodies.size() == 1 && si.Bodies[0].Kind == 1 && si.Bodies[0].Surface == 2 &&
+              std::fabs(si.Bodies[0].CenterX - 25.0f) < 0.01f &&
+              std::fabs(si.Bodies[0].Orbit - 2500.0f) < 0.01f &&
+              std::fabs(si.Bodies[0].Phase - 0.5f) < 1e-6f &&
+              std::fabs(si.Bodies[0].Omega - 0.02f) < 1e-6f &&
+              std::fabs(si.Bodies[0].Radius - 120.0) < 1e-9,
+              "тело системы совпало (тип поверхности + параметры орбиты, f64 радиус)");
     }
 
     std::printf("\n=== Итог ===\n");

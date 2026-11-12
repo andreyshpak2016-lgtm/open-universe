@@ -422,7 +422,11 @@ void UOUClientNet::Poll()
 					FOUSystemBody S;
 					S.Id = static_cast<int32>(B.Id);
 					S.Kind = static_cast<int32>(B.Kind);
-					S.Position = FVector(B.X, B.Y, B.Z);
+					S.Surface = static_cast<int32>(B.Surface);
+					S.Center = FVector(B.CenterX, B.CenterY, B.CenterZ);
+					S.Orbit = B.Orbit;
+					S.Phase = B.Phase;
+					S.Omega = B.Omega;
 					S.Radius = static_cast<float>(B.Radius);
 					SystemBodies.Add(S);
 				}

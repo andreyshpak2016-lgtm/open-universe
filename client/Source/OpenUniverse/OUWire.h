@@ -188,8 +188,12 @@ namespace OUWire
     {
         uint32_t Id = 0;
         uint8_t Kind = 0;
-        float X = 0.f, Y = 0.f, Z = 0.f;   // серверные единицы
-        double Radius = 0.0;               // серверные единицы
+        uint8_t Surface = 0;               // тип поверхности (палитра)
+        float CenterX = 0.f, CenterY = 0.f, CenterZ = 0.f;   // центр орбиты, серверные ед.
+        float Orbit = 0.f;                 // радиус орбиты, серверные ед. (0 — неподвижно)
+        float Phase = 0.f;                 // начальная фаза, рад
+        float Omega = 0.f;                 // угловая скорость, рад/с
+        double Radius = 0.0;               // радиус тела, серверные единицы
     };
 
     /// Описание звёздной системы (сервер → клиент, тег 19).
@@ -530,9 +534,11 @@ namespace OUWire
             if (!r.Varint(bid)) return false;
             b.Id = static_cast<uint32_t>(bid);
             if (!r.U8(b.Kind)) return false;
-            // Позиция — f32 в серверных единицах (дальние тела не влезают в
-            // штатное квантование i32 ±214 км).
-            if (!r.F32(b.X) || !r.F32(b.Y) || !r.F32(b.Z)) return false;
+            if (!r.U8(b.Surface)) return false;
+            // Центр орбиты — f32 в серверных единицах (дальние тела не влезают
+            // в штатное квантование i32 ±214 км).
+            if (!r.F32(b.CenterX) || !r.F32(b.CenterY) || !r.F32(b.CenterZ)) return false;
+            if (!r.F32(b.Orbit) || !r.F32(b.Phase) || !r.F32(b.Omega)) return false;
             // f64 LE — радиус в серверных единицах.
             const uint8_t* rb = nullptr;
             if (!r.Take(8, rb)) return false;

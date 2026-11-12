@@ -48,6 +48,14 @@ AOUGameMode::AOUGameMode()
 	PlayerControllerClass = AOUPlayerMenuController::StaticClass();
 	// HUD рисует само меню.
 	HUDClass = AOUPlayerMenuHUD::StaticClass();
+	// Тик нужен, чтобы двигать тела системы по орбитам.
+	PrimaryActorTick.bCanEverTick = true;
+}
+
+void AOUGameMode::Tick(float DeltaSeconds)
+{
+	Super::Tick(DeltaSeconds);
+	TickSystemOrbits(DeltaSeconds);
 }
 
 void AOUGameMode::StartPlay()
@@ -370,10 +378,9 @@ void AOUGameMode::BuildSystemFromServer()
 		for (AActor* A : Old) { if (A) { A->Destroy(); } }
 	}
 
+	OrbitingBodies.Reset();
 	for (const FOUSystemBody& B : Net->SystemBodies)
 	{
-		// Позиция в серверных осях → UE (с масштабом).
-		const FVector PosUE = OUInterop::ServerToUE(B.Position);
 		// Размер тела задаём по типу: серверный радиус — в «локальных» единицах,
 		// для игрового масштаба он мал, поэтому берём читаемый размер диска.
 		auto RadiusForKind = [](int32 Kind) -> float
@@ -389,6 +396,13 @@ void AOUGameMode::BuildSystemFromServer()
 			}
 		};
 		const float RadiusCm = RadiusForKind(B.Kind);
+		// Палитра — от сервера (явный тип поверхности).
+		const EOUPlanetType Surface = static_cast<EOUPlanetType>(FMath::Clamp(B.Surface, 0, 5));
+		// Позиция на момент 0: центр + смещение по орбите (плоскость XZ).
+		const FVector PosServer = (B.Orbit > 0.f)
+			? B.Center + FVector(B.Orbit * FMath::Cos(B.Phase), 0.f, B.Orbit * FMath::Sin(B.Phase))
+			: B.Center;
+		const FVector PosUE = OUInterop::ServerToUE(PosServer);
 
 		if (B.Kind == 0 || B.Kind == 5)   // звезда или чёрная дыра
 		{
@@ -402,6 +416,12 @@ void AOUGameMode::BuildSystemFromServer()
 					? FLinearColor(0.08f, 0.05f, 0.12f)      // чёрная дыра
 					: FLinearColor(1.0f, 0.86f, 0.35f);      // звезда
 				Body->BuildBody();
+				if (B.Orbit > 0.f)
+				{
+					FOrbitingBody O; O.Actor = Body; O.CenterServer = B.Center;
+					O.Orbit = B.Orbit; O.Phase = B.Phase; O.Omega = B.Omega;
+					OrbitingBodies.Add(O);
+				}
 			}
 		}
 		else if (B.Kind == 1 || B.Kind == 3 || B.Kind == 2)   // планета/газ/луна
@@ -413,13 +433,37 @@ void AOUGameMode::BuildSystemFromServer()
 				Planet->bHomePlanet = false;
 				Planet->Radius = RadiusCm;
 				Planet->Amplitude = RadiusCm * 0.05f;
-				Planet->PlanetType = (B.Kind == 3) ? EOUPlanetType::GasGiant
-					: (B.Kind == 2 ? EOUPlanetType::Airless
-					: (B.Id % 2 == 0 ? EOUPlanetType::Ice : EOUPlanetType::Desert));
+				Planet->PlanetType = Surface;   // палитра — с сервера
 				Planet->Lod = EOUVoxelLod::Mid;
 				Planet->BuildPlanet();
+				if (B.Orbit > 0.f)
+				{
+					FOrbitingBody O; O.Actor = Planet; O.CenterServer = B.Center;
+					O.Orbit = B.Orbit; O.Phase = B.Phase; O.Omega = B.Omega;
+					OrbitingBodies.Add(O);
+				}
 			}
 		}
 	}
-	UE_LOG(LogOUGameMode, Log, TEXT("Система от сервера построена: тел %d"), Net->SystemBodies.Num());
+	// Двигаем тела сразу на текущий момент системы.
+	TickSystemOrbits(0.f);
+	UE_LOG(LogOUGameMode, Log, TEXT("Система от сервера построена: тел %d (на орбитах %d)"),
+		Net->SystemBodies.Num(), OrbitingBodies.Num());
+}
+
+void AOUGameMode::TickSystemOrbits(float DeltaSeconds)
+{
+	SystemTime += DeltaSeconds;
+	for (const FOrbitingBody& O : OrbitingBodies)
+	{
+		if (!O.Actor)
+		{
+			continue;
+		}
+		// Позиция на орбите: центр + радиус * (cos, 0, sin) — плоскость XZ, как
+		// на сервере (орбита в плоскости, перпендикулярной «верху» системы).
+		const float A = O.Phase + O.Omega * SystemTime;
+		const FVector PosServer = O.CenterServer + FVector(O.Orbit * FMath::Cos(A), 0.f, O.Orbit * FMath::Sin(A));
+		O.Actor->SetActorLocation(OUInterop::ServerToUE(PosServer));
+	}
 }

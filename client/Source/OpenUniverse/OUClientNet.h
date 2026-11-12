@@ -155,9 +155,25 @@ struct FOUSystemBody
 	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|System")
 	int32 Kind = 0;
 
-	/** Позиция относительно центра системы, в СЕРВЕРНЫХ единицах. */
+	/** Тип поверхности (палитра): 0 Terran, 1 Desert, 2 Ice, 3 Volcanic, 4 GasGiant, 5 Airless. */
 	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|System")
-	FVector Position = FVector::ZeroVector;
+	int32 Surface = 0;
+
+	/** Центр орбиты в СЕРВЕРНЫХ единицах (0 — тело неподвижно). */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|System")
+	FVector Center = FVector::ZeroVector;
+
+	/** Радиус орбиты, в СЕРВЕРНЫХ единицах (0 — неподвижно). */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|System")
+	float Orbit = 0.f;
+
+	/** Начальная фаза орбиты, рад. */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|System")
+	float Phase = 0.f;
+
+	/** Угловая скорость орбиты, рад/с. */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|System")
+	float Omega = 0.f;
 
 	/** Радиус, в СЕРВЕРНЫХ единицах. */
 	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|System")

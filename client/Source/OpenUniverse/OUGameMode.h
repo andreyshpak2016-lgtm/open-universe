@@ -28,6 +28,9 @@ public:
 	/** Достроить сцену, если в мире не хватает ключевых акторов. */
 	virtual void StartPlay() override;
 
+	/** Каждый кадр двигаем тела системы по орбитам. */
+	virtual void Tick(float DeltaSeconds) override;
+
 	/** Точка старта: если на карте её нет — создаём сами (иначе будет чёрный экран). */
 	virtual AActor* ChoosePlayerStart_Implementation(AController* Player) override;
 
@@ -67,4 +70,19 @@ private:
 	void RequestShot(const FString& Label);
 	FTimerHandle ShotTimer;
 	FString PendingShotLabel;
+
+	/** Тело системы на орбите: актор + параметры движения (для тика). */
+	struct FOrbitingBody
+	{
+		AActor* Actor = nullptr;
+		FVector CenterServer = FVector::ZeroVector;   // центр орбиты, серверные единицы
+		float Orbit = 0.f;                             // радиус орбиты, серверные единицы
+		float Phase = 0.f;                             // начальная фаза, рад
+		float Omega = 0.f;                             // угловая скорость, рад/с
+	};
+	TArray<FOrbitingBody> OrbitingBodies;
+	float SystemTime = 0.f;
+
+	/** Двигать тела системы по орбитам (вызывается каждый кадр). */
+	void TickSystemOrbits(float DeltaSeconds);
 };

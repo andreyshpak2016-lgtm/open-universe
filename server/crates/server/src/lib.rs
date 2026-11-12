@@ -563,10 +563,10 @@ impl Server {
             .bodies
             .iter()
             .map(|b| {
-                let rel = sys
-                    .body_position_at(b.id, 0.0)
-                    .unwrap_or(b.pos)
-                    .sub(sys.pos);
+                // Параметры орбиты: центр системы, радиус, фаза, угловая скорость
+                // (тот же упрощённый закон Кеплера, что у сервера). Клиент сам
+                // считает позицию в момент t — тела движутся.
+                let omega = if b.orbit > 0.0 { (1.0 / b.orbit.sqrt()) as f32 } else { 0.0 };
                 ou_protocol::SystemBodyDto {
                     id: b.id,
                     kind: match b.kind {
@@ -577,10 +577,13 @@ impl Server {
                         ou_sim::BodyKind::AsteroidBelt => 4,
                         ou_sim::BodyKind::BlackHole => 5,
                     },
-                    // Позиция — серверные единицы (клиент переводит сам).
-                    pos: center.add(rel.scale(SYSTEM_ORBIT_SCALE)),
-                    // Радиус шлём «сырым»: клиент задаёт размер по типу тела.
+                    // Тип поверхности задаёт сервер (он знает вид планеты).
+                    surface: surface_type_for(b),
                     radius: b.radius,
+                    center: center,
+                    orbit: (b.orbit * SYSTEM_ORBIT_SCALE) as f32,
+                    phase: b.phase as f32,
+                    omega,
                 }
             })
             .collect();
@@ -958,9 +961,33 @@ impl Default for Server {
     }
 }
 
+/// Вид поверхности тела (детерминированно, из id и типа) — задаёт палитру.
+///
+/// 0 землеподобная, 1 пустынная, 2 ледяная, 3 вулканическая, 4 газовый гигант,
+/// 5 безвоздушная. Код совпадает с клиентским `EOUPlanetType`.
+fn surface_type_for(b: &ou_sim::Body) -> u8 {
+    use ou_sim::BodyKind;
+    match b.kind {
+        BodyKind::GasGiant => 4,
+        BodyKind::Moon => 5,          // спутники — безвоздушные
+        BodyKind::AsteroidBelt => 5,
+        BodyKind::Star | BodyKind::BlackHole => 0,
+        BodyKind::Planet => {
+            // Планеты различаем детерминированно по id: землеподобная/
+            // пустынная/ледяная/вулканическая. Вращать по кругу безопасно и
+            // воспроизводимо.
+            match b.id % 4 {
+                0 => 0,   // Terran
+                1 => 1,   // Desert
+                2 => 2,   // Ice
+                _ => 3,   // Volcanic
+            }
+        }
+    }
+}
+
 /// Сравнение состояний на уровне точности провода.
-fn states_equal(a: &EntityState, b: &EntityState) -> bool {
-    a.pos.to_wire() == b.pos.to_wire()
+fn states_equal(a: &EntityState, b: &EntityState) -> bool {    a.pos.to_wire() == b.pos.to_wire()
         && a.vel.to_wire() == b.vel.to_wire()
         && a.yaw.to_bits() == b.yaw.to_bits()
         && a.pitch.to_bits() == b.pitch.to_bits()
@@ -1455,5 +1482,10 @@ mod tests {
         assert!(bodies.iter().any(|b| b.kind == 1 || b.kind == 3), "есть планеты");
         // Радиусы положительные.
         assert!(bodies.iter().all(|b| b.radius > 0.0));
+        // У планет есть орбита (движение) и заданный тип поверхности.
+        let planet = bodies.iter().find(|b| b.kind == 1).unwrap();
+        assert!(planet.orbit > 0.0, "у планеты есть орбита");
+        assert!(planet.omega > 0.0, "планета движется по орбите");
+        assert!(planet.surface <= 3, "поверхность планеты — наземный тип");
     }
 }

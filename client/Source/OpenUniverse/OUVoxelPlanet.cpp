@@ -567,26 +567,12 @@ void AOUVoxelPlanet::BuildAtmosphere()
 		bAtmo ? TEXT("да") : TEXT("нет"), bClouds ? TEXT("да") : TEXT("нет"),
 		static_cast<int32>(PlanetType));
 
-	// --- Атмосферный слой: тонкая сфера чуть больше планеты ---
-	// У домашней планеты оболочку НЕ рисуем: игрок стоит ВНУТРИ неё, и сфера
-	// «заливала» бы весь кадр. Небо домашней планеты даёт SkyAtmosphere, а
-	// оболочка-ореол нужна дальним планетам, которые видны как диски снаружи.
-	const bool bShell = bAtmo && !bHomePlanet;
-	if (bShell)
-	{
-		const float AtmoRadius = Radius + Amplitude * 2.0f + Radius * 0.03f;
-		const float Scale = AtmoRadius / 50.f;   // базовая сфера UE — радиус 50 см
-		AtmosphereMesh->SetRelativeScale3D(FVector(Scale));
-		const FLinearColor Tint = AtmosphereTint(PlanetType);
-		// Атмосфера — мягкое свечение: цвет берём и как base, и как эмиссию.
-		AtmosphereMesh->SetVectorParameterValueOnMaterials(TEXT("Color"),
-			FVector(Tint.R, Tint.G, Tint.B));
-		AtmosphereMesh->SetVectorParameterValueOnMaterials(TEXT("Emissive"),
-			FVector(Tint.R, Tint.G, Tint.B));
-		AtmosphereMesh->SetVisibility(true);
-		AtmosphereMesh->SetCastShadow(false);
-	}
-	else if (AtmosphereMesh)
+	// --- Атмосферный слой ---
+	// Штатный материал оболочки (M_SimpleUnlitTranslucent) идёт без параметра
+	// Opacity и рисуется непрозрачно — он «закрашивал» диск и прятал палитру
+	// поверхности. Поэтому оболочку не рисуем: вид планеты дают палитра
+	// поверхности (от сервера) и облака. Небо домашней планеты — SkyAtmosphere.
+	if (AtmosphereMesh)
 	{
 		AtmosphereMesh->SetVisibility(false);
 	}
