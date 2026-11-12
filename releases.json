@@ -1,12 +1,29 @@
 {
-    "generated":  "2026-11-12T00:47:11Z",
+    "generated":  "2026-11-12T00:48:06Z",
     "repo":  "andreyshpak2016-lgtm/open-universe",
     "releases":  [
+                     {
+                         "tag":  "v0.26.2",
+                         "name":  "Open Universe 0.26.2",
+                         "date":  "2026-11-12T00:47:41Z",
+                         "latest":  true,
+                         "prerelease":  false,
+                         "size":  201126807,
+                         "gameSetup":  "https://github.com/andreyshpak2016-lgtm/open-universe/releases/download/v0.26.2/OpenUniverse-Game-Setup-0.26.2.exe",
+                         "gameSetupTag":  "v0.26.2",
+                         "setup":  "https://github.com/andreyshpak2016-lgtm/open-universe/releases/download/v0.26.2/OpenUniverse-Setup-0.26.2.exe",
+                         "setupSize":  2849691,
+                         "launcher":  "https://github.com/andreyshpak2016-lgtm/open-universe/releases/download/v0.26.2/OpenUniverseLauncher.exe",
+                         "launcherSize":  31232,
+                         "client":  "https://github.com/andreyshpak2016-lgtm/open-universe/releases/download/v0.26.2/ou-netclient.exe",
+                         "zip":  "https://github.com/andreyshpak2016-lgtm/open-universe/releases/download/v0.26.2/open-universe-0.26.2-windows-x64.zip",
+                         "page":  "https://github.com/andreyshpak2016-lgtm/open-universe/releases/tag/v0.26.2"
+                     },
                      {
                          "tag":  "v0.26.1",
                          "name":  "Open Universe v0.26.1",
                          "date":  "2026-11-12T00:43:13Z",
-                         "latest":  true,
+                         "latest":  false,
                          "prerelease":  false,
                          "size":  201126777,
                          "gameSetup":  "https://github.com/andreyshpak2016-lgtm/open-universe/releases/download/v0.26.1/OpenUniverse-Game-Setup-0.26.1.exe",
