@@ -132,10 +132,13 @@ if ($iscc) {
 $exes = $files | Where-Object { $_ -match '\.exe$' -and (Test-Path $_) }
 
 # 4. Обновить releases.json (список версий для сайта — без GitHub API).
-try {
-  & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'releases-json.ps1')
-} catch {
-  Write-Host "releases.json не обновлён: $_" -ForegroundColor DarkYellow
+# При -Publish обновим ПОСЛЕ публикации релиза, чтобы попал и свежий релиз.
+if (-not $Publish) {
+  try {
+    & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'releases-json.ps1')
+  } catch {
+    Write-Host "releases.json не обновлён: $_" -ForegroundColor DarkYellow
+  }
 }
 
 # 5. Публикация
@@ -185,6 +188,17 @@ if ($Publish) {
       if ($LASTEXITCODE -eq 0) { $ok = $true } else { Start-Sleep -Seconds 5 }
     }
     if (-not $ok) { Write-Host ("Не удалось загрузить: {0}" -f $name) -ForegroundColor Red }
+  }
+
+  # releases.json обновляем ПОСЛЕ публикации: иначе свежий релиз в список не попадёт.
+  Write-Host "--> обновляю releases.json" -ForegroundColor Yellow
+  try {
+    & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'releases-json.ps1')
+    & git -C $root add releases.json
+    & git -C $root commit -m "chore: releases.json $Version" | Out-Null
+    & git -C $root push origin HEAD
+  } catch {
+    Write-Host "releases.json не обновлён: $_" -ForegroundColor DarkYellow
   }
   Write-Host "Готово: релиз $tag опубликован" -ForegroundColor Green
 } else {
