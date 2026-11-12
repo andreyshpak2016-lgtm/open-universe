@@ -563,6 +563,10 @@ void AOUVoxelPlanet::BuildAtmosphere()
 	const bool bAtmo = TypeHasAtmosphere(PlanetType) && AtmosphereMesh != nullptr;
 	const bool bClouds = TypeHasClouds(PlanetType);
 
+	UE_LOG(LogOUPlanet, Log, TEXT("Атмосфера: %s, облака: %s, тип %d"),
+		bAtmo ? TEXT("да") : TEXT("нет"), bClouds ? TEXT("да") : TEXT("нет"),
+		static_cast<int32>(PlanetType));
+
 	// --- Атмосферный слой: тонкая сфера чуть больше планеты ---
 	// У домашней планеты оболочку НЕ рисуем: игрок стоит ВНУТРИ неё, и сфера
 	// «заливала» бы весь кадр. Небо домашней планеты даёт SkyAtmosphere, а
@@ -674,8 +678,4 @@ void AOUVoxelPlanet::BuildAtmosphere()
 	{
 		if (CloudPuffs[i]) { CloudPuffs[i]->SetVisibility(false); }
 	}
-
-	UE_LOG(LogOUPlanet, Log, TEXT("Атмосфера: %s, облака: %s (%d пыхов), тип %d"),
-		bAtmo ? TEXT("да") : TEXT("нет"), bClouds ? TEXT("да") : TEXT("нет"),
-		Placed, static_cast<int32>(PlanetType));
 }
