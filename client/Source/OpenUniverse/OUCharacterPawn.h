@@ -8,19 +8,25 @@
 
 class UCapsuleComponent;
 class UCameraComponent;
+class UStaticMeshComponent;
+class USceneComponent;
+class USpringArmComponent;
+class UMaterialInterface;
 class USkeletalMeshComponent;
 class AOUShipPawn;
 
 /**
  * Персонаж игрока (ходьба по поверхности планеты).
  *
- * Появляется, когда игрок выходит из корабля (зажать F). Передвигается по
- * сферической поверхности: «низ» — к центру планеты, поэтому обычный
- * CharacterMovementComponent (он считает верх глобальным +Z) не подходит —
- * гравитацию и привязку к рельефу считаем сами, той же формулой, что сервер.
+ * Появляется на поверхности планеты (игрок спавнится пешком), корабль стоит
+ * рядом. Передвигается по сферической поверхности: «низ» — к центру планеты,
+ * поэтому обычный CharacterMovementComponent (он считает верх глобальным +Z)
+ * не подходит — гравитацию и привязку к рельефу считаем сами, той же формулой,
+ * что сервер.
  *
- * Вид от первого лица: камера в «голове». Повторное удержание F рядом с
- * кораблём возвращает игрока в кабину.
+ * Фигурка **процедурная**: торс, голова, руки и ноги собраны из базовых мешей
+ * движка. При ходьбе/беге проигрывается простая анимация (махи руками и
+ * ногами, покачивание корпуса) — без внешних ассетов и скелета.
  */
 UCLASS()
 class OPENUNIVERSE_API AOUCharacterPawn : public APawn
@@ -30,7 +36,7 @@ class OPENUNIVERSE_API AOUCharacterPawn : public APawn
 public:
 	AOUCharacterPawn();
 
-	/** Корабль, из которого вышли (для возврата в кабину). */
+	/** Корабль, рядом с которым стоит персонаж (для возврата в кабину). */
 	UPROPERTY(BlueprintReadWrite, Category = "Open Universe|Character")
 	AOUShipPawn* Ship = nullptr;
 
@@ -53,6 +59,14 @@ public:
 	/** Скорость прыжка, см/с. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Open Universe|Character")
 	float JumpSpeed = 1200.f;
+
+	/** Амплитуда маха конечностей на бегу, градусы. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Open Universe|Character")
+	float StrideAmplitude = 45.f;
+
+	/** Частота шагов на полной скорости, шагов/с. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Open Universe|Character")
+	float StrideFrequency = 1.5f;
 
 	/** Текущая скорость, см/с (в осях UE). */
 	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Character")
@@ -80,6 +94,13 @@ protected:
 	/** Радиус поверхности планеты в направлении (UE-оси), см. */
 	float SurfaceRadius(const FVector& DirUE) const;
 
+	/**
+	 * Проиграть цикл ходьбы/бега: махи руками и ногами, покачивание корпуса.
+	 * @param DeltaSeconds  шаг времени
+	 * @param HorizontalSpeed  горизонтальная скорость, см/с
+	 */
+	void AnimateLocomotion(float DeltaSeconds, float HorizontalSpeed);
+
 	void AxisForward(float Value);
 	void AxisRight(float Value);
 	void AxisLookYaw(float Value);
@@ -99,11 +120,38 @@ protected:
 
 	/** Штанга камеры: даёт вид от третьего лица (видно персонажа и корабль). */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Open Universe|Character")
-	class USpringArmComponent* SpringArm = nullptr;
+	USpringArmComponent* SpringArm = nullptr;
 
-	/** Простая видимая фигурка (куб-туловище) — до появления настоящей модели. */
+	/** Торс (корпус фигурки). */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Open Universe|Character")
 	UStaticMeshComponent* BodyMesh = nullptr;
+
+	/** Голова. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Open Universe|Character")
+	UStaticMeshComponent* HeadMesh = nullptr;
+
+	// --- Конечности ---
+	// Каждая конечность — «шарнир» (USceneComponent) в точке крепления и меш,
+	// подвешенный под ним. Анимация вращает шарнир, поэтому конечность качается
+	// из плеча/бедра, а не вокруг собственного центра.
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Open Universe|Character")
+	USceneComponent* ShoulderL = nullptr;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Open Universe|Character")
+	USceneComponent* ShoulderR = nullptr;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Open Universe|Character")
+	USceneComponent* HipL = nullptr;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Open Universe|Character")
+	USceneComponent* HipR = nullptr;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Open Universe|Character")
+	UStaticMeshComponent* ArmL = nullptr;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Open Universe|Character")
+	UStaticMeshComponent* ArmR = nullptr;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Open Universe|Character")
+	UStaticMeshComponent* LegL = nullptr;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Open Universe|Character")
+	UStaticMeshComponent* LegR = nullptr;
 
 private:
 	float InputForward = 0.f;
@@ -115,4 +163,12 @@ private:
 	/** Зажатие F для возврата в корабль. */
 	bool bExitHeld = false;
 	float ExitHoldTime = 0.f;
+
+	/** Фаза цикла шага, рад (растёт при движении по земле). */
+	float StridePhase = 0.f;
+	/** Сглаженная «скорость бега» [0..1] — для плавного перехода анимации. */
+	float RunBlend = 0.f;
+
+	/** Тестовый автоход (ключ `-OUAutoWalk`): персонаж идёт вперёд сам. */
+	bool bAutoWalk = false;
 };

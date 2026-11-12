@@ -7,15 +7,26 @@
 #include "OUInterop.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "Components/SceneComponent.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "Camera/CameraComponent.h"
 #include "Components/InputComponent.h"
 #include "Engine/StaticMesh.h"
 #include "Materials/MaterialInterface.h"
 #include "Kismet/GameplayStatics.h"
+#include "Misc/CommandLine.h"
+#include "Misc/Parse.h"
 #include "UObject/ConstructorHelpers.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogOUChar, Log, All);
+
+// Цвета фигурки (синий костюм — чтобы персонаж читался в кадре).
+namespace
+{
+	const FLinearColor ColSuit(0.20f, 0.45f, 0.95f);   // костюм: торс и руки
+	const FLinearColor ColSkin(0.95f, 0.78f, 0.60f);   // голова
+	const FLinearColor ColBoots(0.16f, 0.18f, 0.26f);  // ноги/ботинки
+}
 
 AOUCharacterPawn::AOUCharacterPawn()
 {
@@ -26,24 +37,90 @@ AOUCharacterPawn::AOUCharacterPawn()
 	Capsule->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	SetRootComponent(Capsule);
 
-	// Видимая фигурка: капсула-туловище (до появления настоящей модели).
-	// Цвет задаём через материал, иначе фигурка сливается с фоном.
+	// Базовые меши движка и материал (параметрический цвет).
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> Cyl(TEXT("/Engine/BasicShapes/Cylinder.Cylinder"));
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> Sph(TEXT("/Engine/BasicShapes/Sphere.Sphere"));
+	static ConstructorHelpers::FObjectFinder<UMaterialInterface> Mat(
+		TEXT("/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial"));
+
+	// --- Шарниры (пустые точки, от которых качаются конечности) ---
+	ShoulderL = CreateDefaultSubobject<USceneComponent>(TEXT("ShoulderL"));
+	ShoulderL->SetupAttachment(Capsule);
+	ShoulderL->SetRelativeLocation(FVector(0.f, -28.f, 34.f));
+	ShoulderR = CreateDefaultSubobject<USceneComponent>(TEXT("ShoulderR"));
+	ShoulderR->SetupAttachment(Capsule);
+	ShoulderR->SetRelativeLocation(FVector(0.f, 28.f, 34.f));
+	HipL = CreateDefaultSubobject<USceneComponent>(TEXT("HipL"));
+	HipL->SetupAttachment(Capsule);
+	HipL->SetRelativeLocation(FVector(0.f, -14.f, -20.f));
+	HipR = CreateDefaultSubobject<USceneComponent>(TEXT("HipR"));
+	HipR->SetupAttachment(Capsule);
+	HipR->SetRelativeLocation(FVector(0.f, 14.f, -20.f));
+
+	// --- Торс (корпус) ---
 	BodyMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("BodyMesh"));
 	BodyMesh->SetupAttachment(Capsule);
-	BodyMesh->SetRelativeScale3D(FVector(0.9f, 0.9f, 1.05f));
-	BodyMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	static ConstructorHelpers::FObjectFinder<UStaticMesh> BodyShape(
-		TEXT("/Engine/BasicShapes/Cylinder.Cylinder"));
-	if (BodyShape.Succeeded())
+	BodyMesh->SetRelativeLocation(FVector(0.f, 0.f, 10.f));
+	BodyMesh->SetRelativeScale3D(FVector(0.5f, 0.5f, 0.7f));
+
+	// --- Голова ---
+	HeadMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("HeadMesh"));
+	HeadMesh->SetupAttachment(Capsule);
+	HeadMesh->SetRelativeLocation(FVector(0.f, 0.f, 72.f));
+	HeadMesh->SetRelativeScale3D(FVector(0.36f));
+
+	// --- Руки (висят ВНИЗ от плеч: меш сдвинут на -полувысоту под шарниром) ---
+	ArmL = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("ArmL"));
+	ArmL->SetupAttachment(ShoulderL);
+	ArmL->SetRelativeLocation(FVector(0.f, 0.f, -30.f));
+	ArmL->SetRelativeScale3D(FVector(0.16f, 0.16f, 0.6f));
+	ArmR = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("ArmR"));
+	ArmR->SetupAttachment(ShoulderR);
+	ArmR->SetRelativeLocation(FVector(0.f, 0.f, -30.f));
+	ArmR->SetRelativeScale3D(FVector(0.16f, 0.16f, 0.6f));
+
+	// --- Ноги (висят ВНИЗ от бёдер) ---
+	LegL = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("LegL"));
+	LegL->SetupAttachment(HipL);
+	LegL->SetRelativeLocation(FVector(0.f, 0.f, -35.f));
+	LegL->SetRelativeScale3D(FVector(0.2f, 0.2f, 0.7f));
+	LegR = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("LegR"));
+	LegR->SetupAttachment(HipR);
+	LegR->SetRelativeLocation(FVector(0.f, 0.f, -35.f));
+	LegR->SetRelativeScale3D(FVector(0.2f, 0.2f, 0.7f));
+
+	// Меши и материал для всех частей фигурки.
+	if (Cyl.Succeeded())
 	{
-		BodyMesh->SetStaticMesh(BodyShape.Object);
+		BodyMesh->SetStaticMesh(Cyl.Object);
+		ArmL->SetStaticMesh(Cyl.Object);
+		ArmR->SetStaticMesh(Cyl.Object);
+		LegL->SetStaticMesh(Cyl.Object);
+		LegR->SetStaticMesh(Cyl.Object);
 	}
-	static ConstructorHelpers::FObjectFinder<UMaterialInterface> BodyMat(
-		TEXT("/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial"));
-	if (BodyMat.Succeeded())
+	if (Sph.Succeeded())
 	{
-		BodyMesh->SetMaterial(0, BodyMat.Object);
+		HeadMesh->SetStaticMesh(Sph.Object);
 	}
+	auto Paint = [&](UStaticMeshComponent* Part, const FLinearColor& Color)
+	{
+		if (!Part)
+		{
+			return;
+		}
+		Part->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		if (Mat.Succeeded())
+		{
+			Part->SetMaterial(0, Mat.Object);
+		}
+		Part->SetVectorParameterValueOnMaterials(TEXT("Color"), FVector(Color.R, Color.G, Color.B));
+	};
+	Paint(BodyMesh, ColSuit);
+	Paint(HeadMesh, ColSkin);
+	Paint(ArmL, ColSuit);
+	Paint(ArmR, ColSuit);
+	Paint(LegL, ColBoots);
+	Paint(LegR, ColBoots);
 
 	// Камера от третьего лица через плечо: видно и персонажа, и корабль рядом.
 	// Сдвиг вбок — чтобы собственная фигурка не закрывала обзор.
@@ -71,11 +148,24 @@ void AOUCharacterPawn::BeginPlay()
 		return;
 	}
 
-	// Цвет фигурки персонажа (синий) — чтобы она читалась в кадре.
-	if (BodyMesh)
+	// Тестовый автоход (для снимков анимации бега без ручного ввода).
+	bAutoWalk = FParse::Param(FCommandLine::Get(), TEXT("OUAutoWalk"));
+
+	// Цвета фигурки задаём здесь (после регистрации компонентов — в конструкторе
+	// параметры материала ещё не применяются).
+	auto Paint = [](UStaticMeshComponent* Part, const FLinearColor& Color)
 	{
-		BodyMesh->SetVectorParameterValueOnMaterials(TEXT("Color"), FVector(0.20f, 0.45f, 0.95f));
-	}
+		if (Part)
+		{
+			Part->SetVectorParameterValueOnMaterials(TEXT("Color"), FVector(Color.R, Color.G, Color.B));
+		}
+	};
+	Paint(BodyMesh, ColSuit);
+	Paint(HeadMesh, ColSkin);
+	Paint(ArmL, ColSuit);
+	Paint(ArmR, ColSuit);
+	Paint(LegL, ColBoots);
+	Paint(LegR, ColBoots);
 
 	// Опора: точка появления на суше домашней планеты (как у сервера).
 	const FVector BaseSpawn = AOUVoxelPlanet::HomeSpawn(2.0f);
@@ -188,6 +278,60 @@ void AOUCharacterPawn::OnJumpReleased() { }
 void AOUCharacterPawn::OnExitPressed() { bExitHeld = true; ExitHoldTime = 0.f; }
 void AOUCharacterPawn::OnExitReleased() { bExitHeld = false; ExitHoldTime = 0.f; }
 
+void AOUCharacterPawn::AnimateLocomotion(float DeltaSeconds, float HorizontalSpeed)
+{
+	// Доля скорости от максимальной (0 — стоим, 1 — бежим на полной).
+	const float Target = FMath::Clamp(HorizontalSpeed / FMath::Max(1.f, WalkSpeed), 0.f, 1.f);
+	// Плавно подмешиваем, чтобы анимация не «дёргалась» на старте/стопе.
+	RunBlend = FMath::FInterpTo(RunBlend, Target, DeltaSeconds, 8.f);
+
+	// В воздухе конечности вытянуты, шаг замирает.
+	if (!bGrounded)
+	{
+		RunBlend *= 0.35f;
+	}
+
+	if (RunBlend <= 0.01f)
+	{
+		// Стоим: плавно возвращаем конечности в нейтраль.
+		auto Relax = [&](USceneComponent* P)
+		{
+			if (P) { P->SetRelativeRotation(FRotator(0.f, 0.f, 0.f)); }
+		};
+		Relax(ShoulderL); Relax(ShoulderR); Relax(HipL); Relax(HipR);
+		if (BodyMesh)
+		{
+			BodyMesh->SetRelativeLocation(FVector(0.f, 0.f, 10.f));
+			BodyMesh->SetRelativeRotation(FRotator(0.f, 0.f, 0.f));
+		}
+		return;
+	}
+
+	// Фаза шага растёт тем быстрее, чем выше скорость.
+	StridePhase += DeltaSeconds * StrideFrequency * (0.6f + RunBlend) * 2.f * PI;
+	// Ограничиваем фазу, чтобы не терять точность float.
+	if (StridePhase > 2.f * PI) { StridePhase -= 2.f * PI; }
+
+	const float Amp = StrideAmplitude * RunBlend;
+	const float S = FMath::Sin(StridePhase);
+
+	// Ноги: противоположные фазы (левая вперёд — правая назад).
+	if (HipL) { HipL->SetRelativeRotation(FRotator(S * Amp, 0.f, 0.f)); }
+	if (HipR) { HipR->SetRelativeRotation(FRotator(-S * Amp, 0.f, 0.f)); }
+
+	// Руки: в противофазе к ногам (как при настоящем беге).
+	if (ShoulderL) { ShoulderL->SetRelativeRotation(FRotator(-S * Amp * 0.8f, 0.f, 0.f)); }
+	if (ShoulderR) { ShoulderR->SetRelativeRotation(FRotator(S * Amp * 0.8f, 0.f, 0.f)); }
+
+	// Корпус слегка покачивается вверх-вниз в такт шагам.
+	if (BodyMesh)
+	{
+		const float Bob = FMath::Sin(StridePhase * 2.f) * 3.5f * RunBlend;
+		BodyMesh->SetRelativeLocation(FVector(0.f, 0.f, 10.f + Bob));
+		BodyMesh->SetRelativeRotation(FRotator(0.f, 0.f, FMath::Sin(StridePhase) * 4.f * RunBlend));
+	}
+}
+
 void AOUCharacterPawn::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
@@ -208,6 +352,15 @@ void AOUCharacterPawn::Tick(float DeltaSeconds)
 	ViewYaw += InputLookYaw * 1.6f * DeltaSeconds;
 	ViewPitch = FMath::Clamp(ViewPitch - InputLookPitch * 1.4f * DeltaSeconds, -1.4f, 1.4f);
 
+	// Тестовый автоход: идём вперёд сами и понемногу поворачиваем — персонаж
+	// описывает небольшой круг возле корабля, а на снимке видна анимация бега
+	// (идти по прямой 45 с значило бы уйти за сотни метров от точки старта).
+	const float FwdInput = bAutoWalk ? 1.f : InputForward;
+	if (bAutoWalk)
+	{
+		ViewYaw += 1.5f * DeltaSeconds;
+	}
+
 	// Базис на поверхности: forward — по касательной в сторону курса.
 	FVector Ref = FVector::CrossProduct(Up, FVector::UpVector);
 	if (Ref.SizeSquared() < 1e-4f)
@@ -221,7 +374,7 @@ void AOUCharacterPawn::Tick(float DeltaSeconds)
 	const FVector Right = FVector::CrossProduct(Up, Forward).GetSafeNormal();
 
 	// Горизонтальная скорость от ввода (ходьба).
-	const FVector Wish = (Forward * InputForward + Right * InputRight).GetSafeNormal();
+	const FVector Wish = (Forward * FwdInput + Right * InputRight).GetSafeNormal();
 	const FVector TargetHV = Wish * WalkSpeed;
 	// Плавно тянем горизонтальную скорость к желаемой.
 	FVector HV(0, 0, 0);
@@ -294,4 +447,8 @@ void AOUCharacterPawn::Tick(float DeltaSeconds)
 	{
 		SpringArm->SetRelativeRotation(FRotator(FMath::RadiansToDegrees(ViewPitch), 0.f, 0.f));
 	}
+
+	// Анимация бега/ходьбы (процедурная, по горизонтальной скорости).
+	const float HSpd = FVector::VectorPlaneProject(Velocity, Up).Size();
+	AnimateLocomotion(DeltaSeconds, HSpd);
 }
