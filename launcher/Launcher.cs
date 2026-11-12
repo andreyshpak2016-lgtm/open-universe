@@ -435,6 +435,7 @@ namespace OpenUniverseLauncher
                 "Done: the game is installed ({0}). Press Play.");
             L("status.installFail", "Не удалось установить игру: ", "Could not install the game: ");
             L("status.launching", "Игра запускается…", "Launching the game…");
+            L("status.launchingServer", "Запускаю локальный сервер и игру…", "Starting the local server and the game…");
             L("status.launchFail", "Не удалось запустить игру: ", "Could not launch the game: ");
             L("status.updateError", "Ошибка проверки обновлений: ", "Update check error: ");
             L("status.needSignIn", "Сначала войдите или зарегистрируйтесь.", "Please sign in or register first.");
@@ -494,9 +495,13 @@ namespace OpenUniverseLauncher
         private FlatBtn _play, _update, _site, _folder, _logout;
         private ProgressBar _progress;
 
+        // Локальный сервер, поднятый лаунчером (гасим при выходе лаунчера).
+        private Process _serverProc;
+
         public LauncherForm()
         {
             _appDir = Path.GetDirectoryName(Application.ExecutablePath);
+            _appDirStatic = _appDir;
             _profilePath = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                 "OpenUniverse", "launcher.ini");
@@ -1051,6 +1056,23 @@ namespace OpenUniverseLauncher
             _header.Invalidate();
         }
 
+        /// <summary>
+        /// При закрытии лаунчера гасим поднятый им локальный сервер, чтобы не
+        /// оставлять висящий процесс ou-netd (и не держать занятым UDP-порт).
+        /// </summary>
+        protected override void OnFormClosing(FormClosingEventArgs e)
+        {
+            try
+            {
+                if (_serverProc != null && !_serverProc.HasExited)
+                {
+                    _serverProc.Kill();
+                }
+            }
+            catch { }
+            base.OnFormClosing(e);
+        }
+
         // ---------------- Показ вкладок/панелей ----------------
         private void ShowAuthTab(int idx)
         {
@@ -1484,6 +1506,10 @@ namespace OpenUniverseLauncher
         {
             string[] candidates =
             {
+                // Рядом с лаунчером (штатная установка: обе программы в {app}).
+                Path.Combine(_appDirStatic, "OpenUniverse.exe"),
+                Path.Combine(_appDirStatic, "OpenUniverse", "Binaries", "Win64", "OpenUniverse-Win64-Shipping.exe"),
+                // Путь лаунчера по умолчанию (установка без прав администратора).
                 Path.Combine(GameDir(), "OpenUniverse.exe"),
                 Path.Combine(GameDir(), "OpenUniverse", "Binaries", "Win64", "OpenUniverse-Win64-Shipping.exe")
             };
@@ -1491,12 +1517,98 @@ namespace OpenUniverseLauncher
             return null;
         }
 
+        /// <summary>
+        /// Путь к локальному серверу (ou-netd.exe). Ищем в установленной игре и
+        /// рядом с лаунчером — чтобы работало и из установщика, и из исходников.
+        /// </summary>
+        private static string ServerExe()
+        {
+            string[] candidates =
+            {
+                Path.Combine(GameDir(), "server", "ou-netd.exe"),
+                Path.Combine(_appDirStatic, "server", "ou-netd.exe"),
+                Path.Combine(_appDirStatic, "ou-netd.exe")
+            };
+            foreach (var c in candidates) if (File.Exists(c)) return c;
+            return null;
+        }
+
+        private static string _appDirStatic;
+
+        /// <summary>
+        /// Поднять локальный сервер на 127.0.0.1:7777 (если ещё не поднят).
+        /// Возвращает true, если сервер доступен (запущен сейчас или уже был).
+        /// </summary>
+        private bool EnsureLocalServer()
+        {
+            string exe = ServerExe();
+            if (exe == null) return false;
+
+            // Уже запущен нами?
+            if (_serverProc != null && !_serverProc.HasExited) return true;
+
+            // Кто-то уже слушает порт? Тогда ничего не делаем.
+            if (!IsUdpPortFree("127.0.0.1", 7777)) return true;
+
+            try
+            {
+                var psi = new ProcessStartInfo
+                {
+                    FileName = exe,
+                    // [адрес] [секунды] [каталог мира]. Большое число секунд —
+                    // сервер живёт, пока лаунчер его не погасит.
+                    Arguments = "127.0.0.1:7777 86400 world",
+                    WorkingDirectory = Path.GetDirectoryName(exe),
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                };
+                _serverProc = Process.Start(psi);
+            }
+            catch
+            {
+                return false;
+            }
+
+            // Ждём, пока сервер откроет UDP-порт (до ~5 с).
+            for (int i = 0; i < 50; i++)
+            {
+                if (!IsUdpPortFree("127.0.0.1", 7777)) return true;
+                System.Threading.Thread.Sleep(100);
+            }
+            return _serverProc != null && !_serverProc.HasExited;
+        }
+
+        /// <summary>
+        /// Свободен ли UDP-порт. Сервер занимает 127.0.0.1:7777, поэтому если
+        /// порт занят — сервер уже поднят (наш или чужой).
+        /// </summary>
+        private static bool IsUdpPortFree(string host, int port)
+        {
+            try
+            {
+                var ep = new System.Net.IPEndPoint(System.Net.IPAddress.Parse(host), port);
+                using (var s = new System.Net.Sockets.UdpClient(ep))
+                {
+                    s.Client.ExclusiveAddressUse = false;
+                }
+                return true;
+            }
+            catch { return false; }
+        }
+
         private static string InstalledVersion()
         {
             try
             {
-                string v = Path.Combine(GameDir(), "VERSION");
-                if (File.Exists(v)) return File.ReadAllText(v).Trim();
+                string[] cands =
+                {
+                    Path.Combine(_appDirStatic, "VERSION"),
+                    Path.Combine(GameDir(), "VERSION")
+                };
+                foreach (var v in cands)
+                {
+                    if (File.Exists(v)) return File.ReadAllText(v).Trim();
+                }
             }
             catch { }
             return null;
@@ -1519,17 +1631,23 @@ namespace OpenUniverseLauncher
             if (exe == null) { SetStatus(T("status.noGameFile"), true); return; }
             try
             {
-                // Передаём позывной из лаунчера в игру: на старте клиент сразу
-                // знает имя пилота (используется значением -OUName).
+                // Поднимаем локальный сервер и подключаемся к нему автоматически,
+                // чтобы игрок сразу попал в мир, а не в пустое меню.
+                bool server = EnsureLocalServer();
+
+                // Аргументы: имя пилота и (если сервер есть) авто-подключение.
+                string args = (_profile != null && !string.IsNullOrEmpty(_profile.Login))
+                    ? "-OUName=" + _profile.Login : "";
+                if (server) args = (args + " -OUAutoConnect").Trim();
+
                 var psi = new ProcessStartInfo
                 {
                     FileName = exe,
                     WorkingDirectory = Path.GetDirectoryName(exe),
-                    Arguments = _profile != null && !string.IsNullOrEmpty(_profile.Login)
-                        ? "-OUName=" + _profile.Login : ""
+                    Arguments = args
                 };
                 Process.Start(psi);
-                SetStatus(T("status.launching"), false);
+                SetStatus(server ? T("status.launchingServer") : T("status.launching"), false);
             }
             catch (Exception ex)
             {
