@@ -69,6 +69,15 @@ Write-Host ""
 
 if ($LASTEXITCODE -ne 0) { throw "Сборка игры не удалась (код $LASTEXITCODE)" }
 
+# Отладочные символы (*.pdb) в релизе не нужны: они весят сотни мегабайт и
+# раздувают установщик и обновления. Удаляем их из упакованной сборки.
+$pdbs = Get-ChildItem $outDir -Recurse -Filter *.pdb -File -ErrorAction SilentlyContinue
+if ($pdbs) {
+  $mb = [math]::Round((($pdbs | Measure-Object Length -Sum).Sum) / 1MB, 1)
+  $pdbs | Remove-Item -Force -ErrorAction SilentlyContinue
+  Write-Host ("Удалены .pdb: {0} файл(ов), освобождено {1} МБ" -f $pdbs.Count, $mb) -ForegroundColor DarkYellow
+}
+
 $exe = Get-ChildItem $outDir -Recurse -Filter "OpenUniverse.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
 if ($exe) {
   Write-Host ""

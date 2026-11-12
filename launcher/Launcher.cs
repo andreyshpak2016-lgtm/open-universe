@@ -285,6 +285,9 @@ namespace OpenUniverseLauncher
 
             try { ServicePointManager.SecurityProtocol |= SecurityProtocolType.Tls12 | SecurityProtocolType.Tls11; }
             catch { }
+            // Разрешаем больше одновременных соединений на хост — иначе загрузка
+            // в несколько потоков упирается в лимит .NET (по умолчанию всего 2).
+            try { ServicePointManager.DefaultConnectionLimit = 16; } catch { }
 
             bool created;
             _single = new Mutex(true, "OpenUniverseLauncher_SingleInstance", out created);
@@ -1510,27 +1513,7 @@ namespace OpenUniverseLauncher
 
             try
             {
-                using (var client = new WebClient())
-                {
-                    client.DownloadProgressChanged += (s, e) =>
-                    {
-                        _progress.Value = Math.Min(100, e.ProgressPercentage);
-                        if (e.TotalBytesToReceive > 0)
-                            SetStatus(string.Format(T("status.downloading"),
-                                e.BytesReceived / 1048576.0, e.TotalBytesToReceive / 1048576.0), false);
-                        else
-                            SetStatus(string.Format(T("status.downloading2"), e.BytesReceived / 1048576.0), false);
-                    };
-                    var tcs = new TaskCompletionSource<bool>();
-                    client.DownloadFileCompleted += (s, e) =>
-                    {
-                        if (e.Error != null) tcs.TrySetException(e.Error);
-                        else if (e.Cancelled) tcs.TrySetCanceled();
-                        else tcs.TrySetResult(true);
-                    };
-                    client.DownloadFileAsync(new Uri(rel.GameSetupUrl), file);
-                    await tcs.Task;
-                }
+                await DownloadFastAsync(rel.GameSetupUrl, file, name);
 
                 SetStatus(T("status.installing"), false);
                 var psi = new ProcessStartInfo
@@ -1559,6 +1542,202 @@ namespace OpenUniverseLauncher
             finally
             {
                 _progress.Visible = false;
+            }
+        }
+
+        // ---------------- Быстрая загрузка (параллельные части) ----------------
+
+        /// <summary>
+        /// Скачать файл быстро: несколько параллельных HTTP-Range-потоков.
+        /// Один поток от CDN часто медленный, а .NET по умолчанию держит всего
+        /// 2 соединения на хост — параллельность ускоряет загрузку кратно.
+        /// При отсутствии поддержки Range — обычная одиночная загрузка.
+        /// </summary>
+        private async Task DownloadFastAsync(string url, string destPath, string label)
+        {
+            long size = await Task.Run(() => GetRemoteSize(url, out _rangesOk));
+            if (size <= 0 || !_rangesOk)
+            {
+                await DownloadSimpleAsync(url, destPath, label);
+                return;
+            }
+
+            const int parts = 8;               // число параллельных частей
+            long chunk = size / parts;
+            if (chunk < 256 * 1024) { await DownloadSimpleAsync(url, destPath, label); return; }
+
+            string dir = Path.GetDirectoryName(destPath);
+            if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+            var partFiles = new string[parts];
+            long baseDone = 0;
+            long progress = 0;
+
+            var tasks = new Task[parts];
+            for (int i = 0; i < parts; i++)
+            {
+                long start = i * chunk;
+                long end = (i == parts - 1) ? size - 1 : (start + chunk - 1);
+                partFiles[i] = destPath + ".part" + i;
+                int idx = i;
+                tasks[i] = Task.Run(() => DownloadRange(url, partFiles[idx], start, end, n =>
+                {
+                    long p = Interlocked.Add(ref progress, n);
+                    ReportProgress(p, size, label);
+                }));
+            }
+            await Task.WhenAll(tasks);
+
+            // Склеиваем части в один файл, затем чистим временные.
+            using (var outFs = new FileStream(destPath, FileMode.Create, FileAccess.Write, FileShare.None, 1 << 20))
+            {
+                for (int i = 0; i < parts; i++)
+                {
+                    using (var inFs = new FileStream(partFiles[i], FileMode.Open, FileAccess.Read, FileShare.Read, 1 << 20))
+                    {
+                        await inFs.CopyToAsync(outFs);
+                    }
+                    try { File.Delete(partFiles[i]); } catch { }
+                }
+            }
+            baseDone = size;
+        }
+
+        private bool _rangesOk;
+
+        /// <summary>Размер файла на сервере и поддерживает ли он Range-запросы.</summary>
+        private static long GetRemoteSize(string url, out bool ranges)
+        {
+            ranges = false;
+            try
+            {
+                // Пробуем HEAD.
+                var head = (HttpWebRequest)WebRequest.Create(url);
+                head.Method = "HEAD";
+                head.UserAgent = "OpenUniverseLauncher/1.5";
+                head.AllowAutoRedirect = true;
+                head.Timeout = 20000;
+                using (var resp = (HttpWebResponse)head.GetResponse())
+                {
+                    long len = resp.ContentLength;
+                    string ar = resp.Headers["Accept-Ranges"];
+                    if (len > 0 && ar != null && ar.IndexOf("bytes", StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        ranges = true;
+                        return len;
+                    }
+                }
+            }
+            catch { }
+
+            // HEAD не дал ответа или не поддерживает Range — пробуем GET 0-0.
+            try
+            {
+                var req = (HttpWebRequest)WebRequest.Create(url);
+                req.UserAgent = "OpenUniverseLauncher/1.5";
+                req.AddRange(0, 0);
+                req.AllowAutoRedirect = true;
+                req.Timeout = 20000;
+                using (var resp = (HttpWebResponse)req.GetResponse())
+                {
+                    string cr = resp.Headers["Content-Range"];   // bytes 0-0/12345
+                    if (cr != null)
+                    {
+                        int slash = cr.LastIndexOf('/');
+                        long total;
+                        if (slash > 0 && long.TryParse(cr.Substring(slash + 1), out total) && total > 0)
+                        {
+                            ranges = true;
+                            return total;
+                        }
+                    }
+                }
+            }
+            catch { }
+            return -1;
+        }
+
+        /// <summary>Скачать одну часть файла (Range) с повторами при обрыве.</summary>
+        private static void DownloadRange(string url, string partPath, long start, long end, Action<long> onBytes)
+        {
+            long pos = start;
+            int tries = 0;
+            using (var fs = new FileStream(partPath, FileMode.Create, FileAccess.Write, FileShare.None, 1 << 20))
+            {
+                while (pos <= end)
+                {
+                    try
+                    {
+                        var req = (HttpWebRequest)WebRequest.Create(url);
+                        req.UserAgent = "OpenUniverseLauncher/1.5";
+                        req.AddRange(pos, end);
+                        req.AllowAutoRedirect = true;
+                        req.Timeout = 30000;
+                        req.ReadWriteTimeout = 30000;
+                        using (var resp = (HttpWebResponse)req.GetResponse())
+                        using (var net = resp.GetResponseStream())
+                        {
+                            var buf = new byte[1 << 17];   // 128 КБ
+                            int n;
+                            while ((n = net.Read(buf, 0, buf.Length)) > 0)
+                            {
+                                fs.Write(buf, 0, n);
+                                pos += n;
+                                onBytes(n);
+                                if (pos > end) break;
+                            }
+                        }
+                        tries = 0;
+                    }
+                    catch
+                    {
+                        if (++tries > 5) throw;
+                        Thread.Sleep(500 * tries);
+                    }
+                }
+            }
+        }
+
+        /// <summary>Обычная одиночная загрузка (fallback, без Range).</summary>
+        private async Task DownloadSimpleAsync(string url, string destPath, string label)
+        {
+            using (var client = new WebClient())
+            {
+                client.Headers[HttpRequestHeader.UserAgent] = "OpenUniverseLauncher/1.5";
+                client.DownloadProgressChanged += (s, e) =>
+                {
+                    _progress.Value = Math.Min(100, e.ProgressPercentage);
+                    string t = (e.TotalBytesToReceive > 0)
+                        ? string.Format(T("status.downloading"), e.BytesReceived / 1048576.0, e.TotalBytesToReceive / 1048576.0)
+                        : string.Format(T("status.downloading2"), e.BytesReceived / 1048576.0);
+                    SetStatus(t, false);
+                };
+                var tcs = new TaskCompletionSource<bool>();
+                client.DownloadFileCompleted += (s, e) =>
+                {
+                    if (e.Error != null) tcs.TrySetException(e.Error);
+                    else if (e.Cancelled) tcs.TrySetCanceled();
+                    else tcs.TrySetResult(true);
+                };
+                client.DownloadFileAsync(new Uri(url), destPath);
+                await tcs.Task;
+            }
+        }
+
+        private long _lastReportMs;
+        private void ReportProgress(long done, long total, string label)
+        {
+            // Обновляем статус не чаще ~10 раз в секунду (иначе UI захлёбывается).
+            long now = Environment.TickCount;
+            if (now - _lastReportMs < 100) return;
+            _lastReportMs = now;
+            if (_progress.IsHandleCreated)
+            {
+                _progress.BeginInvoke((Action)(() =>
+                {
+                    _progress.Value = (int)Math.Min(100, done * 100 / Math.Max(1, total));
+                    SetStatus(string.Format(T("status.downloading"),
+                        done / 1048576.0, total / 1048576.0), false);
+                }));
             }
         }
 
@@ -1790,25 +1969,7 @@ namespace OpenUniverseLauncher
             string tmp = Path.Combine(Path.GetTempPath(), "ou-patch-" + Guid.NewGuid().ToString("N") + ".zip");
             try
             {
-                using (var client = new WebClient())
-                {
-                    client.Headers[HttpRequestHeader.UserAgent] = "OpenUniverseLauncher/1.4";
-                    client.DownloadProgressChanged += (s, e) =>
-                    {
-                        _progress.Value = Math.Min(100, e.ProgressPercentage);
-                        SetStatus(string.Format(T("status.patching"),
-                            e.BytesReceived / 1048576.0, e.TotalBytesToReceive / 1048576.0), false);
-                    };
-                    var tcs = new TaskCompletionSource<bool>();
-                    client.DownloadFileCompleted += (s, e) =>
-                    {
-                        if (e.Error != null) tcs.TrySetException(e.Error);
-                        else if (e.Cancelled) tcs.TrySetCanceled();
-                        else tcs.TrySetResult(true);
-                    };
-                    client.DownloadFileAsync(new Uri(patchUrl), tmp);
-                    await tcs.Task;
-                }
+                await DownloadFastAsync(patchUrl, tmp, "patch");
 
                 // Распаковываем патч во временный каталог, затем копируем нужные
                 // файлы поверх игры — атомарно по каждому файлу.

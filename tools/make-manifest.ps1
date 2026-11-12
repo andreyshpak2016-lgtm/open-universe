@@ -35,8 +35,12 @@ Write-Host "== Манифест Open Universe $Version ==" -ForegroundColor Cyan
 Write-Host "  корень: $GameDir"
 
 # Собираем записи о файлах (относительный путь в прямых слэшах, размер, хеш).
+# Отладочные символы (*.pdb) игроку не нужны — исключаем: они не проверяются
+# и не попадают в патч (иначе патч раздувался бы на сотни мегабайт).
 $rootFull = (Resolve-Path $GameDir).Path
-$files = Get-ChildItem -Path $GameDir -Recurse -File | Sort-Object FullName
+$files = Get-ChildItem -Path $GameDir -Recurse -File |
+  Where-Object { $_.Extension -notin @('.pdb') } |
+  Sort-Object FullName
 $entries = New-Object System.Collections.Generic.List[object]
 foreach ($f in $files) {
   $rel = $f.FullName.Substring($rootFull.Length).TrimStart('\', '/') -replace '\\', '/'
@@ -67,7 +71,7 @@ Write-Host ("  файлов: {0}, манифест: {1} ({2:N0} байт)" -f $e
 # --- Патч: сравнить с предыдущим манифестом и положить изменения в zip ---
 if ($MakePatch) {
   $prevMap = @{}
-  if ($prev -and $prev.version -ne $Version) {
+  if ($prev -and $prev.files) {
     Write-Host "  сравнение с предыдущим манифестом: $($prev.version)"
     foreach ($e in $prev.files) { $prevMap[$e.p] = $e.h }
   } else {
