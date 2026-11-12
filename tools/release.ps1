@@ -86,6 +86,8 @@ $files = @(
   (Join-Path $root 'tools\game.ps1'),
   (Join-Path $root 'tools\ou-common.ps1'),
   (Join-Path $root 'launcher\OpenUniverseLauncher.exe'),
+  (Join-Path $root 'launcher\banner.jpg'),
+  (Join-Path $root 'assets\openuniverse.ico'),
   (Join-Path $root 'play.bat'),
   (Join-Path $root 'server.bat'),
   (Join-Path $root 'game.bat'),

@@ -27,3 +27,4 @@ Thumbs.db
 
 # Sobrannyj launcheer (peresobiraetsya build-launcher.ps1)
 launcher/OpenUniverseLauncher.exe
+launcher/AssemblyVersion.cs

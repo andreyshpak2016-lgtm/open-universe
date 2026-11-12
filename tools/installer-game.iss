@@ -33,6 +33,8 @@ WizardStyle=modern
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 UninstallDisplayName=Open Universe {#MyVersion}
+UninstallDisplayIcon={app}\openuniverse.ico
+SetupIconFile={#SourceRoot}\assets\openuniverse.ico
 PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog
 MinVersion=10.0
@@ -64,14 +66,20 @@ Source: "{#SourceRoot}\README.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourceRoot}\VERSION"; DestDir: "{app}"; DestName: "VERSION"; Flags: ignoreversion
 ; Лаунчер: вход, новости, автообновление.
 Source: "{#SourceRoot}\launcher\OpenUniverseLauncher.exe"; DestDir: "{app}"; Flags: ignoreversion
+; Баннер для шапки лаунчера.
+Source: "{#SourceRoot}\launcher\banner.jpg"; DestDir: "{app}"; Flags: ignoreversion
+; Значок приложения и ярлыков.
+Source: "{#SourceRoot}\assets\openuniverse.ico"; DestDir: "{app}"; Flags: ignoreversion
+; Иконка самой игры (лежит рядом с игрой; используется ярлыком).
+Source: "{#SourceRoot}\assets\openuniverse.ico"; DestDir: "{app}\OpenUniverse"; DestName: "OpenUniverse.ico"; Flags: ignoreversion
 
 [Icons]
 ; Лаунчер — главный ярлык: вход, новости, автообновление, запуск игры.
-Name: "{group}\Open Universe — лаунчер"; Filename: "{app}\OpenUniverseLauncher.exe"
-Name: "{group}\Open Universe (напрямую)"; Filename: "{app}\OpenUniverse.exe"
-Name: "{group}\Сервер (для игры по сети)"; Filename: "{app}\server\server.bat"; WorkingDir: "{app}\server"
+Name: "{group}\Open Universe"; Filename: "{app}\OpenUniverseLauncher.exe"; IconFilename: "{app}\openuniverse.ico"; Comment: "Лаунчер Open Universe"
+Name: "{group}\Играть"; Filename: "{app}\OpenUniverse.exe"; IconFilename: "{app}\OpenUniverse\OpenUniverse.ico"
+Name: "{group}\Сервер (по сети)"; Filename: "{app}\server\server.bat"; WorkingDir: "{app}\server"; IconFilename: "{app}\openuniverse.ico"
 Name: "{group}\Удалить Open Universe"; Filename: "{uninstallexe}"
-Name: "{autodesktop}\Open Universe"; Filename: "{app}\OpenUniverseLauncher.exe"; Tasks: desktopicon
+Name: "{autodesktop}\Open Universe"; Filename: "{app}\OpenUniverseLauncher.exe"; Tasks: desktopicon; IconFilename: "{app}\openuniverse.ico"; Comment: "Open Universe — лаунчер"
 
 [Run]
 ; При обычной установке предлагаем запустить лаунчер. При тихой (её делает

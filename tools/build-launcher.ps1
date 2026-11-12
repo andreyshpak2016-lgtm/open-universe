@@ -24,11 +24,37 @@ $web = Join-Path $fw 'System.Web.Extensions.dll'
 if (-not (Test-Path $sys)) { throw "Не найден $sys" }
 if (-not (Test-Path $web)) { throw "Не найден $web" }
 
+# Значок приложения (собирается tools/make-icon.ps1 при необходимости).
+$ico = Join-Path $root 'assets\openuniverse.ico'
+
+# Версия из VERSION — пишем в свойства exe (Файл → Свойства → Подробно).
+$verRaw = '0.0.0'
+$vfile = Join-Path $root 'VERSION'
+if (Test-Path $vfile) { $verRaw = (Get-Content $vfile -Raw).Trim() }
+$parts = @($verRaw -split '\.')
+while ($parts.Count -lt 4) { $parts += '0' }
+$ver4 = ($parts[0..3] -join '.')
+
+$infoPath = Join-Path $root 'launcher\AssemblyVersion.cs'
+$info = @"
+using System.Reflection;
+[assembly: AssemblyTitle("Open Universe Launcher")]
+[assembly: AssemblyProduct("Open Universe")]
+[assembly: AssemblyCompany("Open Universe")]
+[assembly: AssemblyDescription("Open Universe launcher")]
+[assembly: AssemblyCopyright("Open Universe")]
+[assembly: AssemblyVersion("$ver4")]
+[assembly: AssemblyFileVersion("$ver4")]
+[assembly: AssemblyInformationalVersion("$verRaw")]
+"@
+[System.IO.File]::WriteAllText($infoPath, $info, (New-Object System.Text.UTF8Encoding($true)))
+
 Write-Host "== Сборка лаунчера ==" -ForegroundColor Cyan
-& $csc /nologo /target:winexe /optimize+ "/out:$out" `
+$iconArg = if (Test-Path $ico) { "/win32icon:$ico" } else { $null }
+& $csc /nologo /target:winexe /optimize+ "/out:$out" $iconArg `
   "/r:$sys" "/r:$drw" "/r:$web" `
   /r:System.dll /r:System.Core.dll /r:System.Net.Http.dll `
-  "$src"
+  "$src" "$infoPath"
 if ($LASTEXITCODE -ne 0) { throw "Компиляция не удалась" }
 
 if (Test-Path $out) {

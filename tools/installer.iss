@@ -37,6 +37,8 @@ WizardStyle=modern
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 UninstallDisplayName=Open Universe {#MyVersion}
+UninstallDisplayIcon={app}\openuniverse.ico
+SetupIconFile={#SourceRoot}\assets\openuniverse.ico
 LicenseFile={#SourceRoot}\assets\license.txt
 PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog
@@ -62,18 +64,20 @@ Source: "{#SourceRoot}\tools\play.ps1"; DestDir: "{app}\tools"; Flags: ignorever
 Source: "{#SourceRoot}\tools\ou-common.ps1"; DestDir: "{app}\tools"; Flags: ignoreversion
 Source: "{#SourceRoot}\play.bat"; DestDir: "{app}\tools"; Flags: ignoreversion
 Source: "{#SourceRoot}\README.md"; DestDir: "{app}"; Flags: ignoreversion
+; Значок приложения и ярлыков.
+Source: "{#SourceRoot}\assets\openuniverse.ico"; DestDir: "{app}"; Flags: ignoreversion
 
 [Dirs]
 ; Каталог мира создаём заранее, чтобы сервер сразу его нашёл.
 Name: "{app}\world"
 
 [Icons]
-Name: "{group}\Open Universe — сервер"; Filename: "{app}\server.bat"; WorkingDir: "{app}"; IconFilename: "{app}\ou-netd.exe"
-Name: "{group}\Open Universe — игра (UE5)"; Filename: "{app}\game.bat"; WorkingDir: "{app}"
-Name: "{group}\Быстрый запуск (сервер + игроки)"; Filename: "{app}\play.bat"; WorkingDir: "{app}"
+Name: "{group}\Open Universe — сервер"; Filename: "{app}\server.bat"; WorkingDir: "{app}"; IconFilename: "{app}\openuniverse.ico"
+Name: "{group}\Open Universe — игра (UE5)"; Filename: "{app}\game.bat"; WorkingDir: "{app}"; IconFilename: "{app}\openuniverse.ico"
+Name: "{group}\Быстрый запуск (сервер + игроки)"; Filename: "{app}\play.bat"; WorkingDir: "{app}"; IconFilename: "{app}\openuniverse.ico"
 Name: "{group}\Документация"; Filename: "{app}\README.md"
 Name: "{group}\Удалить Open Universe"; Filename: "{uninstallexe}"
-Name: "{autodesktop}\Open Universe"; Filename: "{app}\play.bat"; WorkingDir: "{app}"; Tasks: desktopicon; IconFilename: "{app}\ou-netd.exe"
+Name: "{autodesktop}\Open Universe"; Filename: "{app}\play.bat"; WorkingDir: "{app}"; Tasks: desktopicon; IconFilename: "{app}\openuniverse.ico"
 
 [Run]
 Filename: "{app}\play.bat"; Description: "Запустить игру сейчас"; Flags: nowait postinstall skipifsilent
