@@ -10,6 +10,7 @@
 #include "OUInterop.h"
 #include "OUPlayerMenuController.h"
 #include "OUPlayerMenuHUD.h"
+#include "OUClientNet.h"
 
 #include "Engine/World.h"
 #include "Engine/DirectionalLight.h"
@@ -333,4 +334,78 @@ void AOUGameMode::BuildWorld()
 	}
 
 	UE_LOG(LogOUGameMode, Log, TEXT("Сцена Open Universe собрана: свет, небо, планета, солнечная система, база, floating origin"));
+}
+
+void AOUGameMode::BuildSystemFromServer()
+{
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+	// Находим сетевой компонент (он живёт на корабле игрока).
+	UOUClientNet* Net = nullptr;
+	for (TActorIterator<APawn> It(World); It; ++It)
+	{
+		if (UOUClientNet* Found = It->FindComponentByClass<UOUClientNet>())
+		{
+			Net = Found;
+			break;
+		}
+	}
+	if (!Net || !Net->bSystemReceived || Net->SystemBodies.Num() == 0)
+	{
+		return;
+	}
+
+	// Убираем прежние тела системы (солнце/декоративные планеты), чтобы не
+	// смешивать серверные данные с прежней «нарисованной» системой.
+	{
+		TArray<AActor*> Old;
+		for (TActorIterator<AOUSolarBody> It(World); It; ++It) { Old.Add(*It); }
+		for (TActorIterator<AOUVoxelPlanet> It(World); It; ++It)
+		{
+			if (!It->bHomePlanet) { Old.Add(*It); }
+		}
+		for (AActor* A : Old) { if (A) { A->Destroy(); } }
+	}
+
+	for (const FOUSystemBody& B : Net->SystemBodies)
+	{
+		// Позиция в серверных осях → UE (с масштабом).
+		const FVector PosUE = OUInterop::ServerToUE(B.Position);
+		const float RadiusCm = static_cast<float>(B.Radius * OUInterop::ServerUnitToCm);
+
+		if (B.Kind == 0 || B.Kind == 5)   // звезда или чёрная дыра
+		{
+			AOUSolarBody* Body = World->SpawnActor<AOUSolarBody>(
+				AOUSolarBody::StaticClass(), FTransform(FRotator::ZeroRotator, PosUE));
+			if (Body)
+			{
+				Body->Kind = EOUSolarKind::Star;
+				Body->BodyRadiusCm = FMath::Max(RadiusCm, 100000.f);
+				Body->BodyColor = B.Kind == 5
+					? FLinearColor(0.08f, 0.05f, 0.12f)      // чёрная дыра
+					: FLinearColor(1.0f, 0.86f, 0.35f);      // звезда
+				Body->BuildBody();
+			}
+		}
+		else if (B.Kind == 1 || B.Kind == 3 || B.Kind == 2)   // планета/газ/луна
+		{
+			if (RadiusCm < 10000.f) { continue; }   // слишком мелкое — не рисуем
+			AOUVoxelPlanet* Planet = World->SpawnActor<AOUVoxelPlanet>(
+				AOUVoxelPlanet::StaticClass(), FTransform(FRotator::ZeroRotator, PosUE));
+			if (Planet)
+			{
+				Planet->bHomePlanet = false;
+				Planet->Radius = RadiusCm;
+				Planet->Amplitude = RadiusCm * 0.05f;
+				Planet->PlanetType = (B.Kind == 3) ? EOUPlanetType::GasGiant
+					: (B.Id % 2 == 0 ? EOUPlanetType::Ice : EOUPlanetType::Desert);
+				Planet->Lod = EOUVoxelLod::Mid;
+				Planet->BuildPlanet();
+			}
+		}
+	}
+	UE_LOG(LogOUGameMode, Log, TEXT("Система от сервера построена: тел %d"), Net->SystemBodies.Num());
 }

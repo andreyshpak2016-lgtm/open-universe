@@ -119,6 +119,14 @@ fn main() {
                             );
                             // Сообщаем клиенту, какой сущностью он управляет.
                             net.send_to(token, from, &Message::ServerWelcome { entity }).ok();
+                            // И отдаём описание системы (солнце и планеты) для отрисовки.
+                            let (sid, sname, bodies) = server.system_description();
+                            net.send_to(
+                                token,
+                                from,
+                                &Message::ServerSystem { id: sid, name: sname, bodies },
+                            )
+                            .ok();
                             next_player += 1;
                         }
                     }

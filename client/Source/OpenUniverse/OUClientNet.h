@@ -142,6 +142,28 @@ struct FOUCharacterState
 	bool bMoving = false;
 };
 
+/** Тело звёздной системы от сервера (для отрисовки). */
+USTRUCT(BlueprintType)
+struct FOUSystemBody
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|System")
+	int32 Id = 0;
+
+	/** Тип: 0 звезда, 1 планета, 2 луна, 3 газовый гигант, 4 пояс, 5 чёрная дыра. */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|System")
+	int32 Kind = 0;
+
+	/** Позиция относительно центра системы, в СЕРВЕРНЫХ единицах. */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|System")
+	FVector Position = FVector::ZeroVector;
+
+	/** Радиус, в СЕРВЕРНЫХ единицах. */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|System")
+	float Radius = 0.f;
+};
+
 /**
  * Сетевой клиент Open Universe.
  *
@@ -237,6 +259,18 @@ public:
 	/** Позы чужих пеших персонажей, пришедшие за последний кадр. */
 	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Character")
 	TArray<FOUCharacterState> RemoteCharacters;
+
+	/** Описание системы от сервера (пусто — ещё не пришло). */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|System")
+	TArray<FOUSystemBody> SystemBodies;
+
+	/** Имя системы от сервера. */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|System")
+	FString SystemName;
+
+	/** Пришло ли описание системы (чтобы не перестраивать сцену зря). */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|System")
+	bool bSystemReceived = false;
 
 	/** Подключиться к серверу. */
 	UFUNCTION(BlueprintCallable, Category = "Open Universe|Net")

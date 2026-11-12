@@ -18,6 +18,7 @@
 #include "DrawDebugHelpers.h"
 #include "Misc/CommandLine.h"
 #include "Misc/Parse.h"
+#include "OUGameMode.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogOUShip, Log, All);
 
@@ -599,6 +600,15 @@ void AOUShipPawn::Tick(float DeltaSeconds)
 				// Рисуем других (дроны/чужие корабли и персонажи).
 				UpdateRemotePlayers();
 				UpdateRemoteCharacters();
+				// Как только пришло описание системы — строим её из серверных данных.
+				if (Net->bSystemReceived && !bSystemBuilt)
+				{
+					bSystemBuilt = true;
+					if (AOUGameMode* GM = Cast<AOUGameMode>(UGameplayStatics::GetGameMode(GetWorld())))
+					{
+						GM->BuildSystemFromServer();
+					}
+				}
 				// Тестовый авто-огонь работает и у припаркованного корабля:
 				// шлём кадр с огнём (без тяги), чтобы проверить бой.
 				if (FParse::Param(FCommandLine::Get(), TEXT("OUAutoFire")))

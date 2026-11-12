@@ -527,6 +527,67 @@ impl Server {
         entity_id
     }
 
+    /// Описание звёздной системы для отправки клиенту (для отрисовки).
+    ///
+    /// Центр системы совпадает с центром домашней планеты (в начале координат),
+    /// поэтому позиции тел можно слать как есть.
+    ///
+    /// ВАЖНО про масштаб: генератор системы работает в «локальных» единицах
+    /// (планеты радиусом сотни единиц), а домашняя планета теперь 100 км. Чтобы
+    /// тела не оказались внутри неё, растягиваем систему в `SYSTEM_VISUAL_SCALE`
+    /// раз — тогда орбиты и радиусы попадают в игровой масштаб.
+    pub fn system_description(&self) -> (u32, String, Vec<ou_protocol::SystemBodyDto>) {
+        // Система генератора работает в «локальных» единицах, а домашняя планета
+        // теперь 100 км. Два преобразования:
+        //  1) масштаб — растягиваем орбиты/радиусы в игровой масштаб;
+        //  2) смещение — центр системы уводим В НЕБО (иначе звезда оказалась бы
+        //     в центре домашней планеты).
+        const SYSTEM_VISUAL_SCALE: f64 = 10.0;
+        // Центр системы ставим «над и впереди» игрока. Ориентир берём от точки
+        // появления: Up — от центра планеты (серверные оси, вверх = Y);
+        // Fwd — та же касательная, что строит клиент (мировой +X в UE = ось Z
+        // серверных осей, спроецированная на плоскость поверхности).
+        let spawn = ou_sim::home_spawn(2.0);
+        let up = {
+            let l = spawn.length();
+            if l > 1e-6 { spawn.scale(1.0 / l) } else { Vec3::new(0.0, 1.0, 0.0) }
+        };
+        let mut fwd = Vec3::new(0.0, 0.0, 1.0);
+        let d = fwd.dot(up);
+        fwd = fwd.sub(up.scale(d));
+        let fl = fwd.length();
+        fwd = if fl > 1e-6 { fwd.scale(1.0 / fl) } else { Vec3::new(1.0, 0.0, 0.0) };
+        // Центр: 120 км вверх и 400 км вперёд — система видна над горизонтом.
+        let center = up.scale(120_000.0).add(fwd.scale(400_000.0));
+
+        let sys = ou_sim::generate_system(0, ou_sim::HOME_PLANET_SEED, Vec3::ZERO);
+        let bodies = sys
+            .bodies
+            .iter()
+            .map(|b| {
+                // Позиция тела на орбите в момент 0, относительно центра системы.
+                let rel = sys
+                    .body_position_at(b.id, 0.0)
+                    .unwrap_or(b.pos)
+                    .sub(sys.pos);
+                ou_protocol::SystemBodyDto {
+                    id: b.id,
+                    kind: match b.kind {
+                        ou_sim::BodyKind::Star => 0,
+                        ou_sim::BodyKind::Planet => 1,
+                        ou_sim::BodyKind::Moon => 2,
+                        ou_sim::BodyKind::GasGiant => 3,
+                        ou_sim::BodyKind::AsteroidBelt => 4,
+                        ou_sim::BodyKind::BlackHole => 5,
+                    },
+                    pos: center.add(rel.scale(SYSTEM_VISUAL_SCALE)),
+                    radius: b.radius * SYSTEM_VISUAL_SCALE,
+                }
+            })
+            .collect();
+        (sys.id, sys.name, bodies)
+    }
+
     /// Подключение игрока **на домашней планете** (точка появления на суше).
     ///
     /// Корабль привязывается к рельефу: работают гравитация и посадка.
@@ -1361,8 +1422,7 @@ mod tests {
     }
 
     #[test]
-    fn character_pose_is_replicated_to_other_players() {
-        let mut s = Server::new();
+    fn character_pose_is_replicated_to_other_players() {        let mut s = Server::new();
         let a = s.connect(1, Vec3::ZERO);
         s.connect(2, Vec3::new(20.0, 0.0, 0.0));
         s.tick(); // базовый снимок
@@ -1383,5 +1443,18 @@ mod tests {
             Message::ServerCharacter { entity, .. } if *entity == a
         ));
         assert!(!still, "после возврата в корабль поза не рассылается");
+    }
+
+    #[test]
+    fn system_description_has_star_and_planets() {
+        let s = Server::new();
+        let (id, name, bodies) = s.system_description();
+        assert_eq!(id, 0);
+        assert!(!name.is_empty(), "у системы есть имя");
+        // Есть звезда (kind 0) и планеты/газовые гиганты (1/3).
+        assert!(bodies.iter().any(|b| b.kind == 0), "есть звезда");
+        assert!(bodies.iter().any(|b| b.kind == 1 || b.kind == 3), "есть планеты");
+        // Радиусы положительные.
+        assert!(bodies.iter().all(|b| b.radius > 0.0));
     }
 }

@@ -410,6 +410,25 @@ void UOUClientNet::Poll()
 				}
 			}
 		}
+		else if (Body[0] == OUWire::TagSystem) // описание системы
+		{
+			OUWire::SystemInfo Info;
+			if (OUWire::DecodeSystem(Body.GetData(), static_cast<size_t>(Body.Num()), Info))
+			{
+				SystemName = FString(UTF8_TO_TCHAR(Info.Name.c_str()));
+				SystemBodies.Reset(static_cast<int32>(Info.Bodies.size()));
+				for (const OUWire::SystemBody& B : Info.Bodies)
+				{
+					FOUSystemBody S;
+					S.Id = static_cast<int32>(B.Id);
+					S.Kind = static_cast<int32>(B.Kind);
+					S.Position = FVector(B.X, B.Y, B.Z);
+					S.Radius = static_cast<float>(B.Radius);
+					SystemBodies.Add(S);
+				}
+				bSystemReceived = true;
+			}
+		}
 	}
 }
 

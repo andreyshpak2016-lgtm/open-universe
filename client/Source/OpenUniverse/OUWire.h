@@ -57,6 +57,7 @@ namespace OUWire
         TagRespawn = 16,
         TagClientCharacter = 17,
         TagServerCharacter = 18,
+        TagSystem = 19,
     };
 
     /// Действия редактора конструкций.
@@ -180,6 +181,23 @@ namespace OUWire
         float X = 0.f, Y = 0.f, Z = 0.f;
         float Yaw = 0.f;
         bool Moving = false;
+    };
+
+    /// Тело звёздной системы (сервер → клиент, тег 19).
+    struct SystemBody
+    {
+        uint32_t Id = 0;
+        uint8_t Kind = 0;
+        float X = 0.f, Y = 0.f, Z = 0.f;   // серверные единицы
+        double Radius = 0.0;               // серверные единицы
+    };
+
+    /// Описание звёздной системы (сервер → клиент, тег 19).
+    struct SystemInfo
+    {
+        uint32_t Id = 0;
+        std::string Name;
+        std::vector<SystemBody> Bodies;
     };
 
     // --- Низкоуровневое чтение ---
@@ -478,6 +496,54 @@ namespace OUWire
         out.X = static_cast<float>(px * WireToCm);
         out.Y = static_cast<float>(py * WireToCm);
         out.Z = static_cast<float>(pz * WireToCm);
+        return true;
+    }
+
+    /// Разобрать описание системы (tag 19). Позиции — в серверных единицах.
+    inline bool DecodeSystem(const uint8_t* body, size_t len, SystemInfo& out)
+    {
+        Reader r{body, len, 0};
+        uint8_t tag = 0;
+        if (!r.U8(tag) || tag != TagSystem) return false;
+        uint64_t id = 0;
+        if (!r.Varint(id)) return false;
+        out.Id = static_cast<uint32_t>(id);
+        // Строка: u16 длина + байты UTF-8.
+        uint16_t nlen = 0;
+        {
+            const uint8_t* p = nullptr;
+            if (!r.Take(2, p)) return false;
+            nlen = static_cast<uint16_t>(p[0] | (p[1] << 8));
+        }
+        const uint8_t* nb = nullptr;
+        if (!r.Take(nlen, nb)) return false;
+        out.Name.assign(reinterpret_cast<const char*>(nb), nlen);
+
+        uint64_t count = 0;
+        if (!r.Varint(count)) return false;
+        out.Bodies.clear();
+        out.Bodies.reserve(static_cast<size_t>(count));
+        for (uint64_t i = 0; i < count; ++i)
+        {
+            SystemBody b;
+            uint64_t bid = 0;
+            if (!r.Varint(bid)) return false;
+            b.Id = static_cast<uint32_t>(bid);
+            if (!r.U8(b.Kind)) return false;
+            int64_t px = 0, py = 0, pz = 0;
+            if (!r.SVarint(px) || !r.SVarint(py) || !r.SVarint(pz)) return false;
+            // Позиции в серверных единицах: 1 провод = 1e-4 игровых единиц.
+            b.X = static_cast<float>(px * WireScale);
+            b.Y = static_cast<float>(py * WireScale);
+            b.Z = static_cast<float>(pz * WireScale);
+            // f64 LE — радиус в серверных единицах.
+            const uint8_t* rb = nullptr;
+            if (!r.Take(8, rb)) return false;
+            uint64_t rbits = 0;
+            for (int k = 0; k < 8; ++k) { rbits |= static_cast<uint64_t>(rb[k]) << (8 * k); }
+            std::memcpy(&b.Radius, &rbits, 8);
+            out.Bodies.push_back(b);
+        }
         return true;
     }
 

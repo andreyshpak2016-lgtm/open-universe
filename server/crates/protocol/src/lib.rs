@@ -196,6 +196,24 @@ pub enum Message {
     ClientCharacter { entity: NetId, pos: Vec3, yaw: f32, moving: bool, active: bool },
     /// Сервер: поза чужого пешего персонажа (для отрисовки фигурки).
     ServerCharacter { entity: NetId, pos: Vec3, yaw: f32, moving: bool },
+    /// Сервер: описание звёздной системы (солнце и планеты) для отрисовки.
+    ///
+    /// Отправляется при подключении. Позиции — в СЕРВЕРНЫХ единицах,
+    /// относительно центра домашней планеты. Так клиент не хардкодит систему,
+    /// а рисует то, что сгенерировал сервер.
+    ServerSystem { id: u32, name: String, bodies: Vec<SystemBodyDto> },
+}
+
+/// Тело системы в сообщении (плоская копия `sim::Body` без лишних полей).
+#[derive(Clone, Debug, PartialEq)]
+pub struct SystemBodyDto {
+    pub id: u32,
+    /// Тип: 0 звезда, 1 планета, 2 луна, 3 газовый гигант, 4 пояс, 5 чёрная дыра.
+    pub kind: u8,
+    /// Позиция относительно центра домашней планеты, в серверных единицах.
+    pub pos: Vec3,
+    /// Радиус тела, в серверных единицах.
+    pub radius: f64,
 }
 
 /// Состоявшийся выстрел (сервер → клиенты).
@@ -318,6 +336,9 @@ mod wire {
         pub fn f32(&mut self, v: f32) {
             self.buf.extend_from_slice(&v.to_le_bytes());
         }
+        pub fn f64(&mut self, v: f64) {
+            self.buf.extend_from_slice(&v.to_le_bytes());
+        }
         pub fn str(&mut self, s: &str) {
             let b = s.as_bytes();
             self.u16(b.len() as u16);
@@ -409,6 +430,10 @@ mod wire {
             let b = self.take(4)?;
             Ok(f32::from_le_bytes([b[0], b[1], b[2], b[3]]))
         }
+        pub fn f64(&mut self) -> Result<f64, WireError> {
+            let b = self.take(8)?;
+            Ok(f64::from_le_bytes([b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7]]))
+        }
         pub fn str(&mut self) -> Result<String, WireError> {
             let n = self.u16()? as usize;
             let b = self.take(n)?;
@@ -465,6 +490,7 @@ mod wire {
     const TAG_RESPAWN: u8 = 16;
     const TAG_CLIENT_CHARACTER: u8 = 17;
     const TAG_SERVER_CHARACTER: u8 = 18;
+    const TAG_SYSTEM: u8 = 19;
 
     pub fn encode(msg: &Message) -> Vec<u8> {
         let mut w = Writer::new();
@@ -604,6 +630,18 @@ mod wire {
                 w.vec3_qv(*pos);
                 w.f32(*yaw);
                 w.bool(*moving);
+            }
+            Message::ServerSystem { id, name, bodies } => {
+                w.u8(TAG_SYSTEM);
+                w.varint(*id as u64);
+                w.str(name);
+                w.varint(bodies.len() as u64);
+                for b in bodies {
+                    w.varint(b.id as u64);
+                    w.u8(b.kind);
+                    w.vec3_qv(b.pos);
+                    w.f64(b.radius);
+                }
             }
         }
         w.buf
@@ -747,6 +785,21 @@ mod wire {
                 yaw: r.f32()?,
                 moving: r.bool()?,
             }),
+            TAG_SYSTEM => {
+                let id = r.varint()? as u32;
+                let name = r.str()?;
+                let n = r.varint()? as usize;
+                let mut bodies = Vec::with_capacity(n.min(1024));
+                for _ in 0..n {
+                    bodies.push(SystemBodyDto {
+                        id: r.varint()? as u32,
+                        kind: r.u8()?,
+                        pos: r.vec3_qv()?,
+                        radius: r.f64()?,
+                    });
+                }
+                Ok(Message::ServerSystem { id, name, bodies })
+            }
             other => Err(WireError::BadTag(other)),
         }
     }
@@ -932,6 +985,19 @@ mod tests {
         assert_eq!(decode(&encode(&death)).unwrap(), death);
         let respawn = Message::ServerRespawn { entity: 5, invuln_until: 4260 };
         assert_eq!(decode(&encode(&respawn)).unwrap(), respawn);
+    }
+
+    #[test]
+    fn system_roundtrip() {
+        let m = Message::ServerSystem {
+            id: 7,
+            name: "Alra-7".into(),
+            bodies: vec![
+                SystemBodyDto { id: 0, kind: 0, pos: Vec3::new(0.0, 0.0, 0.0), radius: 500.0 },
+                SystemBodyDto { id: 1, kind: 1, pos: Vec3::new(2500.0, 0.0, 0.0), radius: 120.5 },
+            ],
+        };
+        assert_eq!(decode(&encode(&m)).unwrap(), m);
     }
 
     #[test]

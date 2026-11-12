@@ -334,6 +334,33 @@ int main(int argc, char** argv)
         Check(OUWire::DecodeCharacter(scb.data(), scb.size(), cp), "поза персонажа разобрана");
         Check(cp.Entity == 2 && std::fabs(cp.X - 125.0f) < 0.01f && std::fabs(cp.Z - 400.0f) < 0.01f && cp.Moving,
               "поля позы персонажа совпали");
+
+        // Система (тег 19): имя, тела с позицией и радиусом (f64).
+        std::vector<uint8_t> sysb;
+        sysb.push_back(OUWire::TagSystem);
+        OUWire::push_varint(sysb, 7);           // id
+        const char* nm = "Alra-7";
+        const uint16_t nlen = 6;
+        sysb.push_back(nlen & 0xFF); sysb.push_back((nlen >> 8) & 0xFF);
+        for (int k = 0; k < nlen; ++k) sysb.push_back(nm[k]);
+        OUWire::push_varint(sysb, 1);           // одно тело
+        OUWire::push_varint(sysb, 1);           // body id
+        sysb.push_back(1);                      // kind=планета
+        auto push_svarint_sys = [&sysb](int64_t v) {
+            uint64_t zz = (static_cast<uint64_t>(v) << 1) ^ static_cast<uint64_t>(v >> 63);
+            while (zz >= 0x80) { sysb.push_back(static_cast<uint8_t>(zz) | 0x80); zz >>= 7; }
+            sysb.push_back(static_cast<uint8_t>(zz));
+        };
+        push_svarint_sys(250000); push_svarint_sys(0); push_svarint_sys(0);  // pos (серверные ед.)
+        double rad = 120.0;
+        uint64_t radBits = 0; std::memcpy(&radBits, &rad, 8);
+        for (int k = 0; k < 8; ++k) sysb.push_back((radBits >> (8 * k)) & 0xFF);
+        OUWire::SystemInfo si;
+        Check(OUWire::DecodeSystem(sysb.data(), sysb.size(), si), "система разобрана");
+        Check(si.Id == 7 && si.Name == "Alra-7" && si.Bodies.size() == 1, "id/имя/число тел совпали");
+        Check(si.Bodies.size() == 1 && si.Bodies[0].Kind == 1 &&
+              std::fabs(si.Bodies[0].X - 25.0f) < 0.01f && std::fabs(si.Bodies[0].Radius - 120.0) < 1e-9,
+              "тело системы совпало (позиция в серверных единицах, f64 радиус)");
     }
 
     std::printf("\n=== Итог ===\n");
