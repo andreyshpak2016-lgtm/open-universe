@@ -1,14 +1,14 @@
 {
-    "generated": 1794487390,
+    "generated": 1794491339,
     "ok": true,
     "server": true,
     "client": true,
     "simulation": true,
     "spawnOnPlanet": true,
-    "spawnHeightAboveSurface": 1.701648717745229,
+    "spawnHeightAboveSurface": 1.7036862873937935,
     "tick": 11,
     "entityId": 1,
-    "latencyMs": 33.945299999999996,
+    "latencyMs": 33.8067,
     "planet": "home",
     "notes": ""
 }
