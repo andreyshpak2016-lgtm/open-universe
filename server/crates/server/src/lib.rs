@@ -303,6 +303,12 @@ impl Server {
         let destroyed = self.hulls.get(&target).map(|h| h.is_destroyed()).unwrap_or(false);
         let damage = outcome.shield_damage + outcome.armor_damage + outcome.core_damage;
 
+        // Уничтоженную цель-дрон убираем из мира (у игроков есть соединение —
+        // их не удаляем: игрок «возрождается» логикой выше).
+        if destroyed && !self.connections.values().any(|c| c.entity_id == target) {
+            self.despawn(target);
+        }
+
         Some(ShotEvent {
             attacker,
             target,
@@ -355,6 +361,31 @@ impl Server {
         let entity_id = self.connect(player_id, ou_sim::home_spawn(2.0));
         self.world.attach_terrain(entity_id, ou_sim::home_planet());
         entity_id
+    }
+
+    /// Создать цель-дрон (мишень без игрока).
+    ///
+    /// У дрона есть корпус (без щита, средняя броня), но нет соединения и
+    /// оружия: он служит целью для проверки боя и виден всем рядом. Дрон
+    /// «висит» в воздухе (гравитацию к нему не привязываем).
+    pub fn spawn_target(&mut self, pos: Vec3) -> NetId {
+        let entity_id = self.next_entity_id;
+        self.next_entity_id += 1;
+        self.world.spawn(entity_id, pos);
+        self.hulls.insert(entity_id, ShipHull::new(0, 40));
+        entity_id
+    }
+
+    /// Убрать сущность из мира (например, уничтоженную в бою).
+    pub fn despawn(&mut self, entity: NetId) {
+        self.world.entities.remove(&entity);
+        self.hulls.remove(&entity);
+        self.weapons.remove(&entity);
+        self.last_fire_tick.remove(&entity);
+        self.shot_seq.remove(&entity);
+        self.constructions.remove(&entity);
+        self.scripted.remove(&entity);
+        self.grid.remove(entity);
     }
 
     /// Продолжить нумерацию сущностей после загрузки мира из снимка,
@@ -934,6 +965,29 @@ mod tests {
         assert!(
             msgs.iter().any(|m| matches!(m, Message::ServerShot(_))),
             "игрок 2 должен увидеть событие выстрела"
+        );
+    }
+
+    #[test]
+    fn drone_takes_damage_and_is_removed_when_destroyed() {
+        let mut s = Server::new();
+        let a = s.connect(1, Vec3::ZERO);
+        let drone = s.spawn_target(Vec3::new(60.0, 0.0, 0.0));
+        assert!(s.hulls.contains_key(&drone));
+        // Бьём дрона, пока не уничтожим (перезарядка 4 тика).
+        let mut destroyed = false;
+        for tick in (1..200u64).step_by(5) {
+            if let Some(ev) = s.resolve_fire(a, tick) {
+                if ev.target == drone && ev.destroyed {
+                    destroyed = true;
+                    break;
+                }
+            }
+        }
+        assert!(destroyed, "дрон должен быть уничтожен");
+        assert!(
+            !s.world.entities.contains_key(&drone),
+            "уничтоженный дрон убирается из мира"
         );
     }
 }

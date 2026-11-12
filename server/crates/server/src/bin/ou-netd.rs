@@ -44,6 +44,40 @@ fn main() {
         Ok(_) => println!("мир пуст — начинаем новый (каталог «{world_dir}»)"),
         Err(e) => println!("снимок мира не прочитан ({e}) — начинаем новый"),
     }
+
+    // Мишени-дроны у точки появления: цель для проверки боя. Висят невысоко
+    // над поверхностью, в стороне от игрока, чтобы в них можно было стрелять.
+    {
+        let base = ou_sim::home_spawn(2.0);
+        let up = {
+            let l = (base.x * base.x + base.y * base.y + base.z * base.z).sqrt();
+            if l > 1e-6 { Vec3::new(base.x / l, base.y / l, base.z / l) } else { Vec3::new(0.0, 1.0, 0.0) }
+        };
+        // Касательный «вперёд» (мировой +X, спроецированный на плоскость).
+        let mut fwd = Vec3::new(1.0, 0.0, 0.0);
+        let d = fwd.dot(up);
+        fwd = Vec3::new(fwd.x - up.x * d, fwd.y - up.y * d, fwd.z - up.z * d);
+        let fl = (fwd.x * fwd.x + fwd.y * fwd.y + fwd.z * fwd.z).sqrt();
+        if fl > 1e-6 { fwd = Vec3::new(fwd.x / fl, fwd.y / fl, fwd.z / fl); }
+        for i in 0..3 {
+            let dist = 40.0 + i as f64 * 30.0;   // 40/70/100 м впереди
+            let side = if i % 2 == 0 { 1.0 } else { -1.0 } * 20.0;
+            let p = Vec3::new(
+                base.x + fwd.x * dist + up.x * 15.0,
+                base.y + fwd.y * dist + up.y * 15.0,
+                base.z + fwd.z * dist + up.z * 15.0,
+            );
+            // side — по касательному «вправо» (упрощённо, через up×fwd).
+            let right = Vec3::new(
+                up.y * fwd.z - up.z * fwd.y,
+                up.z * fwd.x - up.x * fwd.z,
+                up.x * fwd.y - up.y * fwd.x,
+            );
+            let p = Vec3::new(p.x + right.x * side, p.y + right.y * side, p.z + right.z * side);
+            let id = server.spawn_target(p);
+            println!("дрон-мишень {id} в ({:.0}, {:.0}, {:.0})", p.x, p.y, p.z);
+        }
+    }
     println!("работаю {seconds} с...\n");
 
     let mut clients: BTreeMap<SocketAddr, NetId> = BTreeMap::new();

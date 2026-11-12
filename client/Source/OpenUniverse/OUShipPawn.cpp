@@ -195,6 +195,16 @@ void AOUShipPawn::DrawCombatEffects()
 		{
 			DrawDebugPoint(World, To, 18.f, FColor(255, 120, 60), false, 0.15f);
 		}
+		// Цель уничтожена — убираем её актор с экрана сразу (в дельта-снимке
+		// исчезновение сущности не приходит, только в baseline).
+		if (S.bDestroyed && S.Target != 0)
+		{
+			if (TObjectPtr<AActor>* TA = RemoteActors.Find(S.Target))
+			{
+				if (*TA) { (*TA)->Destroy(); }
+				RemoteActors.Remove(S.Target);
+			}
+		}
 	}
 	Net->PendingShots.Reset();
 }
@@ -493,6 +503,8 @@ void AOUShipPawn::Tick(float DeltaSeconds)
 			}
 			if (Net->IsConnected())
 			{
+				// Рисуем других (дроны/чужие корабли) — иначе цели не видно.
+				UpdateRemotePlayers();
 				// Тестовый авто-огонь работает и у припаркованного корабля:
 				// шлём кадр с огнём (без тяги), чтобы проверить бой.
 				if (FParse::Param(FCommandLine::Get(), TEXT("OUAutoFire")))
