@@ -3,6 +3,7 @@
 #include "OUVoxelPlanet.h"
 #include "OUInterop.h"
 #include "ProceduralMeshComponent.h"
+#include "EngineUtils.h"
 #include "Materials/MaterialInterface.h"
 #include "UObject/ConstructorHelpers.h"
 
@@ -157,13 +158,78 @@ float AOUVoxelPlanet::SurfaceRadiusAt(const FVector& Direction) const
 	return Radius + HeightAt(Direction);
 }
 
+FLinearColor AOUVoxelPlanet::SurfaceColor(float Height) const
+{
+	const float T = FMath::Clamp(Height / (Amplitude * 2.f), 0.f, 1.f);
+	const bool bWater = Height <= 0.f;
+	switch (PlanetType)
+	{
+	case EOUPlanetType::Desert:
+	{
+		// Пески и каньоны: нет воды, от оранжевого к красноватому и светлому.
+		const FLinearColor Sand(0.82f, 0.62f, 0.32f);
+		const FLinearColor Canyon(0.55f, 0.28f, 0.16f);
+		const FLinearColor Peak(0.90f, 0.82f, 0.62f);
+		return T < 0.5f
+			? FLinearColor::LerpUsingHSV(Canyon, Sand, T / 0.5f)
+			: FLinearColor::LerpUsingHSV(Sand, Peak, (T - 0.5f) / 0.5f);
+	}
+	case EOUPlanetType::Ice:
+	{
+		// Лёд: голубой лёд в низинах, снег выше.
+		if (bWater)
+		{
+			return FLinearColor(0.15f, 0.45f, 0.75f);
+		}
+		const FLinearColor Ice(0.55f, 0.78f, 0.92f);
+		const FLinearColor Snow(0.97f, 0.99f, 1.0f);
+		return FLinearColor::LerpUsingHSV(Ice, Snow, T);
+	}
+	case EOUPlanetType::Volcanic:
+	{
+		// Тёмная порода и раскалённые трещины: низины — «лава».
+		if (bWater)
+		{
+			return FLinearColor(0.95f, 0.30f, 0.05f); // лава
+		}
+		const FLinearColor Basalt(0.12f, 0.10f, 0.11f);
+		const FLinearColor Ash(0.35f, 0.30f, 0.30f);
+		return FLinearColor::LerpUsingHSV(Basalt, Ash, T);
+	}
+	case EOUPlanetType::GasGiant:
+	{
+		// Газовый гигант: светлые полосы, без «земли».
+		const FLinearColor Band1(0.86f, 0.74f, 0.55f);
+		const FLinearColor Band2(0.62f, 0.48f, 0.34f);
+		const float Band = FMath::Frac(Height * 0.08f) < 0.5f ? 0.f : 1.f;
+		return Band < 0.5f ? Band1 : Band2;
+	}
+	case EOUPlanetType::Terran:
+	default:
+	{
+		if (bWater)
+		{
+			return FLinearColor(0.03f, 0.12f, 0.42f); // океан
+		}
+		const FLinearColor Beach(0.80f, 0.72f, 0.45f);
+		const FLinearColor Grass(0.13f, 0.40f, 0.13f);
+		const FLinearColor Snow(0.95f, 0.96f, 0.99f);
+		if (T < 0.35f)
+		{
+			return FLinearColor::LerpUsingHSV(Beach, Grass, T / 0.35f);
+		}
+		return FLinearColor::LerpUsingHSV(Grass, Snow, (T - 0.35f) / 0.65f);
+	}
+	}
+}
+
 FVector AOUVoxelPlanet::HomeSpawnDirectionServer()
 {
 	// Совпадает с сервером (`ou_sim::home_spawn_direction`): фиксированный
 	// обход сферы в СЕРВЕРНЫХ осях, ищем первое «сухое» направление с заметной,
 	// но не пиковой высотой. Результат — в серверных осях.
 	AOUVoxelPlanet* Probe = NewObject<AOUVoxelPlanet>();
-	Probe->Radius = 1000.f;
+	Probe->Radius = 8000.f;   // серверные единицы (совпадает с ou_sim::HOME_PLANET_RADIUS)
 	Probe->Amplitude = 60.f;
 	Probe->Seed = 0xC0FFEE;
 
@@ -195,12 +261,12 @@ FVector AOUVoxelPlanet::HomeSpawnDirection()
 
 FVector AOUVoxelPlanet::HomeSpawnServer(float Clearance)
 {
-	// Точка появления в СЕРВЕРНЫХ единицах (радиус 1000, амплитуда 30).
+	// Точка появления в СЕРВЕРНЫХ единицах (радиус 8000, амплитуда 60).
 	// Без перевода в UE — чтобы не путаться с масштабом: корабль хранит
 	// позицию именно в серверных единицах.
 	const FVector DirS = HomeSpawnDirectionServer();
 	AOUVoxelPlanet* Probe = NewObject<AOUVoxelPlanet>();
-	Probe->Radius = 1000.f;
+	Probe->Radius = 8000.f;
 	Probe->Amplitude = 60.f;
 	Probe->Seed = 0xC0FFEE;
 	const float Surface = Probe->SurfaceRadiusAtServer(DirS);
@@ -211,6 +277,33 @@ FVector AOUVoxelPlanet::HomeSpawn(float Clearance)
 {
 	// Точка появления в UE-осях и UE-сантиметрах (для установки актора).
 	return OUInterop::ServerToUE(HomeSpawnServer(Clearance));
+}
+
+AOUVoxelPlanet* AOUVoxelPlanet::FindHomePlanet(UWorld* World)
+{
+	if (!World)
+	{
+		return nullptr;
+	}
+	// Домашняя планета помечена bHomePlanet; если такой нет — берём первую.
+	AOUVoxelPlanet* Fallback = nullptr;
+	for (TActorIterator<AOUVoxelPlanet> It(World); It; ++It)
+	{
+		AOUVoxelPlanet* P = *It;
+		if (!P)
+		{
+			continue;
+		}
+		if (P->bHomePlanet)
+		{
+			return P;
+		}
+		if (!Fallback)
+		{
+			Fallback = P;
+		}
+	}
+	return Fallback;
 }
 
 void AOUVoxelPlanet::BuildPlanet()
@@ -264,26 +357,8 @@ void AOUVoxelPlanet::BuildPlanet()
 				Normals.Add(Dir);
 				UVs.Add(FVector2D(U * 0.5f + 0.5f, Vv * 0.5f + 0.5f));
 
-				// Цвет по высоте: вода (синяя) → песок → трава → снег.
-				// Используем FLinearColor: CreateMeshSection_LinearColor ждёт его.
-				FLinearColor Color;
-				if (Height <= 0.f)
-				{
-					Color = FLinearColor(0.03f, 0.12f, 0.42f); // океан
-				}
-				else
-				{
-					const float T = FMath::Clamp(Height / (Amplitude * 2.f), 0.f, 1.f);
-					if (T < 0.35f)
-					{
-						Color = FLinearColor::LerpUsingHSV(FLinearColor(0.8f, 0.72f, 0.45f), FLinearColor(0.13f, 0.4f, 0.13f), T / 0.35f);
-					}
-					else
-					{
-						Color = FLinearColor::LerpUsingHSV(FLinearColor(0.13f, 0.4f, 0.13f), FLinearColor(0.95f, 0.96f, 0.99f), (T - 0.35f) / 0.65f);
-					}
-				}
-				Colors.Add(Color);
+				// Цвет по высоте и типу планеты (океан/песок/трава/снег и т.д.).
+				Colors.Add(SurfaceColor(Height));
 				Tangents.Add(FProcMeshTangent(1.f, 0.f, 0.f));
 			}
 		}

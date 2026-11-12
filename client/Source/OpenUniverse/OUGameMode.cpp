@@ -5,6 +5,8 @@
 #include "OUOriginManager.h"
 #include "OUVoxelPlanet.h"
 #include "OUSurfaceBase.h"
+#include "OUSolarBody.h"
+#include "OUInterop.h"
 #include "OUPlayerMenuController.h"
 #include "OUPlayerMenuHUD.h"
 
@@ -29,8 +31,7 @@ namespace
 	 * Центр домашней планеты в осях UE.
 	 *
 	 * Совпадает с сервером: домашняя планета расположена в начале координат
-	 * мира (`ou_sim::home_planet`). Игрок появляется на её поверхности, поэтому
-	 * планета — в центре сцены, а не в стороне.
+	 * мира (`ou_sim::home_planet`). Игрок появляется на её поверхности.
 	 */
 	const FVector GPlanetOffset(0.f, 0.f, 0.f);
 }
@@ -59,7 +60,6 @@ void AOUGameMode::BeginPlay()
 	// Автоснимок для отчётов/витрины: через движок, чтобы не зависеть от фокуса.
 	if (bAutoScreenshots)
 	{
-		// Небольшая задержка: даём сцене и PIE полностью инициализироваться.
 		RequestShot(TEXT("start"));
 	}
 }
@@ -77,8 +77,6 @@ void AOUGameMode::RequestShot(const FString& Label)
 	{
 		return;
 	}
-	// Просим у движка снимок следующего кадра. Имя содержит метку и время,
-	// файл попадёт в <проект>/Saved/Screenshots/.
 	FScreenshotRequest::RequestScreenshot(
 		FString::Printf(TEXT("OU_%s_%s"), *Label, *FDateTime::Now().ToString(TEXT("%H%M%S"))),
 		/*bShowUI=*/false, /*bAddFilenameSuffix=*/false);
@@ -88,9 +86,8 @@ void AOUGameMode::RequestShot(const FString& Label)
 AActor* AOUGameMode::ChoosePlayerStart_Implementation(AController* Player)
 {
 	// На пустой карте PlayerStart отсутствует — тогда UE не создаёт Pawn и
-	// камеры нет (тот самый чёрный экран). Создаём точку старта сами,
-	// **на поверхности домашней планеты**, чтобы игрок появлялся на суше
-	// с ландшафтом, а не в пустоте.
+	// камеры нет (чёрный экран). Создаём точку старта сами, **на поверхности
+	// домашней планеты**, чтобы игрок появлялся на суше с ландшафтом.
 	AActor* Existing = Super::ChoosePlayerStart_Implementation(Player);
 	if (Existing)
 	{
@@ -102,9 +99,7 @@ AActor* AOUGameMode::ChoosePlayerStart_Implementation(AController* Player)
 	{
 		return nullptr;
 	}
-	// Точка на суше у поверхности (совпадает с сервером).
 	const FVector Spawn = AOUVoxelPlanet::HomeSpawn(200.f);
-	// Смотрим «вниз» на горизонт, чтобы в кадре был рельеф.
 	APlayerStart* Start = World->SpawnActor<APlayerStart>(
 		APlayerStart::StaticClass(),
 		FTransform(FRotator(-15.f, 0.f, 0.f), Spawn));
@@ -132,7 +127,7 @@ void AOUGameMode::BuildWorld()
 		World->SpawnActor<ASkyAtmosphere>(ASkyAtmosphere::StaticClass(), FTransform::Identity);
 	}
 
-	// --- Солнце ---
+	// --- Солнце (светило) ---
 	if (!Has(ADirectionalLight::StaticClass()))
 	{
 		const FTransform SunT(FRotator(-45.f, -35.f, 0.f), FVector(0.f, 0.f, 200000.f));
@@ -160,20 +155,111 @@ void AOUGameMode::BuildWorld()
 		}
 	}
 
-	// --- Атмосферный туман ---
-	// В космической сцене туман не нужен: при настройках по умолчанию он
-	// полностью скрывает объекты на дистанции в километры (планета «исчезала»).
-	// Поэтому туман не создаём.
-
-	// --- Планета ---
-	if (!Has(AOUVoxelPlanet::StaticClass()))
+	// --- Домашняя планета (на ней появляется игрок и стоит база) ---
+	// Сцену собираем детерминированно: убираем прежние тела (карта могла
+	// содержать планету из редактора) и создаём ровно один набор.
 	{
-		AOUVoxelPlanet* Planet = World->SpawnActor<AOUVoxelPlanet>(
-			AOUVoxelPlanet::StaticClass(),
-			FTransform(FRotator::ZeroRotator, GPlanetOffset));
-		if (Planet)
+		TArray<AActor*> Old;
+		for (TActorIterator<AOUVoxelPlanet> It(World); It; ++It) { Old.Add(*It); }
+		for (TActorIterator<AOUSolarBody> It(World); It; ++It) { Old.Add(*It); }
+		for (TActorIterator<AOUSurfaceBase> It(World); It; ++It) { Old.Add(*It); }
+		for (AActor* A : Old) { if (A) { A->Destroy(); } }
+	}
+
+	AOUVoxelPlanet* Home = World->SpawnActor<AOUVoxelPlanet>(
+		AOUVoxelPlanet::StaticClass(),
+		FTransform(FRotator::ZeroRotator, GPlanetOffset));
+	if (Home)
+	{
+		Home->PlanetType = EOUPlanetType::Terran;
+		Home->bHomePlanet = true;
+		Home->Radius = 800000.f;      // 8 км в UE-сантиметрах (как на сервере)
+		Home->Amplitude = 6000.f;
+		Home->BuildPlanet();
+	}
+
+	// --- Солнечная система: солнце и ещё три разные планеты ---
+	// Раскладываем их далеко в НЕБЕ над игроком, чтобы в кадре читалась
+	// система, а не «одна планета перед камерой». Это декоративные тела:
+	// на них не садятся (домашняя — в центре, на ней стоит игрок).
+	{
+		// Базис «неба»: Up — от центра планеты к точке появления (UE-оси).
+		FVector Up = AOUVoxelPlanet::HomeSpawnDirection();   // единичный, UE
+		if (Up.IsNearlyZero())
 		{
-			Planet->BuildPlanet();
+			Up = FVector::UpVector;
+		}
+		FVector T1 = FVector::CrossProduct(Up, FVector::UpVector);
+		if (T1.SizeSquared() < 1e-4f)
+		{
+			T1 = FVector::CrossProduct(Up, FVector::RightVector);
+		}
+		T1 = T1.GetSafeNormal();
+		const FVector T2 = FVector::CrossProduct(Up, T1).GetSafeNormal();
+
+		// Направление «вперёд» игрока у поверхности: та же касательная, что
+		// строит корабль (forward по умолчанию — мировой +X, спроецированный
+		// на плоскость поверхности). Вокруг неё и раскладываем планеты.
+		FVector Fwd = FVector::VectorPlaneProject(FVector(1.f, 0.f, 0.f), Up);
+		if (Fwd.SizeSquared() < 1e-4f)
+		{
+			Fwd = T1;
+		}
+		Fwd = Fwd.GetSafeNormal();
+		// Базис вокруг направления взгляда: B — «вправо» в плоскости горизонта.
+		const FVector B = FVector::CrossProduct(Up, Fwd).GetSafeNormal();
+		UE_LOG(LogOUGameMode, Log, TEXT("Взгляд игрока: fwd=(%.2f,%.2f,%.2f) up=(%.2f,%.2f,%.2f)"),
+			Fwd.X, Fwd.Y, Fwd.Z, Up.X, Up.Y, Up.Z);
+
+		// Планета на горизонте: горизонт — это касательная плоскость, поэтому
+		// берём направление чуть выше неё (Elev) под углом Azim к взгляду.
+		auto SkyAt = [&](float AzimDeg, float ElevDeg, float Dist) -> FVector
+		{
+			const float A = FMath::DegreesToRadians(AzimDeg);
+			const float E = FMath::DegreesToRadians(ElevDeg);
+			const FVector Horiz = (Fwd * FMath::Cos(A) + B * FMath::Sin(A)).GetSafeNormal();
+			return (Horiz * FMath::Cos(E) + Up * FMath::Sin(E)).GetSafeNormal() * Dist;
+		};
+
+		// Солнце: крупная звезда высоко в небе.
+		if (!Has(AOUSolarBody::StaticClass()))
+		{
+			AOUSolarBody* Star = World->SpawnActor<AOUSolarBody>(
+				AOUSolarBody::StaticClass(),
+				FTransform(FRotator::ZeroRotator, SkyAt(-25.f, 32.f, 1500000.f)));
+			if (Star)
+			{
+				Star->Kind = EOUSolarKind::Star;
+				Star->BodyRadiusCm = 150000.f;   // 1.5 км — крупная звезда вдали
+				Star->BodyColor = FLinearColor(1.0f, 0.86f, 0.35f);
+				Star->BuildBody();
+			}
+		}
+
+		// Три планеты: разные типы, дистанции и направления в небе.
+		// Раскладываем их в поле зрения игрока (вокруг «вперёд»), чуть выше
+		// горизонта, чтобы они читались как планеты в небе.
+		struct FPlanetDef { EOUPlanetType Type; float Azim; float Elev; float DistCm; float RadiusCm; };
+		const FPlanetDef Defs[] = {
+			{ EOUPlanetType::Desert,   15.f, 22.f, 900000.f,  70000.f },
+			{ EOUPlanetType::Ice,      55.f, 16.f, 1000000.f, 60000.f },
+			{ EOUPlanetType::GasGiant, -45.f, 26.f, 1200000.f, 160000.f },
+		};
+		for (const FPlanetDef& D : Defs)
+		{
+			const FVector Pos = SkyAt(D.Azim, D.Elev, D.DistCm);
+			AOUVoxelPlanet* P = World->SpawnActor<AOUVoxelPlanet>(
+				AOUVoxelPlanet::StaticClass(),
+				FTransform(FRotator::ZeroRotator, Pos));
+			if (P)
+			{
+				P->PlanetType = D.Type;
+				P->bHomePlanet = false;
+				P->Radius = D.RadiusCm;
+				P->Amplitude = D.RadiusCm * 0.06f;
+				P->Lod = EOUVoxelLod::Mid;   // дальние планеты — детализация ниже
+				P->BuildPlanet();
+			}
 		}
 	}
 
@@ -198,5 +284,5 @@ void AOUGameMode::BuildWorld()
 		World->SpawnActor<AUOOriginManager>(AUOOriginManager::StaticClass(), FTransform::Identity);
 	}
 
-	UE_LOG(LogOUGameMode, Log, TEXT("Сцена Open Universe собрана: свет, небо, туман, планета, floating origin"));
+	UE_LOG(LogOUGameMode, Log, TEXT("Сцена Open Universe собрана: свет, небо, планета, солнечная система, база, floating origin"));
 }

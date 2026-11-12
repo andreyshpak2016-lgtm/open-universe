@@ -21,7 +21,7 @@ DEFINE_LOG_CATEGORY_STATIC(LogOUShip, Log, All);
 namespace
 {
 	/** Радиус домашней планеты в серверных единицах (совпадает с сервером). */
-	constexpr double OUPlanetRadius = 1000.0;
+	constexpr double OUPlanetRadius = 8000.0;
 	/** Ускорение свободного падения у поверхности, ед/с² (как на сервере). */
 	constexpr double OUSurfaceGravity = 18.0;
 	/** До какого расстояния (в радиусах) действует гравитация. */
@@ -77,7 +77,7 @@ AOUShipPawn::AOUShipPawn()
 	SpringArm = CreateDefaultSubobject<USpringArmComponent>(TEXT("SpringArm"));
 	SpringArm->SetupAttachment(RootComponent);
 	SpringArm->TargetArmLength = 4200.f;
-	SpringArm->SetRelativeRotation(FRotator(-22.f, 0.f, 0.f));
+	SpringArm->SetRelativeRotation(FRotator(-8.f, 0.f, 0.f));
 	SpringArm->bDoCollisionTest = false;
 	SpringArm->bUsePawnControlRotation = false;
 
@@ -171,8 +171,7 @@ void AOUShipPawn::ExitShip()
 	FVector Spawn = ShipPos + Side * 4000.f;
 	// Привязываем к рельефу.
 	const FVector Dir = Spawn.GetSafeNormal();
-	if (AOUVoxelPlanet* Planet = Cast<AOUVoxelPlanet>(
-		UGameplayStatics::GetActorOfClass(World, AOUVoxelPlanet::StaticClass())))
+	if (AOUVoxelPlanet* Planet = AOUVoxelPlanet::FindHomePlanet(World))
 	{
 		Spawn = Dir * (Planet->SurfaceRadiusAt(Dir) + 95.f);
 	}
@@ -294,8 +293,7 @@ void AOUShipPawn::StepPrediction(const FOUInputFrame& Input, float Dt)
 	if (Dist > 1e-6)
 	{
 		const FVector UpS = Rel / Dist;                    // серверные оси
-		AOUVoxelPlanet* Planet = Cast<AOUVoxelPlanet>(
-			UGameplayStatics::GetActorOfClass(GetWorld(), AOUVoxelPlanet::StaticClass()));
+		AOUVoxelPlanet* Planet = AOUVoxelPlanet::FindHomePlanet(GetWorld());
 		// Поверхность в серверных единицах (Radius/Amplitude актора → у.е.).
 		const double ToWorld = 1.0 / OUInterop::ServerUnitToCm;
 		const double SurfaceR = Planet

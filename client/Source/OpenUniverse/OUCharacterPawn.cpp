@@ -52,8 +52,7 @@ void AOUCharacterPawn::BeginPlay()
 
 float AOUCharacterPawn::SurfaceRadius(const FVector& DirUE) const
 {
-	if (AOUVoxelPlanet* Planet = Cast<AOUVoxelPlanet>(
-		UGameplayStatics::GetActorOfClass(GetWorld(), AOUVoxelPlanet::StaticClass())))
+	if (AOUVoxelPlanet* Planet = AOUVoxelPlanet::FindHomePlanet(GetWorld()))
 	{
 		return Planet->SurfaceRadiusAt(DirUE);   // см UE
 	}

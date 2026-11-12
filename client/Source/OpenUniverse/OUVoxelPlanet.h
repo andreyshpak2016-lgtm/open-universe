@@ -20,6 +20,25 @@ enum class EOUVoxelLod : uint8
 };
 
 /**
+ * Тип планеты — задаёт палитру поверхности и характер рельефа.
+ * Нужен, чтобы планеты в системе были визуально разными.
+ */
+UENUM(BlueprintType)
+enum class EOUPlanetType : uint8
+{
+	/** Землеподобная: океан, трава, снег (домашняя планета игрока). */
+	Terran UMETA(DisplayName = "Землеподобная"),
+	/** Пустынная: пески, каньоны, без воды. */
+	Desert UMETA(DisplayName = "Пустынная"),
+	/** Ледяная: снег и голубой лёд. */
+	Ice UMETA(DisplayName = "Ледяная"),
+	/** Вулканическая: тёмная порода и раскалённые трещины. */
+	Volcanic UMETA(DisplayName = "Вулканическая"),
+	/** Газовая: без рельефа, полосы (юпитер-подобная). */
+	GasGiant UMETA(DisplayName = "Газовый гигант")
+};
+
+/**
  * Воксельная планета.
  *
  * Повторяет серверную геометрию (`crates/render/src/voxel.rs`):
@@ -39,9 +58,9 @@ class OPENUNIVERSE_API AOUVoxelPlanet : public AActor
 public:
 	AOUVoxelPlanet();
 
-	/** Радиус планеты (уровень океана), см UE. */
+	/** Радиус планеты (уровень океана), см UE. 8 км — как на сервере (8000 ед. × 100). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Open Universe|Planet")
-	float Radius = 100000.f; // 1 км
+	float Radius = 800000.f;
 
 	/** Размах рельефа, см. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Open Universe|Planet")
@@ -54,6 +73,14 @@ public:
 	/** Уровень детализации. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Open Universe|Planet")
 	EOUVoxelLod Lod = EOUVoxelLod::Close;
+
+	/** Тип планеты (палитра и характер рельефа). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Open Universe|Planet")
+	EOUPlanetType PlanetType = EOUPlanetType::Terran;
+
+	/** Можно ли строить/приземляться на этой планете (домашняя — да). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Open Universe|Planet")
+	bool bHomePlanet = false;
 
 	/** Построить меш планеты. */
 	UFUNCTION(BlueprintCallable, CallInEditor, Category = "Open Universe|Planet")
@@ -90,6 +117,14 @@ public:
 	/** Точка появления в СЕРВЕРНЫХ единицах (как хранит корабль). */
 	static FVector HomeSpawnServer(float Clearance);
 
+	/**
+	 * Найти домашнюю планету (ту, где стоит игрок и база).
+	 *
+	 * В системе несколько планет (`AOUVoxelPlanet`), поэтому обычный
+	 * `GetActorOfClass` вернул бы любую. Домашняя помечена `bHomePlanet`.
+	 */
+	static AOUVoxelPlanet* FindHomePlanet(UWorld* World);
+
 	/** Точка появления над поверхностью (на `Clearance` ед. сервера), UE-оси. */
 	UFUNCTION(BlueprintPure, Category = "Open Universe|Planet")
 	static FVector HomeSpawn(float Clearance);
@@ -106,6 +141,9 @@ protected:
 	/** Материал планеты (назначается на все секции меша). */
 	UPROPERTY(Transient)
 	TObjectPtr<class UMaterialInterface> PlanetMaterial = nullptr;
+
+	/** Цвет поверхности по высоте и типу планеты. */
+	FLinearColor SurfaceColor(float Height) const;
 
 private:
 	/** Детерминированный шум рельефа (совпадает с сервером). */
