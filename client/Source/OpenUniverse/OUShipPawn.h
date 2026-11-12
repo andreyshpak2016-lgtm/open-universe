@@ -63,6 +63,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Open Universe|Net")
 	void SetInputEnabled(bool bEnabled) { bInputEnabled = bEnabled; }
 
+	/** Текущий персонаж этого корабля (при выходе из кабины), иначе nullptr. */
+	UPROPERTY(BlueprintReadWrite, Category = "Open Universe|Flight")
+	AOUCharacterPawn* Character = nullptr;
+
 	/** Вернуться в корабль (вызывает персонаж при зажатии F рядом с кораблём). */
 	UFUNCTION(BlueprintCallable, Category = "Open Universe|Flight")
 	void EnterShip(AOUCharacterPawn* FromCharacter);
@@ -96,10 +100,6 @@ protected:
 	/** Порог удержания F, с. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Open Universe|Flight")
 	float ExitHoldThreshold = 0.6f;
-
-	/** Текущий персонаж (когда вышли из корабля), иначе nullptr. */
-	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Flight")
-	AOUCharacterPawn* Character = nullptr;
 
 	/** Обновить визуализацию других игроков из последнего снимка. */
 	void UpdateRemotePlayers();

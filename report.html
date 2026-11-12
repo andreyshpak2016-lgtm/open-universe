@@ -198,10 +198,12 @@ $ cargo run -p ou-script --bin ou-script-demo
       <figcaption data-i18n="rep.fig.shipping"><b>The finished game</b> <code>OpenUniverse.exe</code> — a built Shipping version: it launches on a double click <b>without installing Unreal Engine</b>. It is installed by <code>OpenUniverse-Game-Setup</code> (~180 MB): shortcuts in the Start menu and on the desktop.</figcaption>
     </figure>
 
+    <h3 data-i18n="rep.h.solarsystem">Solar system and the player on foot</h3>
     <figure class="shot">
-      <img src="assets/ue-planet.png" alt="Unreal Engine 5: the game, third-person view" />
-      <figcaption data-i18n="rep.fig.uegame">Play mode (PIE) in UE5: the player's ship in frame, the planet and the atmosphere. The frame was saved <b>by the engine itself</b> (<code>FScreenshotRequest</code>) — so the capture does not depend on which window is focused. The client is connected to the Rust server.</figcaption>
+      <img src="assets/ue-game.png" alt="The latest frame captured by the UE test: character on the ground, ship nearby, planets in the sky" />
+      <figcaption data-i18n="rep.fig.latest"><b>Fresh frame from the UE test</b> (<code>tools/test-ue.ps1</code>): the player spawns as a character on the ground, the ship stands nearby, the horizon reads as land, and planets of the system are visible in the sky. This shot is refreshed on every test run.</figcaption>
     </figure>
+    <p data-i18n="rep.fig.solarsystem">A solar system with 4 planets: home (terran), desert, ice and a gas giant, plus a star. The home planet has an 8 km radius, so the horizon reads as land instead of a ball in front of the camera.</p>
 
     <pre class="codeblock"><code data-i18n="rep.code.testclient">$ powershell -File tools/test-client.ps1
 [OK] header read, token matched

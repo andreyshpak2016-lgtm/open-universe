@@ -2,13 +2,16 @@
 
 #include "OUCharacterPawn.h"
 #include "OUShipPawn.h"
+#include "OUClientNet.h"
 #include "OUVoxelPlanet.h"
 #include "OUInterop.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "GameFramework/SpringArmComponent.h"
 #include "Camera/CameraComponent.h"
 #include "Components/InputComponent.h"
 #include "Engine/StaticMesh.h"
+#include "Materials/MaterialInterface.h"
 #include "Kismet/GameplayStatics.h"
 #include "UObject/ConstructorHelpers.h"
 
@@ -23,22 +26,36 @@ AOUCharacterPawn::AOUCharacterPawn()
 	Capsule->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	SetRootComponent(Capsule);
 
-	// Видимая фигурка: куб-туловище (до появления настоящей модели).
+	// Видимая фигурка: капсула-туловище (до появления настоящей модели).
+	// Цвет задаём через материал, иначе фигурка сливается с фоном.
 	BodyMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("BodyMesh"));
 	BodyMesh->SetupAttachment(Capsule);
-	BodyMesh->SetRelativeScale3D(FVector(0.6f, 0.6f, 1.6f));
+	BodyMesh->SetRelativeScale3D(FVector(0.9f, 0.9f, 1.05f));
 	BodyMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	static ConstructorHelpers::FObjectFinder<UStaticMesh> Cube(
-		TEXT("/Engine/BasicShapes/Cube.Cube"));
-	if (Cube.Succeeded())
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> BodyShape(
+		TEXT("/Engine/BasicShapes/Cylinder.Cylinder"));
+	if (BodyShape.Succeeded())
 	{
-		BodyMesh->SetStaticMesh(Cube.Object);
+		BodyMesh->SetStaticMesh(BodyShape.Object);
+	}
+	static ConstructorHelpers::FObjectFinder<UMaterialInterface> BodyMat(
+		TEXT("/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial"));
+	if (BodyMat.Succeeded())
+	{
+		BodyMesh->SetMaterial(0, BodyMat.Object);
 	}
 
-	// Камера от первого лица в «голове».
+	// Камера от третьего лица через плечо: видно и персонажа, и корабль рядом.
+	// Сдвиг вбок — чтобы собственная фигурка не закрывала обзор.
+	SpringArm = CreateDefaultSubobject<USpringArmComponent>(TEXT("SpringArm"));
+	SpringArm->SetupAttachment(Capsule);
+	SpringArm->SetRelativeLocation(FVector(-20.f, 60.f, CapsuleHalfHeight * 0.7f));
+	SpringArm->TargetArmLength = 900.f;
+	SpringArm->bDoCollisionTest = false;
+	SpringArm->bUsePawnControlRotation = false;
+
 	Camera = CreateDefaultSubobject<UCameraComponent>(TEXT("Camera"));
-	Camera->SetupAttachment(Capsule);
-	Camera->SetRelativeLocation(FVector(0.f, 0.f, CapsuleHalfHeight - 15.f));
+	Camera->SetupAttachment(SpringArm, USpringArmComponent::SocketName);
 	Camera->bUsePawnControlRotation = false;
 
 	AutoPossessPlayer = EAutoReceiveInput::Disabled;
@@ -47,7 +64,61 @@ AOUCharacterPawn::AOUCharacterPawn()
 void AOUCharacterPawn::BeginPlay()
 {
 	Super::BeginPlay();
-	UE_LOG(LogOUChar, Log, TEXT("Персонаж создан: ходьба по поверхности"));
+
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	// Цвет фигурки персонажа (синий) — чтобы она читалась в кадре.
+	if (BodyMesh)
+	{
+		BodyMesh->SetVectorParameterValueOnMaterials(TEXT("Color"), FVector(0.20f, 0.45f, 0.95f));
+	}
+
+	// Опора: точка появления на суше домашней планеты (как у сервера).
+	const FVector BaseSpawn = AOUVoxelPlanet::HomeSpawn(2.0f);
+	const FVector Up = BaseSpawn.GetSafeNormal();
+
+	// Тангенциальный базис на поверхности: Fwd — «от базы наружу»,
+	// Side — «вправо» от направления взгляда.
+	FVector Fwd = FVector::VectorPlaneProject(FVector(1.f, 0.f, 0.f), Up).GetSafeNormal();
+	if (Fwd.IsNearlyZero())
+	{
+		Fwd = FVector::VectorPlaneProject(FVector::ForwardVector, Up).GetSafeNormal();
+	}
+	FVector Side = FVector::CrossProduct(Up, Fwd).GetSafeNormal();
+
+	// Персонаж — впереди базы (наружу), корабль — впереди-справа, в кадре.
+	// База остаётся ЗА камерой, поэтому в кадре: персонаж, корабль, горизонт.
+	FVector CharPos = BaseSpawn + Fwd * 2200.f;
+	// Корабль — рядом (5–7 м вперёд-вправо), виден в кадре как отдельный объект.
+	FVector ShipPos = CharPos + Fwd * 420.f + Side * 320.f;
+	if (AOUVoxelPlanet* Planet = AOUVoxelPlanet::FindHomePlanet(World))
+	{
+		CharPos = CharPos.GetSafeNormal() * (Planet->SurfaceRadiusAt(CharPos.GetSafeNormal()) + 95.f);
+		ShipPos = ShipPos.GetSafeNormal() * (Planet->SurfaceRadiusAt(ShipPos.GetSafeNormal()) + 120.f);
+	}
+
+	// Курс персонажа — «наружу» от базы (по Fwd).
+	const float LookYaw = FMath::Atan2(Fwd.Y, Fwd.X);
+	PlaceAt(CharPos, LookYaw);
+	// Слегка смотрим вниз, чтобы в кадр попадал и ландшафт/горизонт.
+	ViewPitch = -0.10f;
+
+	// Корабль стоит рядом (между базой и персонажем).
+	if (!Ship)
+	{
+		Ship = World->SpawnActor<AOUShipPawn>(
+			AOUShipPawn::StaticClass(), FTransform(FRotator::ZeroRotator, ShipPos));
+		if (Ship)
+		{
+			Ship->Character = this;
+		}
+	}
+
+	UE_LOG(LogOUChar, Log, TEXT("Персонаж создан: ходьба по поверхности, корабль рядом"));
 }
 
 float AOUCharacterPawn::SurfaceRadius(const FVector& DirUE) const
@@ -216,7 +287,11 @@ void AOUCharacterPawn::Tick(float DeltaSeconds)
 
 	// Ориентация тела: «верх» — радиус, «вперёд» — по курсу.
 	SetActorRotation(FRotationMatrix::MakeFromXZ(Forward, Up).Rotator());
-	// Камера смотрит по курсу + тангаж.
-	Camera->SetWorldRotation(FRotationMatrix::MakeFromXZ(
-		(Forward * FMath::Cos(ViewPitch) + Up * FMath::Sin(ViewPitch)).GetSafeNormal(), Up).Rotator());
+	// Камера: штанга в ЛОКАЛЬНЫХ осях пешки (локальный X = курс, Z = вверх),
+	// поэтому достаточно относительного поворота по тангажу — без мировой
+	// математики, которая конфликтует с родительским трансформом.
+	if (SpringArm)
+	{
+		SpringArm->SetRelativeRotation(FRotator(FMath::RadiansToDegrees(ViewPitch), 0.f, 0.f));
+	}
 }

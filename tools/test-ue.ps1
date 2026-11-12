@@ -111,6 +111,14 @@ if ($h -ne 0) {
     $bmp.Save((Join-Path $shots 'ue.png'), [System.Drawing.Imaging.ImageFormat]::Png)
     $g.Dispose(); $bmp.Dispose()
     Write-Host "screenshot: $shots\ue.png ($w x $ht)" -ForegroundColor Green
+
+    # Публикуем свежий скриншот в assets/: сайт (report.html) показывает именно
+    # этот файл, поэтому отчёт всегда с актуальным кадром из движка.
+    $assets = Join-Path $root 'assets'
+    if (Test-Path $assets) {
+      Copy-Item (Join-Path $shots 'ue.png') (Join-Path $assets 'ue-game.png') -Force
+      Write-Host "опубликовано в assets/ue-game.png" -ForegroundColor Green
+    }
   }
 } else { Write-Host "no game window" -ForegroundColor Red }
 

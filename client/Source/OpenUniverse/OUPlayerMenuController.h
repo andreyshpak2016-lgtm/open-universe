@@ -9,6 +9,7 @@
 #include "OUPlayerMenuController.generated.h"
 
 class UOUClientNet;
+class AOUShipPawn;
 
 /** Экран стартового меню. */
 UENUM(BlueprintType)
@@ -171,6 +172,10 @@ private:
 	/** Сетевой компонент на корабле игрока. */
 	UPROPERTY(Transient)
 	TObjectPtr<UOUClientNet> Net = nullptr;
+
+	/** Корабль игрока — носитель сетевого компонента (игрок появляется персонажем). */
+	UPROPERTY(Transient)
+	TObjectPtr<AOUShipPawn> Ship = nullptr;
 
 	/** Индекс текущего пробуемого сервера при авто-подключении. */
 	int32 AutoConnectIndex = -1;

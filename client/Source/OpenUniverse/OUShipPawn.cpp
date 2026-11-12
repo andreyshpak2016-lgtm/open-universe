@@ -66,6 +66,15 @@ AOUShipPawn::AOUShipPawn()
 	}
 	ShipMesh->SetRelativeScale3D(FVector(3.f, 1.f, 0.6f));
 
+	// Материал корабля — тот же параметрический, что у базовых фигур: задаём
+	// цвет, чтобы корабль читался на фоне поверхности.
+	static ConstructorHelpers::FObjectFinder<UMaterialInterface> ShipMat(
+		TEXT("/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial"));
+	if (ShipMat.Succeeded())
+	{
+		ShipMesh->SetMaterial(0, ShipMat.Object);
+	}
+
 	// Физику UE **не используем** в открытом мире: кинематику считаем сами,
 	// как на сервере. Это принципиально для детерминизма и античита.
 	ShipMesh->SetSimulatePhysics(false);
@@ -85,7 +94,9 @@ AOUShipPawn::AOUShipPawn()
 	Camera->SetupAttachment(SpringArm, USpringArmComponent::SocketName);
 	Camera->bUsePawnControlRotation = false;
 
-	AutoPossessPlayer = EAutoReceiveInput::Player0;
+	// Корабль по умолчанию НЕ перехватывает управление: игрок появляется
+	// персонажем, а в корабль садится по F (тогда контроллер Possess'ит его).
+	AutoPossessPlayer = EAutoReceiveInput::Disabled;
 }
 
 void AOUShipPawn::BeginPlay()
@@ -94,11 +105,18 @@ void AOUShipPawn::BeginPlay()
 
 	State.Id = 1;
 	// Точка появления — на домашней планете (совпадает с сервером).
-	// Пока сервер не подтвердил позицию, ставим корабль на сушу у поверхности
-	// (невысоко — чтобы сразу был виден ландшафт). Clearance — в единицах сервера.
-	const FVector SpawnUE = AOUVoxelPlanet::HomeSpawn(2.0f);
-	State.Position = OUInterop::UEToServer(SpawnUE);
-	SetActorLocation(SpawnUE);
+	// Если корабль уже поставлен снаружи (его создал персонаж рядом), не
+	// переносим его снова; иначе ставим на сушу у поверхности.
+	if (GetActorLocation().IsNearlyZero())
+	{
+		const FVector SpawnUE = AOUVoxelPlanet::HomeSpawn(2.0f);
+		State.Position = OUInterop::UEToServer(SpawnUE);
+		SetActorLocation(SpawnUE);
+	}
+	else
+	{
+		State.Position = OUInterop::UEToServer(GetActorLocation());
+	}
 
 	// Находим клиент сети: свой компонент или на уровне.
 	if (!Net)
@@ -115,6 +133,12 @@ void AOUShipPawn::BeginPlay()
 	if (!RemoteShipMesh)
 	{
 		RemoteShipMesh = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cube.Cube"));
+	}
+
+	// Цвет корабля (оранжево-серый металл) — чтобы он читался в кадре.
+	if (ShipMesh)
+	{
+		ShipMesh->SetVectorParameterValueOnMaterials(TEXT("Color"), FVector(0.85f, 0.55f, 0.20f));
 	}
 
 	// Менеджер начала координат (может отсутствовать — тогда работаем без него).
@@ -399,6 +423,24 @@ void AOUShipPawn::Tick(float DeltaSeconds)
 			ApplyStateToActor();
 			return;
 		}
+	}
+
+	// Корабль без пилота (игрок ходит пешком): он «припаркован» там, где его
+	// поставил персонаж. Сеть продолжаем опрашивать (нужно для подключения и
+	// своего id), но НЕ реконсилимся с сервером: иначе корабль «уезжал» бы к
+	// серверной точке появления и пропадал из кадра.
+	if (GetController() == nullptr)
+	{
+		if (Net)
+		{
+			Net->Poll();
+			if (Net->OwnEntityId != 0)
+			{
+				State.Id = Net->OwnEntityId;
+			}
+		}
+		ApplyStateToActor();
+		return;
 	}
 
 	// Выход из корабля по **зажатию** F: копим время, по порогу — выходим.

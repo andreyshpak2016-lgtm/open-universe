@@ -2,6 +2,7 @@
 
 #include "OUGameMode.h"
 #include "OUShipPawn.h"
+#include "OUCharacterPawn.h"
 #include "OUOriginManager.h"
 #include "OUVoxelPlanet.h"
 #include "OUSurfaceBase.h"
@@ -14,6 +15,7 @@
 #include "Engine/DirectionalLight.h"
 #include "Engine/SkyLight.h"
 #include "Engine/ExponentialHeightFog.h"
+#include "Engine/PostProcessVolume.h"
 #include "GameFramework/PlayerStart.h"
 #include "Components/DirectionalLightComponent.h"
 #include "Components/SkyLightComponent.h"
@@ -38,8 +40,9 @@ namespace
 
 AOUGameMode::AOUGameMode()
 {
-	// Игрок управляет кораблём; мир — общий, начало координат подвижное.
-	DefaultPawnClass = AOUShipPawn::StaticClass();
+	// Игрок появляется **персонажем** на поверхности планеты; корабль стоит
+	// рядом отдельным объектом. В корабль можно сесть (удержание F).
+	DefaultPawnClass = AOUCharacterPawn::StaticClass();
 	// Стартовое меню: персонаж и выбор сервера.
 	PlayerControllerClass = AOUPlayerMenuController::StaticClass();
 	// HUD рисует само меню.
@@ -127,15 +130,37 @@ void AOUGameMode::BuildWorld()
 		World->SpawnActor<ASkyAtmosphere>(ASkyAtmosphere::StaticClass(), FTransform::Identity);
 	}
 
+	// --- Экспозиция (пост-обработка) ---
+	// Без фиксации экспозиции яркое небо «пересвечивает» кадр: автоподбор
+	// вытягивает яркость до белого. Держим экспозицию ручной, чтобы цвета
+	// планет и поверхности читались.
+	if (!Has(APostProcessVolume::StaticClass()))
+	{
+		APostProcessVolume* PP = World->SpawnActor<APostProcessVolume>(
+			APostProcessVolume::StaticClass(), FTransform::Identity);
+		if (PP)
+		{
+			PP->bUnbound = true;   // действует на всю сцену
+			PP->Settings.bOverride_AutoExposureMethod = true;
+			PP->Settings.AutoExposureMethod = EAutoExposureMethod::AEM_Manual;
+			PP->Settings.bOverride_AutoExposureBias = true;
+			PP->Settings.AutoExposureBias = 10.0f;   // фиксированная EV100
+			PP->Settings.bOverride_AutoExposureMinBrightness = true;
+			PP->Settings.AutoExposureMinBrightness = 1.0f;
+			PP->Settings.bOverride_AutoExposureMaxBrightness = true;
+			PP->Settings.AutoExposureMaxBrightness = 1.0f;
+		}
+	}
+
 	// --- Солнце (светило) ---
 	if (!Has(ADirectionalLight::StaticClass()))
 	{
-		const FTransform SunT(FRotator(-45.f, -35.f, 0.f), FVector(0.f, 0.f, 200000.f));
+		const FTransform SunT(FRotator(-38.f, -30.f, 0.f), FVector(0.f, 0.f, 200000.f));
 		ADirectionalLight* Sun = World->SpawnActor<ADirectionalLight>(ADirectionalLight::StaticClass(), SunT);
 		if (Sun)
 		{
 			Sun->GetLightComponent()->SetMobility(EComponentMobility::Movable);
-			Sun->GetLightComponent()->SetIntensity(4.f);
+			Sun->GetLightComponent()->SetIntensity(3.f);
 			Sun->GetLightComponent()->SetLightColor(FLinearColor(1.f, 0.96f, 0.9f));
 		}
 	}
@@ -150,7 +175,7 @@ void AOUGameMode::BuildWorld()
 			LC->SetMobility(EComponentMobility::Movable);
 			LC->SourceType = ESkyLightSourceType::SLS_CapturedScene;
 			LC->bRealTimeCapture = true;
-			LC->SetIntensity(1.f);
+			LC->SetIntensity(1.6f);
 			LC->RecaptureSky();
 		}
 	}
@@ -163,6 +188,27 @@ void AOUGameMode::BuildWorld()
 		for (TActorIterator<AOUVoxelPlanet> It(World); It; ++It) { Old.Add(*It); }
 		for (TActorIterator<AOUSolarBody> It(World); It; ++It) { Old.Add(*It); }
 		for (TActorIterator<AOUSurfaceBase> It(World); It; ++It) { Old.Add(*It); }
+		// Старые корабли/персонажи с карты могли сохраниться и перехватывать
+		// управление (у них мог быть AutoPossessPlayer=Player0) — убираем их.
+		// ВАЖНО: не трогаем пешку, которой уже управляет игрок (локальный
+		// игрок входит в мир до StartPlay, и его персонаж уже существует).
+		auto IsPlayerControlled = [](AActor* A) -> bool
+		{
+			if (const APawn* P = Cast<APawn>(A))
+			{
+				return P->GetController() != nullptr;
+			}
+			return false;
+		};
+		for (TActorIterator<AOUShipPawn> It(World); It; ++It)
+		{
+			if (!IsPlayerControlled(*It)) { Old.Add(*It); }
+		}
+		for (TActorIterator<AOUCharacterPawn> It(World); It; ++It)
+		{
+			if (!IsPlayerControlled(*It)) { Old.Add(*It); }
+		}
+		for (TActorIterator<APlayerStart> It(World); It; ++It) { Old.Add(*It); }
 		for (AActor* A : Old) { if (A) { A->Destroy(); } }
 	}
 
@@ -226,11 +272,11 @@ void AOUGameMode::BuildWorld()
 		{
 			AOUSolarBody* Star = World->SpawnActor<AOUSolarBody>(
 				AOUSolarBody::StaticClass(),
-				FTransform(FRotator::ZeroRotator, SkyAt(-25.f, 32.f, 1500000.f)));
+				FTransform(FRotator::ZeroRotator, SkyAt(-25.f, 32.f, 6000000.f)));
 			if (Star)
 			{
 				Star->Kind = EOUSolarKind::Star;
-				Star->BodyRadiusCm = 150000.f;   // 1.5 км — крупная звезда вдали
+				Star->BodyRadiusCm = 200000.f;   // 2 км — крупное светило вдали
 				Star->BodyColor = FLinearColor(1.0f, 0.86f, 0.35f);
 				Star->BuildBody();
 			}
@@ -240,10 +286,12 @@ void AOUGameMode::BuildWorld()
 		// Раскладываем их в поле зрения игрока (вокруг «вперёд»), чуть выше
 		// горизонта, чтобы они читались как планеты в небе.
 		struct FPlanetDef { EOUPlanetType Type; float Azim; float Elev; float DistCm; float RadiusCm; };
+		// Дистанции — десятки километров: так планеты выглядят как диски в небе,
+		// а не как близкие шары перед камерой.
 		const FPlanetDef Defs[] = {
-			{ EOUPlanetType::Desert,   15.f, 22.f, 900000.f,  70000.f },
-			{ EOUPlanetType::Ice,      55.f, 16.f, 1000000.f, 60000.f },
-			{ EOUPlanetType::GasGiant, -45.f, 26.f, 1200000.f, 160000.f },
+			{ EOUPlanetType::Desert,   18.f, 20.f, 5000000.f, 120000.f },
+			{ EOUPlanetType::Ice,      52.f, 14.f, 6500000.f,  95000.f },
+			{ EOUPlanetType::GasGiant, -48.f, 24.f, 8000000.f, 260000.f },
 		};
 		for (const FPlanetDef& D : Defs)
 		{

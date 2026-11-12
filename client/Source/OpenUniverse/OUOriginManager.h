@@ -48,7 +48,7 @@ public:
 	 * разумный порог — десятки километров.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Open Universe|Floating Origin")
-	float ShiftThreshold = 500000.f; // 5 км
+	float ShiftThreshold = 1.0e8f; // 1000 км: на масштабе домашней планеты (8 км) перенос не нужен
 
 	/** Событие: начало сместилось. UI и системы слушают его для обновления. */
 	UPROPERTY(BlueprintAssignable, Category = "Open Universe|Floating Origin")

@@ -116,16 +116,31 @@ void AOUPlayerMenuController::ResolveNet()
 	{
 		return;
 	}
-	APawn* P = GetPawn();
-	if (!P)
+	// Сетевой компонент ищем по всем пешкам: игрок появляется персонажем, но
+	// подключение (и симуляция корабля) живут в корабле рядом.
+	UWorld* World = GetWorld();
+	if (!World)
 	{
 		return;
 	}
-	Net = P->FindComponentByClass<UOUClientNet>();
-	if (!Net)
+	for (TActorIterator<APawn> It(World); It; ++It)
 	{
-		Net = NewObject<UOUClientNet>(P, TEXT("OUClientNet"));
+		if (UOUClientNet* Found = It->FindComponentByClass<UOUClientNet>())
+		{
+			Net = Found;
+			Ship = Cast<AOUShipPawn>(*It);
+			return;
+		}
+	}
+	// Если сети нигде нет — создаём её на корабле (или на своей пешке).
+	AOUShipPawn* HomeShip = nullptr;
+	for (TActorIterator<AOUShipPawn> It(World); It; ++It) { HomeShip = *It; break; }
+	AActor* NetOwner = HomeShip ? static_cast<AActor*>(HomeShip) : static_cast<AActor*>(GetPawn());
+	if (NetOwner)
+	{
+		Net = NewObject<UOUClientNet>(NetOwner, TEXT("OUClientNet"));
 		Net->RegisterComponent();
+		Ship = HomeShip;
 	}
 }
 
@@ -493,9 +508,9 @@ void AOUPlayerMenuController::AutoConnectStep()
 			bAutoExitDone = true;
 			if (APawn* P = GetPawn())
 			{
-				if (AOUShipPawn* Ship = Cast<AOUShipPawn>(P))
+				if (AOUShipPawn* ShipPawn = Cast<AOUShipPawn>(P))
 				{
-					Ship->ExitShip();
+					ShipPawn->ExitShip();
 					UE_LOG(LogOUMenu, Log, TEXT("Авто-выход: персонаж вышел из корабля"));
 				}
 			}

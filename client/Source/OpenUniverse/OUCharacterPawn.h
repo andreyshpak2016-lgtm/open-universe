@@ -97,6 +97,10 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Open Universe|Character")
 	UCameraComponent* Camera = nullptr;
 
+	/** Штанга камеры: даёт вид от третьего лица (видно персонажа и корабль). */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Open Universe|Character")
+	class USpringArmComponent* SpringArm = nullptr;
+
 	/** Простая видимая фигурка (куб-туловище) — до появления настоящей модели. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Open Universe|Character")
 	UStaticMeshComponent* BodyMesh = nullptr;
