@@ -1841,6 +1841,10 @@ namespace OpenUniverseLauncher
         /// <summary>
         /// Свободен ли UDP-порт. Сервер занимает 127.0.0.1:7777, поэтому если
         /// порт занят — сервер уже поднят (наш или чужой).
+        ///
+        /// Пробуем просто привязаться к порту и сразу освободить. Менять
+        /// свойства сокета ПОСЛЕ привязки нельзя — это кидает исключение и
+        /// раньше приводило к ложному «порт занят».
         /// </summary>
         private static bool IsUdpPortFree(string host, int port)
         {
@@ -1849,7 +1853,6 @@ namespace OpenUniverseLauncher
                 var ep = new System.Net.IPEndPoint(System.Net.IPAddress.Parse(host), port);
                 using (var s = new System.Net.Sockets.UdpClient(ep))
                 {
-                    s.Client.ExclusiveAddressUse = false;
                 }
                 return true;
             }
