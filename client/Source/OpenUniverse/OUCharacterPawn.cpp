@@ -11,11 +11,13 @@
 #include "GameFramework/SpringArmComponent.h"
 #include "Camera/CameraComponent.h"
 #include "Components/InputComponent.h"
+#include "Components/PointLightComponent.h"
 #include "Engine/StaticMesh.h"
 #include "Materials/MaterialInterface.h"
 #include "Kismet/GameplayStatics.h"
 #include "Misc/CommandLine.h"
 #include "Misc/Parse.h"
+#include "OUProjectile.h"
 #include "UObject/ConstructorHelpers.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogOUChar, Log, All);
@@ -122,6 +124,37 @@ AOUCharacterPawn::AOUCharacterPawn()
 	Paint(LegL, ColBoots);
 	Paint(LegR, ColBoots);
 
+	// --- Ручное оружие (в правой руке, смотрит вперёд) ---
+	// Крепим к капсуле (не к качающейся руке), иначе на бегу оружие «уезжает»
+	// из прицела. Позиция — у правой кисти, ориентация — вперёд по курсу.
+	{
+		static ConstructorHelpers::FObjectFinder<UStaticMesh> GunShape(
+			TEXT("/Engine/BasicShapes/Cube.Cube"));
+		GunMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("GunMesh"));
+		GunMesh->SetupAttachment(Capsule);
+		GunMesh->SetRelativeLocation(FVector(40.f, 34.f, 2.f));
+		GunMesh->SetRelativeScale3D(FVector(0.85f, 0.16f, 0.16f));
+		GunMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		if (GunShape.Succeeded())
+		{
+			GunMesh->SetStaticMesh(GunShape.Object);
+		}
+		if (Mat.Succeeded())
+		{
+			GunMesh->SetMaterial(0, Mat.Object);
+		}
+		GunMesh->SetVectorParameterValueOnMaterials(TEXT("Color"), FVector(0.15f, 0.16f, 0.2f));
+	}
+
+	// Вспышка у дула: точечный свет, загорается на кадр выстрела.
+	MuzzleFlash = CreateDefaultSubobject<UPointLightComponent>(TEXT("MuzzleFlash"));
+	MuzzleFlash->SetupAttachment(GunMesh);
+	MuzzleFlash->SetRelativeLocation(FVector(60.f, 0.f, 0.f));
+	MuzzleFlash->SetIntensity(6000.f);
+	MuzzleFlash->SetLightColor(FLinearColor(1.f, 0.85f, 0.35f));
+	MuzzleFlash->SetAttenuationRadius(400.f);
+	MuzzleFlash->SetVisibility(false);
+
 	// Камера от третьего лица через плечо: видно и персонажа, и корабль рядом.
 	// Сдвиг вбок — чтобы собственная фигурка не закрывала обзор.
 	SpringArm = CreateDefaultSubobject<USpringArmComponent>(TEXT("SpringArm"));
@@ -150,6 +183,8 @@ void AOUCharacterPawn::BeginPlay()
 
 	// Тестовый автоход (для снимков анимации бега без ручного ввода).
 	bAutoWalk = FParse::Param(FCommandLine::Get(), TEXT("OUAutoWalk"));
+	// Тестовый автоматический огонь (для снимков оружия).
+	bAutoFire = FParse::Param(FCommandLine::Get(), TEXT("OUAutoFire"));
 
 	// Цвета фигурки задаём здесь (после регистрации компонентов — в конструкторе
 	// параметры материала ещё не применяются).
@@ -267,6 +302,8 @@ void AOUCharacterPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputCom
 	PlayerInputComponent->BindAction(TEXT("Jump"), IE_Released, this, &AOUCharacterPawn::OnJumpReleased);
 	PlayerInputComponent->BindAction(TEXT("ExitShip"), IE_Pressed, this, &AOUCharacterPawn::OnExitPressed);
 	PlayerInputComponent->BindAction(TEXT("ExitShip"), IE_Released, this, &AOUCharacterPawn::OnExitReleased);
+	// Огонь: зажимание кнопки ведёт непрерывную стрельбу (окно оружия).
+	PlayerInputComponent->BindAction(TEXT("FireWeapon"), IE_Pressed, this, &AOUCharacterPawn::FireWeapon);
 }
 
 void AOUCharacterPawn::AxisForward(float Value) { InputForward = FMath::Clamp(Value, -1.f, 1.f); }
@@ -277,6 +314,33 @@ void AOUCharacterPawn::OnJumpPressed() { bJumpQueued = true; }
 void AOUCharacterPawn::OnJumpReleased() { }
 void AOUCharacterPawn::OnExitPressed() { bExitHeld = true; ExitHoldTime = 0.f; }
 void AOUCharacterPawn::OnExitReleased() { bExitHeld = false; ExitHoldTime = 0.f; }
+
+void AOUCharacterPawn::FireWeapon()
+{
+	UWorld* World = GetWorld();
+	if (!World || !GunMesh || FireTimer > 0.f)
+	{
+		return;
+	}
+	FireTimer = FireCooldown;
+
+	// Точка вылета — у дула оружия; направление — «вперёд» персонажа (по курсу).
+	const FVector Muzzle = MuzzleFlash ? MuzzleFlash->GetComponentLocation() : GunMesh->GetComponentLocation();
+	const FVector Dir = GetActorForwardVector().GetSafeNormal();
+
+	if (AOUProjectile* Bolt = World->SpawnActor<AOUProjectile>(
+		AOUProjectile::StaticClass(), FTransform(Dir.Rotation(), Muzzle)))
+	{
+		Bolt->Launch(Dir);
+		LastBolt = Bolt;
+	}
+	// Вспышка у дула.
+	if (MuzzleFlash)
+	{
+		MuzzleFlash->SetVisibility(true);
+		MuzzleTimer = MuzzleFlashTime;
+	}
+}
 
 void AOUCharacterPawn::AnimateLocomotion(float DeltaSeconds, float HorizontalSpeed)
 {
@@ -451,4 +515,19 @@ void AOUCharacterPawn::Tick(float DeltaSeconds)
 	// Анимация бега/ходьбы (процедурная, по горизонтальной скорости).
 	const float HSpd = FVector::VectorPlaneProject(Velocity, Up).Size();
 	AnimateLocomotion(DeltaSeconds, HSpd);
+
+	// Оружие: кулдаун, угасание вспышки, автоогонь для тестов.
+	FireTimer = FMath::Max(0.f, FireTimer - DeltaSeconds);
+	if (MuzzleTimer > 0.f)
+	{
+		MuzzleTimer -= DeltaSeconds;
+		if (MuzzleTimer <= 0.f && MuzzleFlash)
+		{
+			MuzzleFlash->SetVisibility(false);
+		}
+	}
+	if (bAutoFire)
+	{
+		FireWeapon();
+	}
 }

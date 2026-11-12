@@ -13,7 +13,9 @@ class USceneComponent;
 class USpringArmComponent;
 class UMaterialInterface;
 class USkeletalMeshComponent;
+class UPointLightComponent;
 class AOUShipPawn;
+class AOUProjectile;
 
 /**
  * Персонаж игрока (ходьба по поверхности планеты).
@@ -86,6 +88,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Open Universe|Character")
 	void PlaceAt(const FVector& WorldLocation, float LookYaw);
 
+	/** Выстрелить из ручного оружия (трассер + вспышка). */
+	UFUNCTION(BlueprintCallable, Category = "Open Universe|Weapon")
+	void FireWeapon();
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void Tick(float DeltaSeconds) override;
@@ -153,6 +159,25 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Open Universe|Character")
 	UStaticMeshComponent* LegR = nullptr;
 
+	// --- Ручное оружие ---
+	// Оружие висит на правом плече (в руке) и смотрит вперёд по курсу.
+
+	/** Корпус оружия (в правой руке). */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Open Universe|Weapon")
+	UStaticMeshComponent* GunMesh = nullptr;
+
+	/** Вспышка у дула (точка вылета) — включается на кадр выстрела. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Open Universe|Weapon")
+	UPointLightComponent* MuzzleFlash = nullptr;
+
+	/** Секунд между выстрелами. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Open Universe|Weapon")
+	float FireCooldown = 0.16f;
+
+	/** Сколько держится вспышка, с. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Open Universe|Weapon")
+	float MuzzleFlashTime = 0.05f;
+
 private:
 	float InputForward = 0.f;
 	float InputRight = 0.f;
@@ -171,4 +196,19 @@ private:
 
 	/** Тестовый автоход (ключ `-OUAutoWalk`): персонаж идёт вперёд сам. */
 	bool bAutoWalk = false;
+
+	/** Осталось времени вспышки, с. */
+	float MuzzleTimer = 0.f;
+
+	/** Время до следующего выстрела, с. */
+	float FireTimer = 0.f;
+
+	/** Можно ли стрелять (зажимание кнопки огня). */
+	bool bFireHeld = false;
+
+	/** Тестовый автоогонь (ключ `-OUAutoFire`): стреляем сами. */
+	bool bAutoFire = false;
+
+	/** Указатель на последний снаряд (для визуальной цепочки). */
+	TWeakObjectPtr<AOUProjectile> LastBolt;
 };
