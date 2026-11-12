@@ -6,6 +6,7 @@
 #include "OUInterop.h"
 #include "OUOriginManager.h"
 #include "OUVoxelPlanet.h"
+#include "OUCharacterPawn.h"
 #include "OUPlayerMenuController.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/InputComponent.h"
@@ -134,6 +135,89 @@ void AOUShipPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 	PlayerInputComponent->BindAxis(TEXT("Pitch"), this, &AOUShipPawn::AxisPitch);
 	PlayerInputComponent->BindAction(TEXT("Fire"), IE_Pressed, this, &AOUShipPawn::StartFire);
 	PlayerInputComponent->BindAction(TEXT("Fire"), IE_Released, this, &AOUShipPawn::StopFire);
+	PlayerInputComponent->BindAction(TEXT("ExitShip"), IE_Pressed, this, &AOUShipPawn::OnExitPressed);
+	PlayerInputComponent->BindAction(TEXT("ExitShip"), IE_Released, this, &AOUShipPawn::OnExitReleased);
+}
+
+void AOUShipPawn::OnExitPressed()
+{
+	// Зажимаем F: копим время удержания, выход — по порогу (не мгновенно).
+	bExitHeld = true;
+	ExitHoldTime = 0.f;
+}
+
+void AOUShipPawn::OnExitReleased()
+{
+	bExitHeld = false;
+	ExitHoldTime = 0.f;
+}
+
+void AOUShipPawn::ExitShip()
+{
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+	// Точка рядом с кораблём, но подальше от построек базы, чтобы персонаж
+	// оказался на открытой поверхности.
+	const FVector ShipPos = GetActorLocation();
+	const FVector Up = ShipPos.GetSafeNormal();
+	FVector Side = FVector::CrossProduct(Up, GetActorForwardVector()).GetSafeNormal();
+	if (Side.IsNearlyZero())
+	{
+		Side = FVector::CrossProduct(Up, FVector::RightVector).GetSafeNormal();
+	}
+	FVector Spawn = ShipPos + Side * 4000.f;
+	// Привязываем к рельефу.
+	const FVector Dir = Spawn.GetSafeNormal();
+	if (AOUVoxelPlanet* Planet = Cast<AOUVoxelPlanet>(
+		UGameplayStatics::GetActorOfClass(World, AOUVoxelPlanet::StaticClass())))
+	{
+		Spawn = Dir * (Planet->SurfaceRadiusAt(Dir) + 95.f);
+	}
+
+	if (!Character)
+	{
+		Character = World->SpawnActor<AOUCharacterPawn>(
+			AOUCharacterPawn::StaticClass(), FTransform(FRotator::ZeroRotator, Spawn));
+	}
+	if (Character)
+	{
+		Character->Ship = this;
+		// Курс — от базы наружу (в сторону, куда отошли).
+		const float LookYaw = FMath::Atan2(Side.Y, Side.X);
+		Character->PlaceAt(Spawn, LookYaw);
+		// Передаём управление персонажу.
+		if (AController* C = GetController())
+		{
+			APlayerController* PC = Cast<APlayerController>(C);
+			if (PC)
+			{
+				PC->Possess(Character);
+			}
+		}
+		UE_LOG(LogOUShip, Log, TEXT("Выход из корабля: персонаж создан"));
+	}
+}
+
+void AOUShipPawn::EnterShip(AOUCharacterPawn* FromCharacter)
+{
+	// Возврат в кабину: управление снова у корабля.
+	if (AController* C = Cast<AController>(FromCharacter ? FromCharacter->GetController() : GetController()))
+	{
+		APlayerController* PC = Cast<APlayerController>(C);
+		if (PC)
+		{
+			PC->Possess(this);
+		}
+	}
+	if (FromCharacter)
+	{
+		FromCharacter->Destroy();
+		Character = nullptr;
+	}
+	UE_LOG(LogOUShip, Log, TEXT("Возврат в корабль"));
 }
 
 void AOUShipPawn::AxisThrottle(float Value)
@@ -316,6 +400,19 @@ void AOUShipPawn::Tick(float DeltaSeconds)
 		{
 			ApplyStateToActor();
 			return;
+		}
+	}
+
+	// Выход из корабля по **зажатию** F: копим время, по порогу — выходим.
+	if (bExitHeld)
+	{
+		ExitHoldTime += DeltaSeconds;
+		if (ExitHoldTime >= ExitHoldThreshold)
+		{
+			ExitHoldTime = 0.f;
+			bExitHeld = false;
+			ExitShip();
+			return;   // управление ушло персонажу
 		}
 	}
 

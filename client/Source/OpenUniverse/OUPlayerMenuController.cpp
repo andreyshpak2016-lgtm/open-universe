@@ -82,6 +82,7 @@ void AOUPlayerMenuController::BeginPlay()
 	// --- Авто-подключение для тестов/автоматики: -OUAutoConnect ---
 	const TCHAR* CmdLine = FCommandLine::Get();
 	bAutoConnect = FParse::Param(CmdLine, TEXT("OUAutoConnect"));
+	bAutoExit = FParse::Param(CmdLine, TEXT("OUAutoExit"));
 	FString NameParam;
 	if (FParse::Value(CmdLine, TEXT("OUName="), NameParam) && !NameParam.IsEmpty())
 	{
@@ -485,6 +486,20 @@ void AOUPlayerMenuController::AutoConnectStep()
 		SetMenuCursor(false);
 		UE_LOG(LogOUMenu, Log, TEXT("Авто-подключение: подключено к %s:%d (сущность %d)"),
 			*Net->ServerAddress, Net->ServerPort, Net->OwnEntityId);
+
+		// Тестовый авто-выход из корабля (проверка ходьбы).
+		if (bAutoExit && !bAutoExitDone)
+		{
+			bAutoExitDone = true;
+			if (APawn* P = GetPawn())
+			{
+				if (AOUShipPawn* Ship = Cast<AOUShipPawn>(P))
+				{
+					Ship->ExitShip();
+					UE_LOG(LogOUMenu, Log, TEXT("Авто-выход: персонаж вышел из корабля"));
+				}
+			}
+		}
 		return;
 	}
 

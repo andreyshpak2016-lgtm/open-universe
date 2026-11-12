@@ -11,6 +11,7 @@ class UStaticMeshComponent;
 class USpringArmComponent;
 class UCameraComponent;
 class UOUClientNet;
+class AOUCharacterPawn;
 
 /**
  * Корабль игрока.
@@ -62,6 +63,14 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Open Universe|Net")
 	void SetInputEnabled(bool bEnabled) { bInputEnabled = bEnabled; }
 
+	/** Вернуться в корабль (вызывает персонаж при зажатии F рядом с кораблём). */
+	UFUNCTION(BlueprintCallable, Category = "Open Universe|Flight")
+	void EnterShip(AOUCharacterPawn* FromCharacter);
+
+	/** Выйти из корабля: создать персонажа рядом и переключить управление. */
+	UFUNCTION(BlueprintCallable, Category = "Open Universe|Flight")
+	void ExitShip();
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void Tick(float DeltaSeconds) override;
@@ -73,6 +82,24 @@ protected:
 	void AxisPitch(float Value);
 	void StartFire();
 	void StopFire();
+
+	/** Зажата ли F (выход из корабля / возврат в кабину). */
+	void OnExitPressed();
+	void OnExitReleased();
+
+	/** Маска зажатия F: сколько секунд держат (для «зажми, чтобы выйти»). */
+	float ExitHoldTime = 0.f;
+
+	/** Зажата ли сейчас F. */
+	bool bExitHeld = false;
+
+	/** Порог удержания F, с. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Open Universe|Flight")
+	float ExitHoldThreshold = 0.6f;
+
+	/** Текущий персонаж (когда вышли из корабля), иначе nullptr. */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Flight")
+	AOUCharacterPawn* Character = nullptr;
 
 	/** Обновить визуализацию других игроков из последнего снимка. */
 	void UpdateRemotePlayers();

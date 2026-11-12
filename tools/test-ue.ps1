@@ -55,6 +55,16 @@ $editor = Join-Path $engine 'Engine\Binaries\Win64\UnrealEditor.exe'
 $serverExe = Join-Path $root 'server\target\debug\ou-netd.exe'
 if (-not (Test-Path $serverExe)) { $serverExe = Join-Path $root 'server\target\release\ou-netd.exe' }
 
+# Гарантированная очистка: закрываем все процессы, что запускает тест, даже при
+# ошибке или прерывании (Ctrl+C). Иначе после тестов остаются висеть игры.
+function Stop-TestProcs {
+  Get-Process UnrealEditor,OpenUniverse,UnrealEditor-Cmd,CrashReportClient,ou-netd -ErrorAction SilentlyContinue |
+    Stop-Process -Force -ErrorAction SilentlyContinue
+}
+# На старте подчищаем хвосты прошлых запусков.
+Stop-TestProcs
+trap { Stop-TestProcs; break }
+
 New-Item -ItemType Directory -Force -Path $shots | Out-Null
 Remove-Item $log -ErrorAction SilentlyContinue
 [void][OUt]::SetCursorPos(2, 2)
@@ -100,6 +110,9 @@ if ($h -ne 0) {
 
 if (-not $KeepOpen) { Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue }
 if ($srv) { Stop-Process -Id $srv.Id -Force -ErrorAction SilentlyContinue }
+
+# Финальная уборка: закрываем всё, что осталось от теста (в т.ч. CrashReportClient).
+Stop-TestProcs
 
 # --- проверки по логу ---
 $ok = $true
