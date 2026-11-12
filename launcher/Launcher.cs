@@ -64,6 +64,20 @@ namespace OpenUniverseLauncher
         }
     }
 
+    // ---------- Панель с двойной буферизацией ----------
+    // Обычный Panel рисуется напрямую в экран: при каждом Invalidate (например,
+    // на движение мыши) видно, как картинка «моргает» — сначала стирается фон,
+    // потом рисуется содержимое. Двойная буферизация собирает кадр в памяти и
+    // показывает его разом, поэтому мерцания нет.
+    internal class BufferedPanel : Panel
+    {
+        public BufferedPanel()
+        {
+            SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint
+                | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
+        }
+    }
+
     // ---------- Карточка со скруглёнными углами ----------
     internal sealed class Card : Panel
     {
@@ -656,7 +670,9 @@ namespace OpenUniverseLauncher
         private void BuildUi()
         {
             // ---- Шапка с баннером ----
-            _header = new Panel { Dock = DockStyle.Top, Height = 236, BackColor = Skin.Bg };
+            // BufferedPanel: без двойной буферизации баннер «моргал» при каждой
+            // перерисовке (движение мыши вызывало Invalidate на каждом пикселе).
+            _header = new BufferedPanel { Dock = DockStyle.Top, Height = 236, BackColor = Skin.Bg };
             _header.Paint += HeaderPaint;
             _header.MouseMove += (s, e) => HeaderMouseMove(e.Location);
             _header.MouseLeave += (s, e) => { _hoverClose = _hoverMin = _hoverLang = 0; _header.Cursor = Cursors.Default; _header.Invalidate(); };
@@ -899,6 +915,34 @@ namespace OpenUniverseLauncher
         }
 
         // ---------------- Рисование шапки ----------------
+        /// <summary>
+        /// Уже масштабированный баннер. Масштабировать 1040×320 JPEG бикубиком
+        /// на КАЖДЫЙ кадр дорого, из-за чего шапка «моргала» при перерисовке.
+        /// Кэшируем результат под текущую ширину панели.
+        /// </summary>
+        private Bitmap _bannerScaled;
+        private int _bannerScaledWidth = -1;
+
+        /// <summary>Кэш баннера под ширину `w` (пересоздаётся при смене ширины).</summary>
+        private Bitmap ScaledBanner(int w)
+        {
+            if (_banner == null || w <= 0) return null;
+            if (_bannerScaled != null && _bannerScaledWidth == w) return _bannerScaled;
+            try { if (_bannerScaled != null) { _bannerScaled.Dispose(); _bannerScaled = null; } } catch { }
+            float scale = (float)w / _banner.Width;
+            int dh = Math.Max(1, (int)(_banner.Height * scale));
+            var bmp = new Bitmap(w, dh);
+            using (var g = Graphics.FromImage(bmp))
+            {
+                g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                g.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.HighQuality;
+                g.DrawImage(_banner, new Rectangle(0, 0, w, dh));
+            }
+            _bannerScaled = bmp;
+            _bannerScaledWidth = w;
+            return _bannerScaled;
+        }
+
         private void HeaderPaint(object sender, PaintEventArgs e)
         {
             var g = e.Graphics;
@@ -907,12 +951,13 @@ namespace OpenUniverseLauncher
 
             if (_banner != null)
             {
-                g.InterpolationMode = InterpolationMode.HighQualityBicubic;
-                // Вписываем баннер по ширине (как cover), обрезая лишнюю высоту.
-                float scale = (float)_header.Width / _banner.Width;
-                int dh = (int)(_banner.Height * scale);
-                int dy = (int)((_header.Height - dh) * 0.42f);
-                g.DrawImage(_banner, new Rectangle(0, dy, _header.Width, dh));
+                Bitmap scaled = ScaledBanner(_header.Width);
+                if (scaled != null)
+                {
+                    // Вписываем баннер по ширине (как cover), обрезая лишнюю высоту.
+                    int dy = (int)((_header.Height - scaled.Height) * 0.42f);
+                    g.DrawImageUnscaled(scaled, 0, dy);
+                }
             }
             else
             {
@@ -1064,12 +1109,32 @@ namespace OpenUniverseLauncher
 
         private void HeaderMouseMove(Point p)
         {
-            _hoverClose = _rectClose.Contains(p) ? 2 : 0;
-            _hoverMin = _rectMin.Contains(p) ? 1 : 0;
-            _hoverLang = _rectLangRu.Contains(p) ? 1 : (_rectLangEn.Contains(p) ? 2 : 0);
-            bool onBtn = _hoverClose > 0 || _hoverMin > 0 || _hoverLang > 0;
+            int hc = _rectClose.Contains(p) ? 2 : 0;
+            int hm = _rectMin.Contains(p) ? 1 : 0;
+            int hl = _rectLangRu.Contains(p) ? 1 : (_rectLangEn.Contains(p) ? 2 : 0);
+            // Перерисовываем ТОЛЬКО когда подсветка реально изменилась: иначе
+            // каждый пиксель движения мыши вызывал лишнюю перерисовку шапки
+            // (из-за этого баннер «моргал»).
+            if (!HoverChanged(hc, hm, hl, _hoverClose, _hoverMin, _hoverLang))
+            {
+                return;
+            }
+            _hoverClose = hc;
+            _hoverMin = hm;
+            _hoverLang = hl;
+            bool onBtn = hc > 0 || hm > 0 || hl > 0;
             _header.Cursor = onBtn ? Cursors.Hand : Cursors.SizeAll;
             _header.Invalidate();
+        }
+
+        /// <summary>
+        /// Изменилась ли подсветка кнопок шапки. Вынесено отдельно, чтобы
+        /// проверять логику «не перерисовывать без изменений» без окна
+        /// (см. `--selfcheck`): лишние перерисовки как раз и давали мерцание.
+        /// </summary>
+        internal static bool HoverChanged(int hc, int hm, int hl, int pc, int pm, int pl)
+        {
+            return !(hc == pc && hm == pm && hl == pl);
         }
 
         private void HeaderMouseDown(MouseEventArgs e)
@@ -1108,6 +1173,7 @@ namespace OpenUniverseLauncher
                 }
             }
             catch { }
+            try { if (_bannerScaled != null) { _bannerScaled.Dispose(); _bannerScaled = null; } } catch { }
             base.OnFormClosing(e);
         }
 
@@ -2368,10 +2434,25 @@ namespace OpenUniverseLauncher
                         && Norm(inst) == Norm(manifestVersion);
             Console.WriteLine("match: " + (same ? "yes" : "no"));
 
-            if (same)
+            // --- Логика перерисовки шапки (мерцание баннера) ---
+            // Мышь «стоит» на кнопке: подсветка не меняется -> НЕ перерисовываем.
+            bool repaintSame = HoverChanged(2, 0, 0, 2, 0, 0);   // false = верно
+            // Мышь ушла с кнопки: подсветка изменилась -> перерисовываем.
+            bool repaintMoved = HoverChanged(0, 0, 0, 2, 0, 0);  // true = верно
+            Console.WriteLine("header repaint unchanged: " + (repaintSame ? "REDRAW(bad)" : "skip(ok)"));
+            Console.WriteLine("header repaint on change: " + (repaintMoved ? "redraw(ok)" : "skip(bad)"));
+            bool hoverOk = !repaintSame && repaintMoved;
+            Console.WriteLine("header logic: " + (hoverOk ? "ok" : "FAIL"));
+
+            if (same && hoverOk)
             {
                 Console.WriteLine("RESULT: up-to-date");
                 return 0;
+            }
+            if (!hoverOk)
+            {
+                Console.WriteLine("RESULT: header redraw logic FAILED");
+                return 1;
             }
             Console.WriteLine("RESULT: version mismatch (installed != latest)");
             return 1;
