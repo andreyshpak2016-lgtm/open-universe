@@ -177,6 +177,24 @@ void UOUClientNet::SendInput(const FOUInputFrame& Input)
 	SendPacket(Body);
 }
 
+void UOUClientNet::SendCharacter(const FVector& PositionServer, float Yaw, bool bMoving, bool bActive)
+{
+	if (!IsConnected() || OwnEntityId == 0)
+	{
+		return;
+	}
+	// Разбор/сборка провода — в OUWire (тот же код, что проверен стендом).
+	// Позиция здесь в СЕРВЕРНЫХ единицах (как хранит корабль), переводим в см UE.
+	const FVector InCm = OUInterop::ServerToUE(PositionServer);
+	const std::vector<uint8_t> Body = OUWire::EncodeCharacter(
+		static_cast<uint32_t>(OwnEntityId),
+		static_cast<float>(InCm.X), static_cast<float>(InCm.Y), static_cast<float>(InCm.Z),
+		Yaw, bMoving, bActive);
+	TArray<uint8> Arr;
+	Arr.Append(Body.data(), static_cast<int32>(Body.size()));
+	SendPacket(Arr);
+}
+
 void UOUClientNet::SendBuild(int32 Entity, int32 Action, int32 X, int32 Y, int32 Z, int32 R, int32 G, int32 B)
 {
 	if (!IsConnected())
@@ -233,6 +251,8 @@ void UOUClientNet::Poll()
 	{
 		return;
 	}
+	// Позы чужих персонажей собираются заново каждый кадр (кадровый буфер).
+	RemoteCharacters.Reset();
 	// Адрес отправителя создаём через фабрику: FInternetAddr абстрактный.
 	ISocketSubsystem* SocketSub = ISocketSubsystem::Get(PLATFORM_SOCKETSUBSYSTEM);
 	TSharedRef<FInternetAddr> From = SocketSub->CreateInternetAddr();
@@ -369,6 +389,24 @@ void UOUClientNet::Poll()
 					bOwnDestroyed = false;
 					OwnRespawnTick = 0;
 					OwnInvulnUntil = static_cast<int64>(R.InvulnUntil);
+				}
+			}
+		}
+		else if (Body[0] == OUWire::TagServerCharacter) // поза чужого персонажа
+		{
+			OUWire::CharacterPose P;
+			if (OUWire::DecodeCharacter(Body.GetData(), static_cast<size_t>(Body.Num()), P))
+			{
+				if (static_cast<int32>(P.Entity) != OwnEntityId)
+				{
+					FOUCharacterState S;
+					S.Entity = static_cast<int32>(P.Entity);
+					// Провод → см UE → серверные единицы (как у сущностей).
+					const double ToWorld = 1.0 / OUInterop::ServerUnitToCm;
+					S.Position = FVector(P.X, P.Y, P.Z) * ToWorld;
+					S.Yaw = P.Yaw;
+					S.bMoving = P.Moving;
+					RemoteCharacters.Add(S);
 				}
 			}
 		}

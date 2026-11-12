@@ -27,6 +27,7 @@
 #pragma once
 
 #include <cstdint>
+#include <cmath>
 #include <cstring>
 #include <string>
 #include <vector>
@@ -54,6 +55,8 @@ namespace OUWire
         TagHull = 14,
         TagDeath = 15,
         TagRespawn = 16,
+        TagClientCharacter = 17,
+        TagServerCharacter = 18,
     };
 
     /// Действия редактора конструкций.
@@ -168,6 +171,15 @@ namespace OUWire
     {
         uint32_t Entity = 0;
         uint64_t InvulnUntil = 0;
+    };
+
+    /// Поза чужого пешего персонажа (сервер → клиент, тег 18).
+    struct CharacterPose
+    {
+        uint32_t Entity = 0;
+        float X = 0.f, Y = 0.f, Z = 0.f;
+        float Yaw = 0.f;
+        bool Moving = false;
     };
 
     // --- Низкоуровневое чтение ---
@@ -448,9 +460,30 @@ namespace OUWire
         return true;
     }
 
-    // --- Кодирование (для тестов и клиента) ---
+    /// Разобрать позу чужого персонажа (tag 18). Позиция — в сантиметрах UE.
+    inline bool DecodeCharacter(const uint8_t* body, size_t len, CharacterPose& out)
+    {
+        Reader r{body, len, 0};
+        uint8_t tag = 0;
+        if (!r.U8(tag) || tag != TagServerCharacter) return false;
+        uint64_t entity = 0;
+        if (!r.Varint(entity)) return false;
+        out.Entity = static_cast<uint32_t>(entity);
+        int64_t px = 0, py = 0, pz = 0;
+        if (!r.SVarint(px) || !r.SVarint(py) || !r.SVarint(pz)) return false;
+        if (!r.F32(out.Yaw)) return false;
+        uint8_t moving = 0;
+        if (!r.U8(moving)) return false;
+        out.Moving = moving != 0;
+        out.X = static_cast<float>(px * WireToCm);
+        out.Y = static_cast<float>(py * WireToCm);
+        out.Z = static_cast<float>(pz * WireToCm);
+        return true;
+    }
 
-    /// Дописать LEB128-varint в буфер.
+    /// Собрать позу своего персонажа (клиент → сервер, тег 17).
+    ///
+    /// Позиция задаётся в сантиметрах UE (как в снимках), квантуется в провод.
     inline void push_varint(std::vector<uint8_t>& out, uint64_t v)
     {
         while (v >= 0x80)
@@ -460,6 +493,36 @@ namespace OUWire
         }
         out.push_back(static_cast<uint8_t>(v));
     }
+
+    inline std::vector<uint8_t> EncodeCharacter(
+        uint32_t entity, float xCm, float yCm, float zCm, float yaw, bool moving, bool active)
+    {
+        std::vector<uint8_t> out;
+        out.push_back(TagClientCharacter);
+        push_varint(out, entity);
+        // Обратное квантование: см → провод (1/10000 единицы).
+        auto push_svarint = [&out](int64_t v) {
+            uint64_t zz = (static_cast<uint64_t>(v) << 1) ^ static_cast<uint64_t>(v >> 63);
+            while (zz >= 0x80) { out.push_back(static_cast<uint8_t>(zz) | 0x80); zz >>= 7; }
+            out.push_back(static_cast<uint8_t>(zz));
+        };
+        const double inv = 1.0 / (1.0 / 10000.0 * 100.0); // см → провод
+        push_svarint(static_cast<int64_t>(std::llround(xCm * inv)));
+        push_svarint(static_cast<int64_t>(std::llround(yCm * inv)));
+        push_svarint(static_cast<int64_t>(std::llround(zCm * inv)));
+        // yaw как f32 LE.
+        uint32_t bits = 0;
+        std::memcpy(&bits, &yaw, 4);
+        out.push_back(bits & 0xFF);
+        out.push_back((bits >> 8) & 0xFF);
+        out.push_back((bits >> 16) & 0xFF);
+        out.push_back((bits >> 24) & 0xFF);
+        out.push_back(moving ? 1 : 0);
+        out.push_back(active ? 1 : 0);
+        return out;
+    }
+
+    // --- Кодирование (для тестов и клиента) ---
 
     /// Собрать команду строительства.
     inline std::vector<uint8_t> EncodeBuild(const BuildCommand& cmd)

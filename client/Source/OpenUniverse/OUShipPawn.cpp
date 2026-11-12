@@ -137,6 +137,11 @@ void AOUShipPawn::BeginPlay()
 	{
 		RemoteShipMesh = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cube.Cube"));
 	}
+	// Меш чужого персонажа (вертикальный цилиндр).
+	if (!CharacterMesh)
+	{
+		CharacterMesh = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cylinder.Cylinder"));
+	}
 
 	// Цвет корабля (оранжево-серый металл) — чтобы он читался в кадре.
 	if (ShipMesh)
@@ -147,6 +152,71 @@ void AOUShipPawn::BeginPlay()
 	// Менеджер начала координат (может отсутствовать — тогда работаем без него).
 	OriginManager = Cast<AUOOriginManager>(
 		UGameplayStatics::GetActorOfClass(GetWorld(), AUOOriginManager::StaticClass()));
+}
+
+void AOUShipPawn::UpdateRemoteCharacters()
+{
+	if (!Net)
+	{
+		return;
+	}
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+	// Позы приходят каждый кадр — отмечаем видимых и рисуем «фигурки».
+	for (const FOUCharacterState& C : Net->RemoteCharacters)
+	{
+		AActor* Actor = nullptr;
+		if (TObjectPtr<AActor>* Found = RemoteCharacterActors.Find(C.Entity))
+		{
+			Actor = *Found;
+		}
+		if (!Actor)
+		{
+			Actor = World->SpawnActor<AActor>(AActor::StaticClass(), FTransform::Identity);
+			if (!Actor) { continue; }
+			USceneComponent* Root = NewObject<USceneComponent>(Actor, TEXT("Root"));
+			Actor->SetRootComponent(Root);
+			Root->RegisterComponent();
+			// Простая фигурка: вертикальный цилиндр (для пеших игроков).
+			UStaticMeshComponent* Comp = NewObject<UStaticMeshComponent>(Actor, TEXT("CharMesh"));
+			Comp->SetupAttachment(Root);
+			Comp->RegisterComponent();
+			if (CharacterMesh)
+			{
+				Comp->SetStaticMesh(CharacterMesh);
+			}
+			Comp->SetRelativeScale3D(FVector(0.7f, 0.7f, 1.7f));
+			Comp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			Comp->SetVectorParameterValueOnMaterials(TEXT("Color"), FVector(0.35f, 0.85f, 0.45f));
+			Actor->AddInstanceComponent(Comp);
+			RemoteCharacterActors.Add(C.Entity, Actor);
+		}
+		// C.Position — серверные оси: переводим в UE (с масштабом).
+		const FVector Loc = OUInterop::ServerToUE(C.Position);
+		Actor->SetActorLocation(Loc);
+		if (!LoggedChars.Contains(C.Entity))
+		{
+			LoggedChars.Add(C.Entity);
+			UE_LOG(LogOUShip, Log, TEXT("Сеть: видим пешего игрока %d"), C.Entity);
+		}
+	}
+	// Очистка: если персонаж пропал (вернулся в корабль) — убираем.
+	TSet<int32> Alive;
+	for (const FOUCharacterState& C : Net->RemoteCharacters)
+	{
+		Alive.Add(C.Entity);
+	}
+	for (auto It = RemoteCharacterActors.CreateIterator(); It; ++It)
+	{
+		if (!Alive.Contains(It.Key()) && It.Value())
+		{
+			It.Value()->Destroy();
+			It.RemoveCurrent();
+		}
+	}
 }
 
 void AOUShipPawn::DrawCombatEffects()
@@ -320,6 +390,11 @@ void AOUShipPawn::EnterShip(AOUCharacterPawn* FromCharacter)
 	{
 		FromCharacter->Destroy();
 		Character = nullptr;
+	}
+	// Сообщаем серверу, что пеший персонаж больше не активен (снять позу).
+	if (Net && Net->IsConnected())
+	{
+		Net->SendCharacter(FVector::ZeroVector, 0.f, false, /*bActive=*/false);
 	}
 	UE_LOG(LogOUShip, Log, TEXT("Возврат в корабль"));
 }
@@ -521,8 +596,9 @@ void AOUShipPawn::Tick(float DeltaSeconds)
 			}
 			if (Net->IsConnected())
 			{
-				// Рисуем других (дроны/чужие корабли) — иначе цели не видно.
+				// Рисуем других (дроны/чужие корабли и персонажи).
 				UpdateRemotePlayers();
+				UpdateRemoteCharacters();
 				// Тестовый авто-огонь работает и у припаркованного корабля:
 				// шлём кадр с огнём (без тяги), чтобы проверить бой.
 				if (FParse::Param(FCommandLine::Get(), TEXT("OUAutoFire")))
@@ -614,6 +690,7 @@ void AOUShipPawn::Tick(float DeltaSeconds)
 			}
 			// Рисуем чужие корабли из последнего снимка.
 			UpdateRemotePlayers();
+			UpdateRemoteCharacters();
 		}
 		// Трассеры и попадания по событиям выстрела от сервера.
 		DrawCombatEffects();

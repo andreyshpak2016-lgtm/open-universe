@@ -710,6 +710,15 @@ void AOUCharacterPawn::Tick(float DeltaSeconds)
 	ResolveNet();
 	ApplyServerBuildEdits();
 
+	// Отправляем свою позу пешего персонажа другим игрокам.
+	if (Net && Net->IsConnected())
+	{
+		const float HSpdNet = FVector::VectorPlaneProject(Velocity, Up).Size();
+		// Поза — в серверных единицах (как позиция корабля).
+		const FVector PosServer = OUInterop::UEToServer(GetActorLocation());
+		Net->SendCharacter(PosServer, ViewYaw, HSpdNet > 50.f, /*bActive=*/true);
+	}
+
 	// Оружие: кулдаун, угасание вспышки, автоогонь для тестов.
 	FireTimer = FMath::Max(0.f, FireTimer - DeltaSeconds);
 	if (MuzzleTimer > 0.f)

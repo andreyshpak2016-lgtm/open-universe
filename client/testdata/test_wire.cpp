@@ -310,6 +310,30 @@ int main(int argc, char** argv)
         OUWire::RespawnEvent re;
         Check(OUWire::DecodeRespawn(rb.data(), rb.size(), re) && re.Entity == 5 && re.InvulnUntil == 4290,
               "возрождение разобрано (invuln_until)");
+
+        // Поза персонажа (тег 17 кодируется, тег 18 разбирается).
+        const std::vector<uint8_t> cb = OUWire::EncodeCharacter(2, 125.0f, -30.0f, 400.0f, 1.25f, true, true);
+        Check(cb[0] == OUWire::TagClientCharacter, "тег позы персонажа = 17");
+
+        std::vector<uint8_t> scb;
+        scb.push_back(OUWire::TagServerCharacter);
+        OUWire::push_varint(scb, 2);
+        // Позиция 125/-30/400 см: обратное квантование (см / 0.01) = *100.
+        auto push_svarint = [&scb](int64_t v) {
+            uint64_t zz = (static_cast<uint64_t>(v) << 1) ^ static_cast<uint64_t>(v >> 63);
+            while (zz >= 0x80) { scb.push_back(static_cast<uint8_t>(zz) | 0x80); zz >>= 7; }
+            scb.push_back(static_cast<uint8_t>(zz));
+        };
+        push_svarint(12500); push_svarint(-3000); push_svarint(40000);
+        const float yaw = 1.25f;
+        uint32_t yb = 0; std::memcpy(&yb, &yaw, 4);
+        scb.push_back(yb & 0xFF); scb.push_back((yb >> 8) & 0xFF);
+        scb.push_back((yb >> 16) & 0xFF); scb.push_back((yb >> 24) & 0xFF);
+        scb.push_back(1);
+        OUWire::CharacterPose cp;
+        Check(OUWire::DecodeCharacter(scb.data(), scb.size(), cp), "поза персонажа разобрана");
+        Check(cp.Entity == 2 && std::fabs(cp.X - 125.0f) < 0.01f && std::fabs(cp.Z - 400.0f) < 0.01f && cp.Moving,
+              "поля позы персонажа совпали");
     }
 
     std::printf("\n=== Итог ===\n");

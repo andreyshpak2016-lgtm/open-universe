@@ -119,7 +119,21 @@ pub struct Server {
     pub target_spawns: BTreeMap<NetId, Vec3>,
     /// Тик, на котором дрон-цель возродится (0 — жив или удалён без возврата).
     pub target_respawn_tick: BTreeMap<NetId, u64>,
+    /// Поза пешего персонажа каждой сущности: (позиция, курс, идёт ли).
+    /// `None` в значении-словаре означает «в корабле» (поза снята).
+    pub characters: BTreeMap<NetId, CharacterPose>,
     next_entity_id: NetId,
+}
+
+/// Поза пешего персонажа (для репликации другим клиентам).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct CharacterPose {
+    /// Позиция в серверных единицах (как и позиция корабля).
+    pub pos: Vec3,
+    /// Курс (радианы).
+    pub yaw: f32,
+    /// Идёт ли персонаж (для анимации у других).
+    pub moving: bool,
 }
 
 impl Server {
@@ -137,6 +151,7 @@ impl Server {
             shot_seq: BTreeMap::new(),
             target_spawns: BTreeMap::new(),
             target_respawn_tick: BTreeMap::new(),
+            characters: BTreeMap::new(),
             next_entity_id: 1,
         }
     }
@@ -609,6 +624,24 @@ impl Server {
         }
     }
 
+    /// Приём позы пешего персонажа от клиента.
+    ///
+    /// `active = false` — игрок снова в корабле, позу снимаем.
+    pub fn receive_character(
+        &mut self,
+        entity: NetId,
+        pos: Vec3,
+        yaw: f32,
+        moving: bool,
+        active: bool,
+    ) {
+        if active {
+            self.characters.insert(entity, CharacterPose { pos, yaw, moving });
+        } else {
+            self.characters.remove(&entity);
+        }
+    }
+
     /// Один авторитетный тик: шаг мира + формирование рассылки.
     pub fn tick(&mut self) -> SendPlan {
         // 0. Возрождение и восстановление: мёртвые ждут срок, живые регенят щит.
@@ -827,6 +860,24 @@ impl Server {
                     msgs.push(Message::ServerRespawn {
                         entity: *e,
                         invuln_until: respawn_until.get(e).copied().unwrap_or(0),
+                    });
+                }
+            }
+            // Позы пеших персонажей других игроков (видимых рядом).
+            for (id, pose) in &self.characters {
+                if conn.entity_id == *id {
+                    continue; // своя поза не нужна
+                }
+                // Показываем, если сущность видна по позиции персонажа.
+                let near = pose.pos.distance(
+                    all_states.get(&conn.entity_id).map(|s| s.pos).unwrap_or(Vec3::ZERO),
+                ) <= INTEREST_RADIUS;
+                if visible.contains(id) || near {
+                    msgs.push(Message::ServerCharacter {
+                        entity: *id,
+                        pos: pose.pos,
+                        yaw: pose.yaw,
+                        moving: pose.moving,
                     });
                 }
             }
@@ -1307,5 +1358,30 @@ mod tests {
             hull_after.shield < hull_before.shield || hull_after.armor < hull_before.armor,
             "дрон должен нанести урон игроку"
         );
+    }
+
+    #[test]
+    fn character_pose_is_replicated_to_other_players() {
+        let mut s = Server::new();
+        let a = s.connect(1, Vec3::ZERO);
+        s.connect(2, Vec3::new(20.0, 0.0, 0.0));
+        s.tick(); // базовый снимок
+        // Игрок 1 шлёт позу пешего персонажа рядом с игроком 2.
+        s.receive_character(a, Vec3::new(0.0, 0.0, 0.0), 0.5, true, true);
+        let plan = s.tick();
+        let msgs = &plan.messages[&2];
+        let seen = msgs.iter().any(|m| matches!(
+            m,
+            Message::ServerCharacter { entity, .. } if *entity == a
+        ));
+        assert!(seen, "игрок 2 должен увидеть персонажа игрока 1");
+        // Снятие позы (игрок вернулся в корабль) — больше не рассылается.
+        s.receive_character(a, Vec3::ZERO, 0.0, false, false);
+        let plan2 = s.tick();
+        let still = plan2.messages[&2].iter().any(|m| matches!(
+            m,
+            Message::ServerCharacter { entity, .. } if *entity == a
+        ));
+        assert!(!still, "после возврата в корабль поза не рассылается");
     }
 }

@@ -188,6 +188,14 @@ pub enum Message {
     ServerDeath { entity: NetId, respawn_tick: u64 },
     /// Сервер: сущность возрождена (полный корпус), неуязвима до `invuln_until`.
     ServerRespawn { entity: NetId, invuln_until: u64 },
+    /// Клиент: поза пешего персонажа (ходьба по поверхности).
+    ///
+    /// Клиент сам ведёт ходьбу (локальная симуляция по той же формуле, что
+    /// сервер), а сервер лишь принимает позу и раздаёт её другим. `active =
+    /// false` означает, что игрок снова в корабле.
+    ClientCharacter { entity: NetId, pos: Vec3, yaw: f32, moving: bool, active: bool },
+    /// Сервер: поза чужого пешего персонажа (для отрисовки фигурки).
+    ServerCharacter { entity: NetId, pos: Vec3, yaw: f32, moving: bool },
 }
 
 /// Состоявшийся выстрел (сервер → клиенты).
@@ -455,6 +463,8 @@ mod wire {
     const TAG_HULL: u8 = 14;
     const TAG_DEATH: u8 = 15;
     const TAG_RESPAWN: u8 = 16;
+    const TAG_CLIENT_CHARACTER: u8 = 17;
+    const TAG_SERVER_CHARACTER: u8 = 18;
 
     pub fn encode(msg: &Message) -> Vec<u8> {
         let mut w = Writer::new();
@@ -579,6 +589,21 @@ mod wire {
                 w.u8(TAG_RESPAWN);
                 w.varint(*entity as u64);
                 w.varint(*invuln_until);
+            }
+            Message::ClientCharacter { entity, pos, yaw, moving, active } => {
+                w.u8(TAG_CLIENT_CHARACTER);
+                w.varint(*entity as u64);
+                w.vec3_qv(*pos);
+                w.f32(*yaw);
+                w.bool(*moving);
+                w.bool(*active);
+            }
+            Message::ServerCharacter { entity, pos, yaw, moving } => {
+                w.u8(TAG_SERVER_CHARACTER);
+                w.varint(*entity as u64);
+                w.vec3_qv(*pos);
+                w.f32(*yaw);
+                w.bool(*moving);
             }
         }
         w.buf
@@ -708,6 +733,19 @@ mod wire {
             TAG_RESPAWN => Ok(Message::ServerRespawn {
                 entity: r.varint()? as NetId,
                 invuln_until: r.varint()?,
+            }),
+            TAG_CLIENT_CHARACTER => Ok(Message::ClientCharacter {
+                entity: r.varint()? as NetId,
+                pos: r.vec3_qv()?,
+                yaw: r.f32()?,
+                moving: r.bool()?,
+                active: r.bool()?,
+            }),
+            TAG_SERVER_CHARACTER => Ok(Message::ServerCharacter {
+                entity: r.varint()? as NetId,
+                pos: r.vec3_qv()?,
+                yaw: r.f32()?,
+                moving: r.bool()?,
             }),
             other => Err(WireError::BadTag(other)),
         }
@@ -894,6 +932,25 @@ mod tests {
         assert_eq!(decode(&encode(&death)).unwrap(), death);
         let respawn = Message::ServerRespawn { entity: 5, invuln_until: 4260 };
         assert_eq!(decode(&encode(&respawn)).unwrap(), respawn);
+    }
+
+    #[test]
+    fn character_pose_roundtrip() {
+        let c = Message::ClientCharacter {
+            entity: 2,
+            pos: Vec3::new(12.5, -3.25, 40.0),
+            yaw: 1.25,
+            moving: true,
+            active: true,
+        };
+        assert_eq!(decode(&encode(&c)).unwrap(), c);
+        let s = Message::ServerCharacter {
+            entity: 2,
+            pos: Vec3::new(12.5, -3.25, 40.0),
+            yaw: 1.25,
+            moving: false,
+        };
+        assert_eq!(decode(&encode(&s)).unwrap(), s);
     }
 
     #[test]

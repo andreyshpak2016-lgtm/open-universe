@@ -122,6 +122,26 @@ struct FOUHullState
 	bool bDestroyed = false;
 };
 
+/** Поза чужого пешего персонажа от сервера. */
+USTRUCT(BlueprintType)
+struct FOUCharacterState
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Character")
+	int32 Entity = 0;
+
+	/** Позиция в СЕРВЕРНЫХ осях и сантиметрах UE (как у сущностей). */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Character")
+	FVector Position = FVector::ZeroVector;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Character")
+	float Yaw = 0.f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Character")
+	bool bMoving = false;
+};
+
 /**
  * Сетевой клиент Open Universe.
  *
@@ -214,6 +234,10 @@ public:
 	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Net")
 	int64 LastServerTick = 0;
 
+	/** Позы чужих пеших персонажей, пришедшие за последний кадр. */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Character")
+	TArray<FOUCharacterState> RemoteCharacters;
+
 	/** Подключиться к серверу. */
 	UFUNCTION(BlueprintCallable, Category = "Open Universe|Net")
 	bool Connect();
@@ -225,6 +249,13 @@ public:
 	/** Отправить кадр управления. */
 	UFUNCTION(BlueprintCallable, Category = "Open Universe|Net")
 	void SendInput(const FOUInputFrame& Input);
+
+	/**
+	 * Отправить позу своего пешего персонажа.
+	 * `active = false` — игрок вернулся в корабль (позу снимаем).
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Open Universe|Character")
+	void SendCharacter(const FVector& PositionServer, float Yaw, bool bMoving, bool bActive);
 
 	/** Обработать входящие пакеты (вызывать раз в кадр). */
 	UFUNCTION(BlueprintCallable, Category = "Open Universe|Net")

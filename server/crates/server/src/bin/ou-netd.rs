@@ -127,6 +127,11 @@ fn main() {
                             server.receive_input(*pid, &inputs);
                         }
                     }
+                    Message::ClientCharacter { entity, pos, yaw, moving, active } => {
+                        if clients.contains_key(&from) {
+                            server.receive_character(entity, pos, yaw, moving, active);
+                        }
+                    }
                     Message::ClientBuild(cmd) => {
                         if let Some(pid) = clients.get(&from) {
                             let reason = server.apply_build_as(*pid, &cmd);

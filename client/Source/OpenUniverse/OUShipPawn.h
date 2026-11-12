@@ -113,6 +113,9 @@ protected:
 	/** Обновить визуализацию других игроков из последнего снимка. */
 	void UpdateRemotePlayers();
 
+	/** Обновить визуализацию чужих пеших персонажей. */
+	void UpdateRemoteCharacters();
+
 	/** Нарисовать трассеры/попадания по событиям выстрела от сервера. */
 	void DrawCombatEffects();
 
@@ -157,6 +160,17 @@ protected:
 	/** Чужие корабли: сущность → актор-заглушка. */
 	UPROPERTY(Transient)
 	TMap<int32, TObjectPtr<AActor>> RemoteActors;
+
+	/** Чужие пешие персонажи: сущность → актор-фигурка. */
+	UPROPERTY(Transient)
+	TMap<int32, TObjectPtr<AActor>> RemoteCharacterActors;
+
+	/** Уже залогированные персонажи (чтобы не спамить лог). */
+	TSet<int32> LoggedChars;
+
+	/** Меш чужого персонажа (цилиндр), загружается один раз. */
+	UPROPERTY(Transient)
+	TObjectPtr<class UStaticMesh> CharacterMesh = nullptr;
 
 	/** Отправлять ли ввод на сервер (включается после подключения). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Open Universe|Net")
