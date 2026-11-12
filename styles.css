@@ -42,8 +42,8 @@ a:hover { text-decoration: underline; }
 .brand { display: flex; align-items: center; gap: 12px; font-weight: 800; letter-spacing: .5px; font-size: 1.12rem; }
 .brand img { width: 34px; height: 34px; }
 .brand .ou { background: linear-gradient(90deg, #8fb0ff, #00e6d0); -webkit-background-clip: text; background-clip: text; color: transparent; }
-.topbar nav { margin-left: auto; display: flex; gap: 20px; flex-wrap: wrap; }
-.topbar nav a { color: var(--muted); font-size: .92rem; }
+.topbar nav { margin-left: auto; display: flex; align-items: center; gap: 15px; flex-wrap: wrap; row-gap: 8px; }
+.topbar nav a { color: var(--muted); font-size: .89rem; }
 .topbar nav a:hover { color: #fff; text-decoration: none; }
 
 /* ---------- Hero ---------- */
@@ -445,5 +445,14 @@ footer .wrap { display: flex; justify-content: space-between; gap: 20px; flex-wr
   .progress-head { grid-template-columns: 1fr; }
   .download-grid { grid-template-columns: 1fr; }
   .erd-layout { grid-template-columns: 1fr; }
-  .topbar nav { display: none; }
+  /* Прячем только ссылки-разделы; переключатель языка и кнопка остаются видны. */
+  .topbar .nav-link { display: none; }
+  .topbar nav { gap: 12px; }
+}
+@media (max-width: 480px) {
+  .topbar { padding: 10px 14px; }
+  .brand { font-size: 1rem; }
+  .brand img { width: 28px; height: 28px; }
+  .nav-cta, .nav-sponsor, .nav-report { padding: 5px 10px; font-size: .82rem; }
+  .lang-switch button { padding: 4px 9px; font-size: .78rem; }
 }
