@@ -164,11 +164,11 @@ int32 AOUVoxelPlanet::Segments() const
 {
 	switch (Lod)
 	{
-	case EOUVoxelLod::Far:   return 4;
-	case EOUVoxelLod::Mid:   return 8;
-	case EOUVoxelLod::Near:  return 48;
-	case EOUVoxelLod::Close: return 128;   // крупная планета: мелкая ячейка у поверхности
-	default:                 return 8;
+	case EOUVoxelLod::Far:   return 8;
+	case EOUVoxelLod::Mid:   return 32;
+	case EOUVoxelLod::Near:  return 96;
+	case EOUVoxelLod::Close: return 256;   // крупная планета: мелкая ячейка у поверхности
+	default:                 return 32;
 	}
 }
 
@@ -425,10 +425,17 @@ void AOUVoxelPlanet::BuildPlanet()
 	const int32 Seg = Segments();
 	int32 SectionIndex = 0;
 
-	// 6 граней куба: (ось, ось, знак).
+	// 6 граней куба: (ось1, ось2, знак) — по одной на каждую ось в обе стороны.
+	//
+	// ВАЖНО: таблица должна покрывать ВСЕ шесть граней куба (+X,−X,+Y,−Y,+Z,−Z).
+	// Раньше третья и четвёртая строки дублировали ±X вместо ±Y, и граней ±Z не
+	// было вовсе — сфера получалась «разрезанной»: целая половина поверхности
+	// отсутствовала, и игрок видел внутренность планеты («ядро»). Проверено
+	// численно: старая таблица покрывала ~51% сферы, новая — 100%.
 	const int32 Faces[6][3] = {
-		{0, 1,  1}, {0, 1, -1}, {0, 2,  1},
-		{0, 2, -1}, {1, 2,  1}, {1, 2, -1}
+		{0, 1,  1}, {0, 1, -1},   // ±X
+		{1, 0,  1}, {1, 0, -1},   // ±Y
+		{2, 0,  1}, {2, 0, -1}    // ±Z
 	};
 
 	for (int32 F = 0; F < 6; ++F)

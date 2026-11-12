@@ -25,6 +25,9 @@
 #include "Kismet/GameplayStatics.h"
 #include "UnrealClient.h"
 #include "Misc/DateTime.h"
+#include "Misc/CommandLine.h"
+#include "Misc/Parse.h"
+#include "TimerManager.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogOUGameMode, Log, All);
 
@@ -68,6 +71,23 @@ void AOUGameMode::BeginPlay()
 	if (bAutoScreenshots)
 	{
 		RequestShot(TEXT("start"));
+	}
+
+	// Тестовый отложенный снимок (`-OULateShot`): кадр после закрытия меню и
+	// авто-подключения. Нужен для проверок в режиме без окна, где ручной снимок
+	// экрана невозможен.
+	if (FParse::Param(FCommandLine::Get(), TEXT("OULateShot")))
+	{
+		UWorld* World = GetWorld();
+		if (World)
+		{
+			FTimerHandle Handle;
+			World->GetTimerManager().SetTimer(Handle, [this]()
+			{
+				RequestShot(TEXT("late"));
+			}, 25.0f, false);
+			UE_LOG(LogOUGameMode, Log, TEXT("Запланирован отложенный снимок (25 с)"));
+		}
 	}
 }
 
@@ -129,9 +149,42 @@ void AOUGameMode::BuildWorld()
 	};
 
 	// --- Небо и атмосфера ---
-	if (!Has(ASkyAtmosphere::StaticClass()))
+	// ВАЖНО: SkyAtmosphere по умолчанию рассчитан на планету радиусом 6360 км
+	// (Земля). Наша планета — 500 км, поэтому дефолтная атмосфера строилась бы
+	// «внутри» неё: игрок оказывался глубоко под уровнем атмосферного слоя, и
+	// его граница была видна как косой клин в небе (казалось, что горизонт
+	// наклонён). Привязываем атмосферу к ЦЕНТРУ планеты (мировое начало — центр
+	// планеты, см. `GPlanetOffset`) и задаём её радиус в километрах.
+	const bool bNoSky = FParse::Param(FCommandLine::Get(), TEXT("OUNoSky"));
+	constexpr float PlanetRadiusKm = 500.0f;    // совпадает с радиусом планеты
+	constexpr float AtmosphereHeightKm = 20.0f; // тонкий слой над поверхностью
+
+	auto ConfigureSky = [](ASkyAtmosphere* Sky)
 	{
-		World->SpawnActor<ASkyAtmosphere>(ASkyAtmosphere::StaticClass(), FTransform::Identity);
+		if (!Sky)
+		{
+			return;
+		}
+		if (USkyAtmosphereComponent* Comp = Sky->GetComponent())
+		{
+			// Центр планеты — в трансформе компонента (actor стоит в начале
+			// координат, а это и есть центр нашей планеты).
+			Comp->TransformMode = ESkyAtmosphereTransformMode::PlanetCenterAtComponentTransform;
+			Comp->SetBottomRadius(PlanetRadiusKm);
+			Comp->SetAtmosphereHeight(AtmosphereHeightKm);
+		}
+	};
+
+	if (!bNoSky)
+	{
+		ASkyAtmosphere* Sky = Cast<ASkyAtmosphere>(
+			UGameplayStatics::GetActorOfClass(World, ASkyAtmosphere::StaticClass()));
+		if (!Sky)
+		{
+			Sky = World->SpawnActor<ASkyAtmosphere>(
+				ASkyAtmosphere::StaticClass(), FTransform::Identity);
+		}
+		ConfigureSky(Sky);
 	}
 
 	// --- Экспозиция (пост-обработка) ---
