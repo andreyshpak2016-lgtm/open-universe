@@ -318,13 +318,14 @@ int main(int argc, char** argv)
         std::vector<uint8_t> scb;
         scb.push_back(OUWire::TagServerCharacter);
         OUWire::push_varint(scb, 2);
-        // Позиция 125/-30/400 см: обратное квантование (см / 0.01) = *100.
+        // Позиция 125/-30/400 см: обратное квантование (см → провод = см × 10
+        // при масштабе 1 мм: 0.1 см на единицу провода).
         auto push_svarint = [&scb](int64_t v) {
             uint64_t zz = (static_cast<uint64_t>(v) << 1) ^ static_cast<uint64_t>(v >> 63);
             while (zz >= 0x80) { scb.push_back(static_cast<uint8_t>(zz) | 0x80); zz >>= 7; }
             scb.push_back(static_cast<uint8_t>(zz));
         };
-        push_svarint(12500); push_svarint(-3000); push_svarint(40000);
+        push_svarint(1250); push_svarint(-300); push_svarint(4000);
         const float yaw = 1.25f;
         uint32_t yb = 0; std::memcpy(&yb, &yaw, 4);
         scb.push_back(yb & 0xFF); scb.push_back((yb >> 8) & 0xFF);

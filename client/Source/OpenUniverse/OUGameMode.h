@@ -28,25 +28,12 @@ public:
 	/** Достроить сцену, если в мире не хватает ключевых акторов. */
 	virtual void StartPlay() override;
 
-	/** Каждый кадр двигаем тела системы по орбитам. */
-	virtual void Tick(float DeltaSeconds) override;
-
 	/** Точка старта: если на карте её нет — создаём сами (иначе будет чёрный экран). */
 	virtual AActor* ChoosePlayerStart_Implementation(AController* Player) override;
 
 	/** Собрать всю сцену заново: свет, небо, туман, планета, начало координат. */
 	UFUNCTION(BlueprintCallable, CallInEditor, Category = "Open Universe|World")
 	void BuildWorld();
-
-	/**
-	 * Построить тела системы по данным от сервера (солнце и планеты).
-	 *
-	 * Заменяет прежние тела системы (убирает и создаёт заново). Вызывается,
-	 * когда клиент получил описание системы (`ServerSystem`). Позиции — в
-	 * серверных единицах относительно центра домашней планеты.
-	 */
-	UFUNCTION(BlueprintCallable, Category = "Open Universe|World")
-	void BuildSystemFromServer();
 
 	/**
 	 * Сохранить скриншот кадра в файл `Saved/Screenshots/OU_<метка>.png`.
@@ -70,19 +57,4 @@ private:
 	void RequestShot(const FString& Label);
 	FTimerHandle ShotTimer;
 	FString PendingShotLabel;
-
-	/** Тело системы на орбите: актор + параметры движения (для тика). */
-	struct FOrbitingBody
-	{
-		AActor* Actor = nullptr;
-		FVector CenterServer = FVector::ZeroVector;   // центр орбиты, серверные единицы
-		float Orbit = 0.f;                             // радиус орбиты, серверные единицы
-		float Phase = 0.f;                             // начальная фаза, рад
-		float Omega = 0.f;                             // угловая скорость, рад/с
-	};
-	TArray<FOrbitingBody> OrbitingBodies;
-	float SystemTime = 0.f;
-
-	/** Двигать тела системы по орбитам (вызывается каждый кадр). */
-	void TickSystemOrbits(float DeltaSeconds);
 };

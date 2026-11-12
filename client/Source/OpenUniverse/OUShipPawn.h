@@ -8,7 +8,6 @@
 #include "OUShipPawn.generated.h"
 
 class UStaticMeshComponent;
-class USpringArmComponent;
 class UCameraComponent;
 class UOUClientNet;
 class AOUCharacterPawn;
@@ -100,9 +99,6 @@ protected:
 	/** Была ли своя сущность уничтожена (для скрытия/показа корабля). */
 	bool bWasDestroyed = false;
 
-	/** Построена ли система из данных сервера (делаем один раз). */
-	bool bSystemBuilt = false;
-
 	/** Маска зажатия F: сколько секунд держат (для «зажми, чтобы выйти»). */
 	float ExitHoldTime = 0.f;
 
@@ -148,11 +144,7 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Open Universe|Flight")
 	UStaticMeshComponent* ShipMesh = nullptr;
 
-	/** Штанга камеры: камера смотрит на корабль сзади-сверху. */
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Open Universe|Flight")
-	USpringArmComponent* SpringArm = nullptr;
-
-	/** Камера игрока (вид от третьего лица). */
+	/** Камера игрока (вид от первого лица: внутри кабины). */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Open Universe|Flight")
 	UCameraComponent* Camera = nullptr;
 

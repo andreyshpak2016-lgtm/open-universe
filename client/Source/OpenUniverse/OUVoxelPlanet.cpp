@@ -337,8 +337,8 @@ FVector AOUVoxelPlanet::HomeSpawnDirectionServer()
 	// обход сферы в СЕРВЕРНЫХ осях, ищем первое «сухое» направление с заметной,
 	// но не пиковой высотой. Результат — в серверных осях.
 	AOUVoxelPlanet* Probe = NewObject<AOUVoxelPlanet>();
-	Probe->Radius = 100000.f;   // серверные единицы (совпадает с ou_sim::HOME_PLANET_RADIUS)
-	Probe->Amplitude = 2000.f;
+	Probe->Radius = 500000.f;   // серверные единицы (совпадает с ou_sim::HOME_PLANET_RADIUS)
+	Probe->Amplitude = 10000.f;
 	Probe->Seed = 0xC0FFEE;
 
 	const float Step = 0.15f;
@@ -374,8 +374,8 @@ FVector AOUVoxelPlanet::HomeSpawnServer(float Clearance)
 	// позицию именно в серверных единицах.
 	const FVector DirS = HomeSpawnDirectionServer();
 	AOUVoxelPlanet* Probe = NewObject<AOUVoxelPlanet>();
-	Probe->Radius = 100000.f;
-	Probe->Amplitude = 2000.f;
+	Probe->Radius = 500000.f;
+	Probe->Amplitude = 10000.f;
 	Probe->Seed = 0xC0FFEE;
 	const float Surface = Probe->SurfaceRadiusAtServer(DirS);
 	return DirS * (Surface + Clearance);

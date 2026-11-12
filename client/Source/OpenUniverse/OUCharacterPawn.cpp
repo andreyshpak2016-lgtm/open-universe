@@ -8,7 +8,6 @@
 #include "Components/CapsuleComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/SceneComponent.h"
-#include "GameFramework/SpringArmComponent.h"
 #include "Camera/CameraComponent.h"
 #include "Components/InputComponent.h"
 #include "Components/PointLightComponent.h"
@@ -156,18 +155,28 @@ AOUCharacterPawn::AOUCharacterPawn()
 	MuzzleFlash->SetAttenuationRadius(400.f);
 	MuzzleFlash->SetVisibility(false);
 
-	// Камера от третьего лица через плечо: видно и персонажа, и корабль рядом.
-	// Сдвиг вбок — чтобы собственная фигурка не закрывала обзор.
-	SpringArm = CreateDefaultSubobject<USpringArmComponent>(TEXT("SpringArm"));
-	SpringArm->SetupAttachment(Capsule);
-	SpringArm->SetRelativeLocation(FVector(-20.f, 60.f, CapsuleHalfHeight * 0.7f));
-	SpringArm->TargetArmLength = 900.f;
-	SpringArm->bDoCollisionTest = false;
-	SpringArm->bUsePawnControlRotation = false;
-
+	// Камера — ВИД ОТ ПЕРВОГО ЛИЦА: камера прямо в голове, без штанги.
+	// Тело фигурки своему игроку не показываем (иначе оно закрывало бы обзор),
+	// но чужой игрок видит фигурку (клиент других игроков рисует её отдельно).
 	Camera = CreateDefaultSubobject<UCameraComponent>(TEXT("Camera"));
-	Camera->SetupAttachment(SpringArm, USpringArmComponent::SocketName);
+	Camera->SetupAttachment(Capsule);
+	Camera->SetRelativeLocation(FVector(18.f, 0.f, CapsuleHalfHeight * 0.85f));  // у глаз
 	Camera->bUsePawnControlRotation = false;
+	Camera->SetFieldOfView(95.f);   // шире обычного: у поверхности нужен обзор
+
+	// Свою фигурку и оружие владельцу не показываем — вид от первого лица.
+	// (Чужие игроки видят фигурку: её рисует их собственный клиент отдельно.)
+	auto HideFromOwner = [](UPrimitiveComponent* Part)
+	{
+		if (Part) { Part->SetOwnerNoSee(true); }
+	};
+	HideFromOwner(BodyMesh);
+	HideFromOwner(HeadMesh);
+	HideFromOwner(ArmL);
+	HideFromOwner(ArmR);
+	HideFromOwner(LegL);
+	HideFromOwner(LegR);
+	HideFromOwner(GunMesh);
 
 	AutoPossessPlayer = EAutoReceiveInput::Disabled;
 }
@@ -256,7 +265,7 @@ float AOUCharacterPawn::SurfaceRadius(const FVector& DirUE) const
 		return Planet->SurfaceRadiusAt(DirUE);   // см UE
 	}
 	// Запасной вариант: радиус планеты в UE-сантиметрах.
-	return 10000000.f;
+	return 50000000.f;
 }
 
 void AOUCharacterPawn::PlaceAt(const FVector& WorldLocation, float LookYawWorld)
@@ -694,12 +703,12 @@ void AOUCharacterPawn::Tick(float DeltaSeconds)
 
 	// Ориентация тела: «верх» — радиус, «вперёд» — по курсу.
 	SetActorRotation(FRotationMatrix::MakeFromXZ(Forward, Up).Rotator());
-	// Камера: штанга в ЛОКАЛЬНЫХ осях пешки (локальный X = курс, Z = вверх),
-	// поэтому достаточно относительного поворота по тангажу — без мировой
-	// математики, которая конфликтует с родительским трансформом.
-	if (SpringArm)
+	// Камера: в ЛОКАЛЬНЫХ осях пешки (локальный X = курс, Z = вверх) достаточно
+	// относительного поворота по тангажу — без мировой математики, которая
+	// конфликтует с родительским трансформом.
+	if (Camera)
 	{
-		SpringArm->SetRelativeRotation(FRotator(FMath::RadiansToDegrees(ViewPitch), 0.f, 0.f));
+		Camera->SetRelativeRotation(FRotator(FMath::RadiansToDegrees(ViewPitch), 0.f, 0.f));
 	}
 
 	// Анимация бега/ходьбы (процедурная, по горизонтальной скорости).

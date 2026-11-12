@@ -48,14 +48,9 @@ AOUGameMode::AOUGameMode()
 	PlayerControllerClass = AOUPlayerMenuController::StaticClass();
 	// HUD рисует само меню.
 	HUDClass = AOUPlayerMenuHUD::StaticClass();
-	// Тик нужен, чтобы двигать тела системы по орбитам.
-	PrimaryActorTick.bCanEverTick = true;
-}
-
-void AOUGameMode::Tick(float DeltaSeconds)
-{
-	Super::Tick(DeltaSeconds);
-	TickSystemOrbits(DeltaSeconds);
+	// Тик нужен для служебных задач GameMode (сейчас их нет, но тик включён
+	// на случай динамики сцены).
+	PrimaryActorTick.bCanEverTick = false;
 }
 
 void AOUGameMode::StartPlay()
@@ -228,97 +223,15 @@ void AOUGameMode::BuildWorld()
 	{
 		Home->PlanetType = EOUPlanetType::Terran;
 		Home->bHomePlanet = true;
-		Home->Radius = 10000000.f;     // 100 км в UE-сантиметрах (как на сервере)
-		Home->Amplitude = 200000.f;    // 2 км рельефа
+		Home->Radius = 50000000.f;     // 500 км в UE-сантиметрах (как на сервере)
+		Home->Amplitude = 1000000.f;   // 10 км рельефа
 		Home->BuildPlanet();
 	}
 
-	// --- Солнечная система: солнце и ещё три разные планеты ---
-	// Раскладываем их далеко в НЕБЕ над игроком, чтобы в кадре читалась
-	// система, а не «одна планета перед камерой». Это декоративные тела:
-	// на них не садятся (домашняя — в центре, на ней стоит игрок).
-	{
-		// Базис «неба»: Up — от центра планеты к точке появления (UE-оси).
-		FVector Up = AOUVoxelPlanet::HomeSpawnDirection();   // единичный, UE
-		if (Up.IsNearlyZero())
-		{
-			Up = FVector::UpVector;
-		}
-		FVector T1 = FVector::CrossProduct(Up, FVector::UpVector);
-		if (T1.SizeSquared() < 1e-4f)
-		{
-			T1 = FVector::CrossProduct(Up, FVector::RightVector);
-		}
-		T1 = T1.GetSafeNormal();
-		const FVector T2 = FVector::CrossProduct(Up, T1).GetSafeNormal();
-
-		// Направление «вперёд» игрока у поверхности: та же касательная, что
-		// строит корабль (forward по умолчанию — мировой +X, спроецированный
-		// на плоскость поверхности). Вокруг неё и раскладываем планеты.
-		FVector Fwd = FVector::VectorPlaneProject(FVector(1.f, 0.f, 0.f), Up);
-		if (Fwd.SizeSquared() < 1e-4f)
-		{
-			Fwd = T1;
-		}
-		Fwd = Fwd.GetSafeNormal();
-		// Базис вокруг направления взгляда: B — «вправо» в плоскости горизонта.
-		const FVector B = FVector::CrossProduct(Up, Fwd).GetSafeNormal();
-		UE_LOG(LogOUGameMode, Log, TEXT("Взгляд игрока: fwd=(%.2f,%.2f,%.2f) up=(%.2f,%.2f,%.2f)"),
-			Fwd.X, Fwd.Y, Fwd.Z, Up.X, Up.Y, Up.Z);
-
-		// Планета на горизонте: горизонт — это касательная плоскость, поэтому
-		// берём направление чуть выше неё (Elev) под углом Azim к взгляду.
-		auto SkyAt = [&](float AzimDeg, float ElevDeg, float Dist) -> FVector
-		{
-			const float A = FMath::DegreesToRadians(AzimDeg);
-			const float E = FMath::DegreesToRadians(ElevDeg);
-			const FVector Horiz = (Fwd * FMath::Cos(A) + B * FMath::Sin(A)).GetSafeNormal();
-			return (Horiz * FMath::Cos(E) + Up * FMath::Sin(E)).GetSafeNormal() * Dist;
-		};
-
-		// Солнце: крупная звезда высоко в небе.
-		if (!Has(AOUSolarBody::StaticClass()))
-		{
-			AOUSolarBody* Star = World->SpawnActor<AOUSolarBody>(
-				AOUSolarBody::StaticClass(),
-				FTransform(FRotator::ZeroRotator, SkyAt(-25.f, 32.f, 90000000.f)));   // 900 км от центра
-			if (Star)
-			{
-				Star->Kind = EOUSolarKind::Star;
-				Star->BodyRadiusCm = 6000000.f;   // 60 км — крупное светило вдали
-				Star->BodyColor = FLinearColor(1.0f, 0.86f, 0.35f);
-				Star->BuildBody();
-			}
-		}
-
-		// Четыре планеты системы: разные типы, у части есть атмосфера и облака,
-		// у части — нет (пустынная с пыльной дымкой и безвоздушная луна).
-		// Дистанции — сотни километров: за пределами домашней планеты (100 км).
-		struct FPlanetDef { EOUPlanetType Type; float Azim; float Elev; float DistCm; float RadiusCm; };
-		const FPlanetDef Defs[] = {
-			{ EOUPlanetType::Desert,   18.f, 20.f, 50000000.f,  4000000.f },  // 500 км, R 40 км (пыль, без облаков)
-			{ EOUPlanetType::Ice,      52.f, 14.f, 80000000.f,  3000000.f },  // 800 км, R 30 км (лёд + облака)
-			{ EOUPlanetType::GasGiant, -48.f, 24.f, 150000000.f, 9000000.f }, // 1.5 Мкм, R 90 км (полосы)
-			{ EOUPlanetType::Volcanic, 110.f, 18.f, 100000000.f, 3500000.f }, // 1.0 Мкм, R 35 км (пепел)
-			{ EOUPlanetType::Airless, -120.f, 12.f, 60000000.f, 2000000.f },  // 600 км, R 20 км (луна без атмосферы)
-		};
-		for (const FPlanetDef& D : Defs)
-		{
-			const FVector Pos = SkyAt(D.Azim, D.Elev, D.DistCm);
-			AOUVoxelPlanet* P = World->SpawnActor<AOUVoxelPlanet>(
-				AOUVoxelPlanet::StaticClass(),
-				FTransform(FRotator::ZeroRotator, Pos));
-			if (P)
-			{
-				P->PlanetType = D.Type;
-				P->bHomePlanet = false;
-				P->Radius = D.RadiusCm;
-				P->Amplitude = D.RadiusCm * 0.06f;
-				P->Lod = EOUVoxelLod::Mid;   // дальние планеты — детализация ниже
-				P->BuildPlanet();
-			}
-		}
-	}
+	// --- Других тел системы нет: в мире ровно одна планета ---
+	// Раньше здесь строились солнце и ещё четыре планеты (декоративные тела
+	// в небе). По решению проекта система сведена к одной большой планете,
+	// поэтому небесные тела не создаются и не рассылаются.
 
 	// --- База на поверхности, в точке появления игрока ---
 	if (!Has(AOUSurfaceBase::StaticClass()))
@@ -341,129 +254,6 @@ void AOUGameMode::BuildWorld()
 		World->SpawnActor<AUOOriginManager>(AUOOriginManager::StaticClass(), FTransform::Identity);
 	}
 
-	UE_LOG(LogOUGameMode, Log, TEXT("Сцена Open Universe собрана: свет, небо, планета, солнечная система, база, floating origin"));
+	UE_LOG(LogOUGameMode, Log, TEXT("Сцена Open Universe собрана: свет, небо, одна планета, база, floating origin"));
 }
 
-void AOUGameMode::BuildSystemFromServer()
-{
-	UWorld* World = GetWorld();
-	if (!World)
-	{
-		return;
-	}
-	// Находим сетевой компонент (он живёт на корабле игрока).
-	UOUClientNet* Net = nullptr;
-	for (TActorIterator<APawn> It(World); It; ++It)
-	{
-		if (UOUClientNet* Found = It->FindComponentByClass<UOUClientNet>())
-		{
-			Net = Found;
-			break;
-		}
-	}
-	if (!Net || !Net->bSystemReceived || Net->SystemBodies.Num() == 0)
-	{
-		return;
-	}
-
-	// Убираем прежние тела системы (солнце/декоративные планеты), чтобы не
-	// смешивать серверные данные с прежней «нарисованной» системой.
-	{
-		TArray<AActor*> Old;
-		for (TActorIterator<AOUSolarBody> It(World); It; ++It) { Old.Add(*It); }
-		for (TActorIterator<AOUVoxelPlanet> It(World); It; ++It)
-		{
-			if (!It->bHomePlanet) { Old.Add(*It); }
-		}
-		for (AActor* A : Old) { if (A) { A->Destroy(); } }
-	}
-
-	OrbitingBodies.Reset();
-	for (const FOUSystemBody& B : Net->SystemBodies)
-	{
-		// Размер тела задаём по типу: серверный радиус — в «локальных» единицах,
-		// для игрового масштаба он мал, поэтому берём читаемый размер диска.
-		auto RadiusForKind = [](int32 Kind) -> float
-		{
-			switch (Kind)
-			{
-			case 0:  return 5000000.f;    // звезда: 50 км
-			case 5:  return 1500000.f;    // чёрная дыра: 15 км
-			case 3:  return 5000000.f;    // газовый гигант: 50 км
-			case 4:  return 2000000.f;    // пояс: 20 км
-			case 2:  return 1500000.f;    // луна: 15 км
-			default: return 3000000.f;    // планета: 30 км
-			}
-		};
-		const float RadiusCm = RadiusForKind(B.Kind);
-		// Палитра — от сервера (явный тип поверхности).
-		const EOUPlanetType Surface = static_cast<EOUPlanetType>(FMath::Clamp(B.Surface, 0, 5));
-		// Позиция на момент 0: центр + смещение по орбите (плоскость XZ).
-		const FVector PosServer = (B.Orbit > 0.f)
-			? B.Center + FVector(B.Orbit * FMath::Cos(B.Phase), 0.f, B.Orbit * FMath::Sin(B.Phase))
-			: B.Center;
-		const FVector PosUE = OUInterop::ServerToUE(PosServer);
-
-		if (B.Kind == 0 || B.Kind == 5)   // звезда или чёрная дыра
-		{
-			AOUSolarBody* Body = World->SpawnActor<AOUSolarBody>(
-				AOUSolarBody::StaticClass(), FTransform(FRotator::ZeroRotator, PosUE));
-			if (Body)
-			{
-				Body->Kind = EOUSolarKind::Star;
-				Body->BodyRadiusCm = RadiusCm;
-				Body->BodyColor = B.Kind == 5
-					? FLinearColor(0.08f, 0.05f, 0.12f)      // чёрная дыра
-					: FLinearColor(1.0f, 0.86f, 0.35f);      // звезда
-				Body->BuildBody();
-				if (B.Orbit > 0.f)
-				{
-					FOrbitingBody O; O.Actor = Body; O.CenterServer = B.Center;
-					O.Orbit = B.Orbit; O.Phase = B.Phase; O.Omega = B.Omega;
-					OrbitingBodies.Add(O);
-				}
-			}
-		}
-		else if (B.Kind == 1 || B.Kind == 3 || B.Kind == 2)   // планета/газ/луна
-		{
-			AOUVoxelPlanet* Planet = World->SpawnActor<AOUVoxelPlanet>(
-				AOUVoxelPlanet::StaticClass(), FTransform(FRotator::ZeroRotator, PosUE));
-			if (Planet)
-			{
-				Planet->bHomePlanet = false;
-				Planet->Radius = RadiusCm;
-				Planet->Amplitude = RadiusCm * 0.05f;
-				Planet->PlanetType = Surface;   // палитра — с сервера
-				Planet->Lod = EOUVoxelLod::Mid;
-				Planet->BuildPlanet();
-				if (B.Orbit > 0.f)
-				{
-					FOrbitingBody O; O.Actor = Planet; O.CenterServer = B.Center;
-					O.Orbit = B.Orbit; O.Phase = B.Phase; O.Omega = B.Omega;
-					OrbitingBodies.Add(O);
-				}
-			}
-		}
-	}
-	// Двигаем тела сразу на текущий момент системы.
-	TickSystemOrbits(0.f);
-	UE_LOG(LogOUGameMode, Log, TEXT("Система от сервера построена: тел %d (на орбитах %d)"),
-		Net->SystemBodies.Num(), OrbitingBodies.Num());
-}
-
-void AOUGameMode::TickSystemOrbits(float DeltaSeconds)
-{
-	SystemTime += DeltaSeconds;
-	for (const FOrbitingBody& O : OrbitingBodies)
-	{
-		if (!O.Actor)
-		{
-			continue;
-		}
-		// Позиция на орбите: центр + радиус * (cos, 0, sin) — плоскость XZ, как
-		// на сервере (орбита в плоскости, перпендикулярной «верху» системы).
-		const float A = O.Phase + O.Omega * SystemTime;
-		const FVector PosServer = O.CenterServer + FVector(O.Orbit * FMath::Cos(A), 0.f, O.Orbit * FMath::Sin(A));
-		O.Actor->SetActorLocation(OUInterop::ServerToUE(PosServer));
-	}
-}

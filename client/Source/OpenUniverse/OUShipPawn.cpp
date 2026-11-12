@@ -11,7 +11,6 @@
 #include "Components/StaticMeshComponent.h"
 #include "Components/InputComponent.h"
 #include "Camera/CameraComponent.h"
-#include "GameFramework/SpringArmComponent.h"
 #include "Engine/StaticMesh.h"
 #include "UObject/ConstructorHelpers.h"
 #include "Kismet/GameplayStatics.h"
@@ -25,7 +24,7 @@ DEFINE_LOG_CATEGORY_STATIC(LogOUShip, Log, All);
 namespace
 {
 	/** Радиус домашней планеты в серверных единицах (совпадает с сервером). */
-	constexpr double OUPlanetRadius = 100000.0;
+	constexpr double OUPlanetRadius = 500000.0;
 	/** Ускорение свободного падения у поверхности, ед/с² (как на сервере). */
 	constexpr double OUSurfaceGravity = 18.0;
 	/** До какого расстояния (в радиусах) действует гравитация. */
@@ -84,19 +83,16 @@ AOUShipPawn::AOUShipPawn()
 	ShipMesh->SetSimulatePhysics(false);
 	ShipMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 
-	// Камера: штанга назад-вверх, вид от третьего лица. Наклон вниз задаём
-	// заметным, чтобы на поверхности планеты в кадр попадал ландшафт, а не
-	// только небо.
-	SpringArm = CreateDefaultSubobject<USpringArmComponent>(TEXT("SpringArm"));
-	SpringArm->SetupAttachment(RootComponent);
-	SpringArm->TargetArmLength = 4200.f;
-	SpringArm->SetRelativeRotation(FRotator(-8.f, 0.f, 0.f));
-	SpringArm->bDoCollisionTest = false;
-	SpringArm->bUsePawnControlRotation = false;
-
+	// Камера — ВИД ОТ ПЕРВОГО ЛИЦА: камера в кабине, впереди и чуть выше центра.
+	// Корпус корабля владельцу не показываем (видно только «из кабины»).
 	Camera = CreateDefaultSubobject<UCameraComponent>(TEXT("Camera"));
-	Camera->SetupAttachment(SpringArm, USpringArmComponent::SocketName);
+	Camera->SetupAttachment(RootComponent);
+	Camera->SetRelativeLocation(FVector(180.f, 0.f, 60.f));
 	Camera->bUsePawnControlRotation = false;
+	Camera->SetFieldOfView(100.f);
+
+	// Свой корпус владельцу не показываем — вид от первого лица.
+	ShipMesh->SetOwnerNoSee(true);
 
 	// Корабль по умолчанию НЕ перехватывает управление: игрок появляется
 	// персонажем, а в корабль садится по F (тогда контроллер Possess'ит его).
@@ -479,7 +475,7 @@ void AOUShipPawn::StepPrediction(const FOUInputFrame& Input, float Dt)
 		const double ToWorld = 1.0 / OUInterop::ServerUnitToCm;
 		const double SurfaceR = Planet
 			? Planet->SurfaceRadiusAtServer(UpS) * ToWorld
-			: 100000.0;
+			: 500000.0;
 		if (Dist < SurfaceR)
 		{
 			// Прижимаем к поверхности и гасим радиальную (внутрь) скорость.
@@ -600,15 +596,8 @@ void AOUShipPawn::Tick(float DeltaSeconds)
 				// Рисуем других (дроны/чужие корабли и персонажи).
 				UpdateRemotePlayers();
 				UpdateRemoteCharacters();
-				// Как только пришло описание системы — строим её из серверных данных.
-				if (Net->bSystemReceived && !bSystemBuilt)
-				{
-					bSystemBuilt = true;
-					if (AOUGameMode* GM = Cast<AOUGameMode>(UGameplayStatics::GetGameMode(GetWorld())))
-					{
-						GM->BuildSystemFromServer();
-					}
-				}
+				// Тела системы больше не строятся: в мире одна планета,
+				// клиент создаёт её сам из общих констант.
 				// Тестовый авто-огонь работает и у припаркованного корабля:
 				// шлём кадр с огнём (без тяги), чтобы проверить бой.
 				if (FParse::Param(FCommandLine::Get(), TEXT("OUAutoFire")))

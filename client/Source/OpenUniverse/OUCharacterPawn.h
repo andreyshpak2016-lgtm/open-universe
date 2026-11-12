@@ -10,7 +10,6 @@ class UCapsuleComponent;
 class UCameraComponent;
 class UStaticMeshComponent;
 class USceneComponent;
-class USpringArmComponent;
 class UMaterialInterface;
 class USkeletalMeshComponent;
 class UPointLightComponent;
@@ -185,10 +184,6 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Open Universe|Character")
 	UCameraComponent* Camera = nullptr;
-
-	/** Штанга камеры: даёт вид от третьего лица (видно персонажа и корабль). */
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Open Universe|Character")
-	USpringArmComponent* SpringArm = nullptr;
 
 	/** Торс (корпус фигурки). */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Open Universe|Character")

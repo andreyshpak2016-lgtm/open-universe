@@ -77,8 +77,9 @@ namespace OUWire
         BuildLimitReached = 3,
     };
 
-    /// Масштаб позиции: 1 единица провода = 1e-4 игровых единиц.
-    constexpr double WireScale = 1.0 / 10000.0;
+    /// Масштаб позиции: 1 единица провода = 1e-3 игровых единиц (1 мм).
+    /// Диапазон i32 — ±2147 км: этого хватает для планеты радиусом 500 км.
+    constexpr double WireScale = 1.0 / 1000.0;
     /// Игровая единица = 1 метр = 100 см UE.
     constexpr double WorldToCm = 100.0;
     /// Итоговый множитель «провод → см UE».
@@ -569,13 +570,13 @@ namespace OUWire
         std::vector<uint8_t> out;
         out.push_back(TagClientCharacter);
         push_varint(out, entity);
-        // Обратное квантование: см → провод (1/10000 единицы).
+        // Обратное квантование: см → провод (1/1000 единицы).
         auto push_svarint = [&out](int64_t v) {
             uint64_t zz = (static_cast<uint64_t>(v) << 1) ^ static_cast<uint64_t>(v >> 63);
             while (zz >= 0x80) { out.push_back(static_cast<uint8_t>(zz) | 0x80); zz >>= 7; }
             out.push_back(static_cast<uint8_t>(zz));
         };
-        const double inv = 1.0 / (1.0 / 10000.0 * 100.0); // см → провод
+        const double inv = 1.0 / (1.0 / 1000.0 * 100.0); // см → провод
         push_svarint(static_cast<int64_t>(std::llround(xCm * inv)));
         push_svarint(static_cast<int64_t>(std::llround(yCm * inv)));
         push_svarint(static_cast<int64_t>(std::llround(zCm * inv)));

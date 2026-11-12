@@ -529,65 +529,14 @@ impl Server {
 
     /// Описание звёздной системы для отправки клиенту (для отрисовки).
     ///
-    /// Центр системы совпадает с центром домашней планеты (в начале координат),
-    /// поэтому позиции тел можно слать как есть.
-    ///
-    /// ВАЖНО про масштаб: генератор системы работает в «локальных» единицах
-    /// (планеты радиусом сотни единиц), а домашняя планета теперь 100 км. Чтобы
-    /// тела не оказались внутри неё, растягиваем систему в `SYSTEM_VISUAL_SCALE`
-    /// раз — тогда орбиты и радиусы попадают в игровой масштаб.
+    /// В текущей версии мира планета **одна**, и она же — домашняя: клиент
+    /// строит её сам из общих констант (`HOME_PLANET_*`), поэтому дополнительных
+    /// тел в системе нет. Сообщение остаётся ради имени/идентификатора системы
+    /// и на будущее (когда появятся другие тела).
     pub fn system_description(&self) -> (u32, String, Vec<ou_protocol::SystemBodyDto>) {
-        // Система генератора работает в «локальных» единицах, а домашняя планета
-        // теперь 100 км. Два преобразования:
-        //  1) масштаб — растягиваем орбиты/радиусы в игровой масштаб;
-        //  2) смещение — центр системы уводим В НЕБО (иначе звезда оказалась бы
-        //     в центре домашней планеты).
-        // Орбиты генератора умножаем, чтобы тела разошлись по игровому масштабу
-        // (сотни-тысячи км). Радиусы клиент задаёт по типу (читаемый размер диска).
-        const SYSTEM_ORBIT_SCALE: f64 = 150.0;
-        let spawn = ou_sim::home_spawn(2.0);
-        let up = {
-            let l = spawn.length();
-            if l > 1e-6 { spawn.scale(1.0 / l) } else { Vec3::new(0.0, 1.0, 0.0) }
-        };
-        let mut fwd = Vec3::new(0.0, 0.0, 1.0);
-        let d = fwd.dot(up);
-        fwd = fwd.sub(up.scale(d));
-        let fl = fwd.length();
-        fwd = if fl > 1e-6 { fwd.scale(1.0 / fl) } else { Vec3::new(1.0, 0.0, 0.0) };
-        // Центр системы — далеко впереди и выше, вне домашней планеты (100 км).
-        let center = up.scale(300_000.0).add(fwd.scale(1_000_000.0));
-
-        let sys = ou_sim::generate_system(0, ou_sim::HOME_PLANET_SEED, Vec3::ZERO);
-        let bodies = sys
-            .bodies
-            .iter()
-            .map(|b| {
-                // Параметры орбиты: центр системы, радиус, фаза, угловая скорость
-                // (тот же упрощённый закон Кеплера, что у сервера). Клиент сам
-                // считает позицию в момент t — тела движутся.
-                let omega = if b.orbit > 0.0 { (1.0 / b.orbit.sqrt()) as f32 } else { 0.0 };
-                ou_protocol::SystemBodyDto {
-                    id: b.id,
-                    kind: match b.kind {
-                        ou_sim::BodyKind::Star => 0,
-                        ou_sim::BodyKind::Planet => 1,
-                        ou_sim::BodyKind::Moon => 2,
-                        ou_sim::BodyKind::GasGiant => 3,
-                        ou_sim::BodyKind::AsteroidBelt => 4,
-                        ou_sim::BodyKind::BlackHole => 5,
-                    },
-                    // Тип поверхности задаёт сервер (он знает вид планеты).
-                    surface: surface_type_for(b),
-                    radius: b.radius,
-                    center: center,
-                    orbit: (b.orbit * SYSTEM_ORBIT_SCALE) as f32,
-                    phase: b.phase as f32,
-                    omega,
-                }
-            })
-            .collect();
-        (sys.id, sys.name, bodies)
+        let id = 0;
+        let name = ou_sim::system_name(id, ou_sim::HOME_PLANET_SEED);
+        (id, name, Vec::new())
     }
 
     /// Подключение игрока **на домашней планете** (точка появления на суше).
@@ -965,6 +914,10 @@ impl Default for Server {
 ///
 /// 0 землеподобная, 1 пустынная, 2 ледяная, 3 вулканическая, 4 газовый гигант,
 /// 5 безвоздушная. Код совпадает с клиентским `EOUPlanetType`.
+///
+/// Сейчас в мире одна планета (её вид задан константами клиента), поэтому
+/// функция не вызывается — сохранена на случай возврата тел системы.
+#[allow(dead_code)]
 fn surface_type_for(b: &ou_sim::Body) -> u8 {
     use ou_sim::BodyKind;
     match b.kind {
@@ -1472,20 +1425,13 @@ mod tests {
     }
 
     #[test]
-    fn system_description_has_star_and_planets() {
+    fn system_description_has_name_and_no_extra_bodies() {
         let s = Server::new();
         let (id, name, bodies) = s.system_description();
         assert_eq!(id, 0);
         assert!(!name.is_empty(), "у системы есть имя");
-        // Есть звезда (kind 0) и планеты/газовые гиганты (1/3).
-        assert!(bodies.iter().any(|b| b.kind == 0), "есть звезда");
-        assert!(bodies.iter().any(|b| b.kind == 1 || b.kind == 3), "есть планеты");
-        // Радиусы положительные.
-        assert!(bodies.iter().all(|b| b.radius > 0.0));
-        // У планет есть орбита (движение) и заданный тип поверхности.
-        let planet = bodies.iter().find(|b| b.kind == 1).unwrap();
-        assert!(planet.orbit > 0.0, "у планеты есть орбита");
-        assert!(planet.omega > 0.0, "планета движется по орбите");
-        assert!(planet.surface <= 3, "поверхность планеты — наземный тип");
+        // В мире ровно одна планета, и она строится клиентом из общих констант,
+        // поэтому дополнительных тел в описании системы нет.
+        assert!(bodies.is_empty(), "нет дополнительных тел системы");
     }
 }
