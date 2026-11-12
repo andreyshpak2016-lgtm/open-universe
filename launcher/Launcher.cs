@@ -277,6 +277,16 @@ namespace OpenUniverseLauncher
         [STAThread]
         private static void Main()
         {
+            // Консольный самотест БЕЗ окна: проверяет версии/манифест (см.
+            // tools/check-launcher.ps1). На обычный запуск не влияет.
+            string[] argv = Environment.GetCommandLineArgs();
+            if (Array.IndexOf(argv, "--selfcheck") >= 0)
+            {
+                int rc = LauncherForm.Run();
+                Environment.Exit(rc);
+                return;
+            }
+
             // Страховка: любые исключения в UI-потоке пишем в лог, чтобы не падать молча.
             AppDomain.CurrentDomain.UnhandledException += (s, e) =>
                 LogCrash(e.ExceptionObject as Exception);
@@ -1409,6 +1419,19 @@ namespace OpenUniverseLauncher
                     var missing = new List<ManifestFile>();
                     bool intact = VerifyGame(manifest, missing);
 
+                    // Файлы игры полностью совпали с манифестом: значит, игра уже
+                    // актуальной версии. Обновляем локальный VERSION, если он
+                    // отставал (прежние установки: файл версии не входил в патч).
+                    if (intact)
+                    {
+                        if (Norm(InstalledVersion()) != Norm(manifest.Version))
+                        {
+                            WriteInstalledVersion(manifest.Version);
+                            _installedDisplay = InstalledVersion();
+                            _header.Invalidate();
+                        }
+                    }
+
                     if (intact)
                     {
                         // Всё на месте: ничего качать не нужно.
@@ -1437,6 +1460,7 @@ namespace OpenUniverseLauncher
                         try
                         {
                             int n = await ApplyPatchAsync(manifest, patchUrl, missing);
+                            WriteInstalledVersion(manifest.Version);
                             SetStatus(string.Format(T("status.patched"), n, Pretty(manifest.Version)), false);
                             _installedDisplay = InstalledVersion();
                             _header.Invalidate();
@@ -1876,6 +1900,7 @@ namespace OpenUniverseLauncher
             {
                 string[] cands =
                 {
+                    Path.Combine(InstallDir(), "VERSION"),
                     Path.Combine(_appDirStatic, "VERSION"),
                     Path.Combine(GameDir(), "VERSION")
                 };
@@ -1886,6 +1911,28 @@ namespace OpenUniverseLauncher
             }
             catch { }
             return null;
+        }
+
+        /// <summary>
+        /// Записать в игру файл VERSION (по нему лаунчер определяет установленную
+        /// версию). Нужно для самовосстановления: у прежних установок этот файл
+        /// отставал, потому что не входил в манифест и не обновлялся патчем —
+        /// из-за этого лаунчер показывал «Установлено: vX / Доступно: vY», хотя
+        /// файлы уже были актуальны.
+        /// </summary>
+        private static void WriteInstalledVersion(string version)
+        {
+            if (string.IsNullOrEmpty(version)) return;
+            try
+            {
+                string dir = InstallDir();
+                if (string.IsNullOrEmpty(dir)) return;
+                Directory.CreateDirectory(dir);
+                // Без BOM: лаунчер читает файл и сравнивает строку как есть.
+                File.WriteAllText(Path.Combine(dir, "VERSION"), version.Trim(),
+                    new UTF8Encoding(false));
+            }
+            catch { }
         }
 
         private void UpdatePlayButton()
@@ -1938,6 +1985,11 @@ namespace OpenUniverseLauncher
             missing.Clear();
             foreach (var f in man.Files)
             {
+                if (string.IsNullOrEmpty(f.P)) continue;
+                // VERSION не считаем расхождением: его лаунчер выставляет сам
+                // (см. WriteInstalledVersion). Иначе отставший файл версии тянул
+                // бы за собой лишнюю закачку патча.
+                if (string.Equals(f.P, "VERSION", StringComparison.OrdinalIgnoreCase)) continue;
                 string path = Path.Combine(dir, f.P.Replace('/', Path.DirectorySeparatorChar));
                 if (!File.Exists(path)) { missing.Add(f); continue; }
                 var fi = new FileInfo(path);
@@ -2227,6 +2279,120 @@ namespace OpenUniverseLauncher
         {
             if (!string.IsNullOrWhiteSpace(a)) return a;
             return b;
+        }
+
+        /// <summary>
+        /// Консольный самотест БЕЗ окна: проверяет, что «Установлено» и
+        /// «Доступно» совпадают, когда файлы игры актуальны.
+        ///
+        /// Запуск: <c>OpenUniverseLauncher.exe --selfcheck [--repair]</c>.
+        /// С <c>--repair</c> дополнительно сверяет файлы игры с манифестом и,
+        /// если они целы, записывает в игру актуальную версию (та самая
+        /// самопочинка, что делает лаунчер при обычной проверке). Код выхода 0 —
+        /// версии совпали. Так можно ловить регрессии логики версий без окна.
+        /// </summary>
+        internal static int Run()
+        {
+            // Форма не создаётся — задаём базовые пути явно (иначе InstallDir()
+            // и InstalledVersion() не знают, где искать игру).
+            if (string.IsNullOrEmpty(_appDirStatic))
+            {
+                _appDirStatic = Path.GetDirectoryName(Application.ExecutablePath);
+            }
+
+            bool repair = Array.IndexOf(Environment.GetCommandLineArgs(), "--repair") >= 0;
+
+            // Манифест: рядом с лаунчером, в каталоге игры или в репозитории.
+            string manifestPath = FindManifest();
+            string manifestVersion = null;
+            var files = new List<ManifestFile>();
+            if (manifestPath != null)
+            {
+                string json = File.ReadAllText(manifestPath);
+                manifestVersion = JsonString(json, "version");
+                foreach (var o in JsonObjects(json, "files"))
+                {
+                    files.Add(new ManifestFile
+                    {
+                        P = JsonString(o, "p"),
+                        S = JsonLong(o, "s"),
+                        H = JsonString(o, "h")
+                    });
+                }
+            }
+
+            string inst = InstalledVersion();
+            Console.WriteLine("manifest:  " + (manifestPath ?? "(not found)"));
+            Console.WriteLine("installed: " + (inst ?? "(none)"));
+            Console.WriteLine("latest:    " + (manifestVersion ?? "(unknown)"));
+
+            // Сверка файлов игры с манифестом (как делает лаунчер перед патчем).
+            if (files.Count > 0)
+            {
+                int missing = 0, changed = 0;
+                string dir = InstallDir();
+                foreach (var f in files)
+                {
+                    if (string.IsNullOrEmpty(f.P)) continue;
+                    // VERSION проверяем отдельно (его выставляет сама программа).
+                    if (string.Equals(f.P, "VERSION", StringComparison.OrdinalIgnoreCase)) continue;
+                    string path = Path.Combine(dir, f.P.Replace('/', Path.DirectorySeparatorChar));
+                    if (!File.Exists(path)) { missing++; continue; }
+                    var fi = new FileInfo(path);
+                    if (fi.Length != f.S) { changed++; continue; }
+                    if (!string.Equals(HashFile(path), f.H, StringComparison.OrdinalIgnoreCase)) changed++;
+                }
+                bool intact = missing == 0 && changed == 0;
+                Console.WriteLine("files:     " + files.Count + " (missing " + missing + ", changed " + changed + ")");
+                Console.WriteLine("integrity: " + (intact ? "ok" : "needs update"));
+
+                // Самопочинка: файлы целы, но VERSION отстал — записываем манифест.
+                if (intact && !string.IsNullOrEmpty(manifestVersion)
+                    && Norm(inst) != Norm(manifestVersion))
+                {
+                    if (repair)
+                    {
+                        WriteInstalledVersion(manifestVersion);
+                        inst = InstalledVersion();
+                        Console.WriteLine("repaired:  VERSION -> " + manifestVersion);
+                    }
+                    else
+                    {
+                        Console.WriteLine("stale:     VERSION " + (inst ?? "(none)")
+                            + " != " + manifestVersion + " (--repair to fix)");
+                    }
+                }
+            }
+
+            bool same = !string.IsNullOrEmpty(inst) && !string.IsNullOrEmpty(manifestVersion)
+                        && Norm(inst) == Norm(manifestVersion);
+            Console.WriteLine("match: " + (same ? "yes" : "no"));
+
+            if (same)
+            {
+                Console.WriteLine("RESULT: up-to-date");
+                return 0;
+            }
+            Console.WriteLine("RESULT: version mismatch (installed != latest)");
+            return 1;
+        }
+
+        /// <summary>Найти latest.json: рядом с лаунчером, в игре или в репозитории.</summary>
+        private static string FindManifest()
+        {
+            var cands = new List<string>();
+            if (!string.IsNullOrEmpty(_appDirStatic))
+            {
+                cands.Add(Path.Combine(_appDirStatic, "manifests", "latest.json"));
+                string parent = Path.GetDirectoryName(_appDirStatic) ?? "";
+                cands.Add(Path.Combine(parent, "manifests", "latest.json"));
+                string grand = Path.GetDirectoryName(parent) ?? "";
+                if (grand != "") cands.Add(Path.Combine(grand, "manifests", "latest.json"));
+            }
+            cands.Add(Path.Combine(GameDir(), "manifests", "latest.json"));
+            foreach (var c in cands)
+                if (File.Exists(c)) return c;
+            return null;
         }
     }
 }

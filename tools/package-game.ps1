@@ -79,6 +79,18 @@ if ($pdbs) {
 }
 
 $exe = Get-ChildItem $outDir -Recurse -Filter "OpenUniverse.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+
+# Кладём VERSION рядом с игрой. По нему лаунчер определяет УСТАНОВЛЕННУЮ версию,
+# и — главное — файл попадает в манифест и патч, поэтому инкрементальное
+# обновление тоже обновляет версию (иначе лаунчер навсегда показывал бы старую).
+$verSrc = Join-Path $root 'VERSION'
+if ($exe -and (Test-Path $verSrc)) {
+  $verDst = Join-Path $exe.Directory.FullName 'VERSION'
+  Copy-Item $verSrc $verDst -Force
+  $verTxt = (Get-Content $verSrc -Raw).Trim()
+  Write-Host "VERSION в игре: $verTxt ($verDst)" -ForegroundColor DarkGray
+}
+
 if ($exe) {
   Write-Host ""
   Write-Host "Готово: $($exe.FullName)" -ForegroundColor Green
