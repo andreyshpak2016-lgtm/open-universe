@@ -185,9 +185,6 @@ protected:
 	float VisualHeight(const FVector& DirUE) const;
 
 private:
-	/** Детерминированный шум рельефа (совпадает с сервером). */
-	float Noise(float U, float V) const;
-
 	/** Детерминированный шум для облаков (независимый канал). */
 	float CloudNoise(const FVector& Dir) const;
 

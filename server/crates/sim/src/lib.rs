@@ -20,7 +20,7 @@ pub mod terrain;
 
 /// Реэкспорт базовых типов, чтобы потребителям хватало одного крейта.
 pub use ou_protocol::Vec3;
-pub use terrain::{landing, normalize, Terrain, TerrainParams};
+pub use terrain::{landing, normalize, Biome, Terrain, TerrainParams, DEFAULT_SEA_LEVEL, TERRAIN_VERSION};
 
 // ---------------------------------------------------------------------------
 // Детерминированная тригонометрия
@@ -226,7 +226,7 @@ pub fn home_planet() -> Terrain {
         TerrainParams {
             radius: HOME_PLANET_RADIUS,
             amplitude: HOME_PLANET_AMPLITUDE,
-            sea_level: 0.30,
+            sea_level: DEFAULT_SEA_LEVEL,
             seed: HOME_PLANET_SEED,
         },
     )

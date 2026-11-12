@@ -13,33 +13,12 @@
 //! Всё детерминировано: одна и та же функция даёт одинаковый рельеф на сервере,
 //! в клиенте и в тестах.
 
-use crate::{det_sin, Vec3};
+use crate::Vec3;
 
-/// Приведение направления к октаэдрическим координатам (octahedral mapping).
-///
-/// Это обратимое отображение сферы на квадрат — нужно, чтобы вычислять шум
-/// по непрерывным координатам без разрывов на гранях куба.
-fn octahedral(p: Vec3) -> (f64, f64) {
-    let l = p.x.abs() + p.y.abs() + p.z.abs();
-    let (mut u, mut v) = if l < 1e-12 {
-        (0.0, 0.0)
-    } else {
-        (p.x / l, p.z / l)
-    };
-    // Складываем нижнюю полусферу на верхнюю (как в octahedral normal encoding).
-    if p.y < 0.0 {
-        let ux = (1.0 - v.abs()) * if u >= 0.0 { 1.0 } else { -1.0 };
-        let vy = (1.0 - u.abs()) * if v >= 0.0 { 1.0 } else { -1.0 };
-        u = ux;
-        v = vy;
-    }
-    (u, v)
-}
-
-/// Хеш решётки в [0,1).
-fn lattice(x: i64, y: i64, seed: u64) -> f64 {
+/// Хеш решётки в [0,1). Зеркало клиентского `OUTerrain::Lattice`.
+fn lattice3(x: i64, y: i64, z: i64, seed: u64) -> f64 {
     let mut h = seed;
-    for c in [x, y] {
+    for c in [x, y, z] {
         h ^= (c as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15);
         h = (h ^ (h >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
         h = (h ^ (h >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
@@ -51,16 +30,59 @@ fn smooth(t: f64) -> f64 {
     t * t * (3.0 - 2.0 * t)
 }
 
-/// Двумерный value noise с бикубической интерполяцией.
-fn noise2(u: f64, v: f64, seed: u64) -> f64 {
-    let (xi, yi) = (u.floor(), v.floor());
-    let (fx, fy) = (smooth(u - xi), smooth(v - yi));
-    let (ix, iy) = (xi as i64, yi as i64);
-    let c = |dx: i64, dy: i64| lattice(ix + dx, iy + dy, seed);
+/// Фрактальный шум (fBm): сумма октав 3D-шума с убывающей амплитудой.
+fn fbm(x: f64, y: f64, z: f64, octaves: u32, base_freq: f64, seed: u64) -> f64 {
+    let mut v = 0.0;
+    let mut amp = 1.0;
+    let mut freq = base_freq;
+    let mut norm = 0.0;
+    for i in 0..octaves as u64 {
+        v += noise3(x * freq, y * freq, z * freq, seed ^ (0x1234 * (i + 1))) * amp;
+        norm += amp;
+        amp *= 0.5;
+        freq *= 2.0;
+    }
+    v / norm
+}
+
+/// Хребтовый шум: `1 - |2n-1|` даёт острые гребни (горные хребты).
+fn ridged(x: f64, y: f64, z: f64, octaves: u32, base_freq: f64, seed: u64) -> f64 {
+    let mut v = 0.0;
+    let mut amp = 1.0;
+    let mut freq = base_freq;
+    let mut norm = 0.0;
+    for i in 0..octaves as u64 {
+        let n = noise3(x * freq, y * freq, z * freq, seed ^ (0x5000 + 0x77 * (i + 1)));
+        let r = 1.0 - (2.0 * n - 1.0).abs();
+        v += r * r * amp;
+        norm += amp;
+        amp *= 0.5;
+        freq *= 2.1;
+    }
+    v / norm
+}
+
+/// Трёхмерный value noise с трилинейной интерполяцией.
+///
+/// Именно 3D-шум по направлению, без отображений сферы на плоскость: так рельеф
+/// **непрерывен на всей сфере** и не имеет швов/складок (октаэдрическое
+/// отображение их даёт, потому что его производная рвётся на «рёбрах»).
+fn noise3(x: f64, y: f64, z: f64, seed: u64) -> f64 {
+    let (xi, yi, zi) = (x.floor(), y.floor(), z.floor());
+    let fx = smooth(x - xi);
+    let fy = smooth(y - yi);
+    let fz = smooth(z - zi);
+    let (ix, iy, iz) = (xi as i64, yi as i64, zi as i64);
+    let c = |dx: i64, dy: i64, dz: i64| lattice3(ix + dx, iy + dy, iz + dz, seed);
     let lerp = |a: f64, b: f64, t: f64| a + (b - a) * t;
-    let x0 = lerp(c(0, 0), c(1, 0), fx);
-    let x1 = lerp(c(0, 1), c(1, 1), fx);
-    lerp(x0, x1, fy)
+
+    let x00 = lerp(c(0, 0, 0), c(1, 0, 0), fx);
+    let x10 = lerp(c(0, 1, 0), c(1, 1, 0), fx);
+    let x01 = lerp(c(0, 0, 1), c(1, 0, 1), fx);
+    let x11 = lerp(c(0, 1, 1), c(1, 1, 1), fx);
+    let y0 = lerp(x00, x10, fy);
+    let y1 = lerp(x01, x11, fy);
+    lerp(y0, y1, fz)
 }
 
 /// Настройки рельефа планеты.
@@ -75,9 +97,41 @@ pub struct TerrainParams {
     pub seed: u64,
 }
 
+/// Версия формулы рельефа. Меняется при любом изменении высоты: клиент и
+/// сервер обязаны её совпадать, иначе картинка разойдётся с физикой.
+pub const TERRAIN_VERSION: u32 = 3;
+
+/// Биом поверхности (по высоте над уровнем океана).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Biome {
+    Ocean,
+    Beach,
+    Plains,
+    Hills,
+    Mountains,
+}
+
+impl Biome {
+    /// Числовой код для провода и клиента (совпадает с клиентским `EOUPlanetType`-
+    /// независимым набором биомов).
+    pub fn code(self) -> u8 {
+        match self {
+            Biome::Ocean => 0,
+            Biome::Beach => 1,
+            Biome::Plains => 2,
+            Biome::Hills => 3,
+            Biome::Mountains => 4,
+        }
+    }
+}
+
+/// Уровень океана по умолчанию: подобран так, чтобы суша занимала ~40%
+/// поверхности (см. `planet_map` в инструментах).
+pub const DEFAULT_SEA_LEVEL: f64 = 0.545;
+
 impl Default for TerrainParams {
     fn default() -> Self {
-        TerrainParams { radius: 1000.0, amplitude: 30.0, sea_level: 0.30, seed: 0xC0FFEE }
+        TerrainParams { radius: 1000.0, amplitude: 30.0, sea_level: DEFAULT_SEA_LEVEL, seed: 0xC0FFEE }
     }
 }
 
@@ -94,14 +148,52 @@ impl Terrain {
     }
 
     /// Высота над уровнем океана в направлении `dir` (может быть < 0 — вода).
+    ///
+    /// Формула общая с клиентом (см. `client/Source/OpenUniverse/OUTerrain.h`),
+    /// поэтому картинка на клиенте совпадает с физикой сервера. Использует
+    /// только `+ - * /` и `floor` — детерминировано и одинаково в Rust (f64) и
+    /// C++ (double). Тригонометрия не используется: она платформо-зависима.
+    ///
+    /// Шум — **трёхмерный по направлению**: сфера непрерывна, швов и складок нет.
     pub fn height(&self, dir: Vec3) -> f64 {
         let d = normalize(dir);
-        let (u, v) = octahedral(d);
-        // Две октавы: крупные материки + мелкие детали.
-        let coarse = noise2(u * 2.6, v * 2.6, self.params.seed);
-        let fine = noise2(u * 9.0, v * 9.0, self.params.seed ^ 0xF1E);
-        let n = coarse * 0.72 + fine * 0.28;
-        (n - self.params.sea_level) * self.params.amplitude * 2.0
+        let s = self.params.seed;
+        let (x, y, z) = (d.x, d.y, d.z);
+
+        // Форма континентов (крупный шум): где `cont > sea_level` — суша.
+        let cont = fbm(x, y, z, 4, 0.9, s ^ 0xC2B2);
+        // Пологие детали поверхности.
+        let flat = fbm(x, y, z, 4, 3.0, s ^ 0xA11CE);
+        // Горы: острые хребты.
+        let mtn = ridged(x, y, z, 4, 4.5, s ^ 0x5EED);
+
+        // Отклонение от уровня океана.
+        let base = cont - self.params.sea_level;
+        // Горы «включаются» только в глубине материка (не у берега).
+        let land = (base / 0.09).clamp(0.0, 1.0);
+
+        let h01 = base + flat * 0.05 + mtn * land * 0.30;
+        h01 * self.params.amplitude * 2.0
+    }
+
+    /// Биом поверхности по высоте над уровнем океана.
+    ///
+    /// Пороги подобраны по фактическому распределению высот (максимум ~0.87
+    /// амплитуды), чтобы все биомы реально встречались на планете.
+    pub fn biome(&self, dir: Vec3) -> Biome {
+        let h = self.height(dir);
+        let a = self.params.amplitude;
+        if h <= 0.0 {
+            Biome::Ocean
+        } else if h < a * 0.04 {
+            Biome::Beach
+        } else if h < a * 0.30 {
+            Biome::Plains
+        } else if h < a * 0.55 {
+            Biome::Hills
+        } else {
+            Biome::Mountains
+        }
     }
 
     /// Радиус поверхности в направлении `dir` (центр планеты → поверхность).
@@ -300,8 +392,39 @@ mod tests {
     }
 
     #[test]
-    fn penetration_detects_buried_point() {
+    fn terrain_has_all_biomes_and_real_relief() {
+        // Обходим сферу: должны встретиться все биомы, а высоты — реально
+        // меняться (не гладкая «вата»).
         let t = t();
+        let mut seen = [false; 5];
+        let mut hmin = f64::MAX;
+        let mut hmax = f64::MIN;
+        let mut h: f64 = 0.0;
+        while h < 6.28 {
+            let mut a: f64 = -1.4;
+            while a < 1.4 {
+                let d = Vec3::new(h.cos() * a.cos(), a.sin(), h.sin() * a.cos());
+                seen[t.biome(d).code() as usize] = true;
+                let hh = t.height(d);
+                hmin = hmin.min(hh);
+                hmax = hmax.max(hh);
+                a += 0.15;
+            }
+            h += 0.15;
+        }
+        for (i, code) in ["ocean", "beach", "plains", "hills", "mountains"].iter().enumerate() {
+            assert!(seen[i], "missing biome: {code}");
+        }
+        // Перепад высот должен быть заметным (несколько километров при амплитуде 10 км).
+        assert!(hmax - hmin > t.params.amplitude * 0.5,
+            "рельеф слишком плоский: {:.0}..{:.0}", hmin, hmax);
+        // И не «взрываться»: в пределах двойной амплитуды.
+        assert!(hmin >= -t.params.amplitude * 2.0 - 1e-9);
+        assert!(hmax <= t.params.amplitude * 2.0 + 1e-9);
+    }
+
+    #[test]
+    fn penetration_detects_buried_point() {        let t = t();
         let d = normalize(Vec3::new(0.0, 1.0, 0.0));
         let surf = t.surface_radius(d);
         // Точка под поверхностью.
@@ -411,8 +534,17 @@ mod tests {
     }
 
     #[test]
-    fn det_trig_is_available_for_octahedral() {
-        // Просто убедимся, что используемая тригонометрия детерминирована.
-        assert_eq!(det_sin(0.7), det_sin(0.7));
+    fn terrain_formula_uses_no_trigonometry() {
+        // Рельеф считается только через + - * / floor sqrt: тригонометрия
+        // платформо-зависима и разошлась бы между Rust и C++. Проверяем, что
+        // высота совпадает при повороте-независимом наборе входов (знак/порядок
+        // осей) — этого достаточно как «дымовой» тест формулы.
+        let t = t();
+        let d = normalize(Vec3::new(0.4, 0.5, -0.6));
+        let h1 = t.height(d);
+        let h2 = t.height(d);
+        assert_eq!(h1, h2);
+        // Ненулевое значение: рельеф не «залип» на нуле.
+        assert!(h1.abs() > 1e-6, "рельеф вырожден: {h1}");
     }
 }

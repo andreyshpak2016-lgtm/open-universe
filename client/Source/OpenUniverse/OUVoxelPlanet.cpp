@@ -2,6 +2,7 @@
 
 #include "OUVoxelPlanet.h"
 #include "OUInterop.h"
+#include "OUTerrain.h"
 #include "ProceduralMeshComponent.h"
 #include "EngineUtils.h"
 #include "Materials/MaterialInterface.h"
@@ -172,35 +173,18 @@ int32 AOUVoxelPlanet::Segments() const
 	}
 }
 
-float AOUVoxelPlanet::Noise(float U, float V) const
-{
-	// Две октавы, как на сервере: материки + детали.
-	const float Coarse = ValueNoise(U * 2.6f, V * 2.6f, Seed);
-	const float Fine = ValueNoise(U * 9.f, V * 9.f, Seed ^ 0xF1E);
-	return Coarse * 0.72f + Fine * 0.28f;
-}
-
 float AOUVoxelPlanet::HeightAtServer(const FVector& DirServer) const
 {
-	// Октаэдральное отображение ровно как в серверном `terrain.rs`
-	// (в серверных осях: вверх = Y). Только оно даёт ту же высоту, что сервер.
-	const FVector D = DirServer.GetSafeNormal();
-	const float L = FMath::Abs(D.X) + FMath::Abs(D.Y) + FMath::Abs(D.Z);
-	if (L < 1e-6f)
-	{
-		return 0.f;
-	}
-	float U = D.X / L;
-	float V = D.Z / L;
-	if (D.Y < 0.f)
-	{
-		const float UX = (1.f - FMath::Abs(V)) * (U >= 0.f ? 1.f : -1.f);
-		const float VY = (1.f - FMath::Abs(U)) * (V >= 0.f ? 1.f : -1.f);
-		U = UX;
-		V = VY;
-	}
-	const float SeaLevel = 0.30f;
-	return (Noise(U, V) - SeaLevel) * Amplitude * 2.f;
+	// Одна общая формула с сервером (см. OUTerrain.h): бит-в-бит тот же рельеф,
+	// что считает физика. Все вычисления — в double, как в Rust.
+	const double H = OULT::HeightDir(
+		static_cast<double>(DirServer.X),
+		static_cast<double>(DirServer.Y),
+		static_cast<double>(DirServer.Z),
+		static_cast<double>(Amplitude),
+		0.545,                      // уровень океана (как на сервере)
+		static_cast<uint64>(Seed));
+	return static_cast<float>(H);
 }
 
 float AOUVoxelPlanet::HeightAt(const FVector& Direction) const

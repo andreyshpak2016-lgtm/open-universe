@@ -37,3 +37,8 @@ client/Content/Maps/OULandscapeDemo.umap
 
 client/testdata/test_wire.exe
 client/testdata/test_wire.obj
+
+# Артефакты кросс-проверки рельефа (собираются tools/test-terrain.ps1).
+client/testdata/test_terrain.exe
+client/testdata/test_terrain.obj
+client/testdata/terrain_ref.txt
