@@ -91,6 +91,12 @@ protected:
 	void OnExitPressed();
 	void OnExitReleased();
 
+	/** Таймер тестового авто-огня, с. */
+	float FireTimer = 0.f;
+
+	/** Счётчик кадров авто-огня у припаркованного корабля. */
+	int32 InputSeqAuto = 0;
+
 	/** Маска зажатия F: сколько секунд держат (для «зажми, чтобы выйти»). */
 	float ExitHoldTime = 0.f;
 
@@ -103,6 +109,9 @@ protected:
 
 	/** Обновить визуализацию других игроков из последнего снимка. */
 	void UpdateRemotePlayers();
+
+	/** Нарисовать трассеры/попадания по событиям выстрела от сервера. */
+	void DrawCombatEffects();
 
 	/** Найти или создать актор-заглушку для чужой сущности. */
 	AActor* GetOrCreateRemoteActor(int32 EntityId);

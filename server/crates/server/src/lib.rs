@@ -9,9 +9,10 @@
 //! UDP‑транспорт подключается поверх (см. `Transport`).
 
 use ou_build::{BuildError, Color as BuildColor, VoxelGrid};
+use ou_combat::{weapon, ShipHull, Weapon};
 use ou_protocol::{
     BuildAction, BuildCommand, BuildEdit, BuildReason, EntityState, InputFrame, Message, NetId,
-    Snapshot, Vec3,
+    ShotEvent, Snapshot, Vec3,
 };
 use ou_script::ScriptEngine;
 use ou_sim::World;
@@ -97,6 +98,14 @@ pub struct Server {
     pub scripted: BTreeMap<NetId, String>,
     /// Конструкции сущностей: что игроки построили (права + ревизии).
     pub constructions: BTreeMap<NetId, Construction>,
+    /// Корпус каждой сущности: щит, броня, критические повреждения.
+    pub hulls: BTreeMap<NetId, ShipHull>,
+    /// Оружие каждой сущности (по умолчанию — автопушка).
+    pub weapons: BTreeMap<NetId, Weapon>,
+    /// Тик последнего выстрела сущности (для перезарядки).
+    pub last_fire_tick: BTreeMap<NetId, u64>,
+    /// Номер выстрела сущности (для зерна детерминированного попадания).
+    pub shot_seq: BTreeMap<NetId, u64>,
     next_entity_id: NetId,
 }
 
@@ -109,6 +118,10 @@ impl Server {
             scripts: ScriptEngine::new(),
             scripted: BTreeMap::new(),
             constructions: BTreeMap::new(),
+            hulls: BTreeMap::new(),
+            weapons: BTreeMap::new(),
+            last_fire_tick: BTreeMap::new(),
+            shot_seq: BTreeMap::new(),
             next_entity_id: 1,
         }
     }
@@ -225,6 +238,80 @@ impl Server {
         self.apply_build_as(cmd.entity, cmd)
     }
 
+    /// Обработать выстрел сущности `attacker` (авторитетно).
+    ///
+    /// Выбирает ближайшую цель в пределах дальности оружия, считает попадание
+    /// детерминированно (зерно: тик, стрелок, номер выстрела) и наносит урон.
+    /// Возвращает событие выстрела либо `None`, если стрелять нельзя (нет
+    /// оружия, идёт перезарядка, нет цели).
+    pub fn resolve_fire(&mut self, attacker: NetId, tick: u64) -> Option<ShotEvent> {
+        let w = self.weapons.get(&attacker)?.clone();
+        // Перезарядка.
+        if let Some(last) = self.last_fire_tick.get(&attacker) {
+            if tick.saturating_sub(*last) < w.cooldown {
+                return None;
+            }
+        }
+        let from = self.world.entities.get(&attacker)?.state.pos;
+
+        // Ближайшая цель в пределах дальности (кроме себя и уже уничтоженных).
+        let mut best: Option<(NetId, f64)> = None;
+        for (id, ent) in self.world.entities.iter() {
+            if *id == attacker {
+                continue;
+            }
+            if self.hulls.get(id).map(|h| h.is_destroyed()).unwrap_or(true) {
+                continue;
+            }
+            let d = from.distance(ent.state.pos);
+            if d <= w.range {
+                match best {
+                    Some((_, bd)) if bd <= d => {}
+                    _ => best = Some((*id, d)),
+                }
+            }
+        }
+
+        // Номер выстрела и зерно (детерминированно).
+        let seq = self.shot_seq.entry(attacker).or_insert(0);
+        *seq += 1;
+        let seed = tick
+            .wrapping_mul(0x9E3779B97F4A7C15)
+            ^ (attacker as u64).wrapping_mul(0xBF58476D1CE4E5B9)
+            ^ seq.wrapping_mul(0x94D049BB133111EB);
+        self.last_fire_tick.insert(attacker, tick);
+
+        let (target, dist) = match best {
+            Some((id, d)) => (id, d),
+            None => {
+                // Стрельба в пустоту — всё равно событие (трассер без цели).
+                return Some(ShotEvent {
+                    attacker,
+                    target: 0,
+                    hit: false,
+                    damage: 0,
+                    destroyed: false,
+                });
+            }
+        };
+
+        let target_hull = *self.hulls.get(&target)?;
+        let outcome = ou_combat::resolve_shot(&target_hull, &w, dist, seed);
+        if let Some(h) = self.hulls.get_mut(&target) {
+            ou_combat::apply_outcome(h, &outcome);
+        }
+        let destroyed = self.hulls.get(&target).map(|h| h.is_destroyed()).unwrap_or(false);
+        let damage = outcome.shield_damage + outcome.armor_damage + outcome.core_damage;
+
+        Some(ShotEvent {
+            attacker,
+            target,
+            hit: outcome.hit,
+            damage,
+            destroyed,
+        })
+    }
+
     /// Назначить сущности скрипт (автопилот). С этого момента её ввод
     /// вычисляет скрипт, а не игрок.
     pub fn attach_script(&mut self, entity: NetId, script: &str, source: &str) -> Result<(), ou_script::Error> {
@@ -238,6 +325,11 @@ impl Server {
         let entity_id = self.next_entity_id;
         self.next_entity_id += 1;
         self.world.spawn(entity_id, spawn);
+        // Каждая сущность — корабль со щитом/бронёй и оружием по умолчанию.
+        self.hulls.insert(entity_id, ShipHull::new(100, 200));
+        if let Some(w) = weapon("автопушка") {
+            self.weapons.insert(entity_id, w);
+        }
         // У каждого игрока есть своя конструкция (её же он и редактирует).
         self.constructions.entry(entity_id).or_insert_with(|| Construction::new(player_id));
         self.connections.insert(
@@ -337,6 +429,25 @@ impl Server {
             self.grid.update(*id, ent.state.pos);
         }
 
+        // 3a. Бой: обработать намерение стрелять (fire) у всех, кто стрелял.
+        //     Авторитетно: попадание и урон считает только сервер.
+        let mut shots: Vec<ShotEvent> = Vec::new();
+        let mut hull_dirty: BTreeSet<NetId> = BTreeSet::new();
+        let shooters: Vec<NetId> = inputs
+            .iter()
+            .filter(|(_, i)| i.fire)
+            .map(|(id, _)| *id)
+            .collect();
+        for id in shooters {
+            if let Some(ev) = self.resolve_fire(id, tick) {
+                hull_dirty.insert(id);
+                if ev.target != 0 {
+                    hull_dirty.insert(ev.target);
+                }
+                shots.push(ev);
+            }
+        }
+
         // 4. Для каждого клиента — интерес‑менеджмент и дельта.
         let mut plan = SendPlan::default();
         let all_states: BTreeMap<NetId, EntityState> = self.world.snapshot_map();
@@ -412,6 +523,30 @@ impl Server {
             // Правки конструкций — после снимка.
             if let Some(extra) = build_msgs.remove(player_id) {
                 msgs.extend(extra);
+            }
+            // События боя: выстрелы и состояние корпуса — тем, кто их видит.
+            // Видимость выстрела определяем по тому, видит ли клиент стрелка.
+            for ev in &shots {
+                let sees_attacker = visible.contains(&ev.attacker)
+                    || conn.entity_id == ev.attacker;
+                let sees_target = ev.target == 0
+                    || visible.contains(&ev.target)
+                    || conn.entity_id == ev.target;
+                if sees_attacker && sees_target {
+                    msgs.push(Message::ServerShot(*ev));
+                }
+            }
+            for e in &hull_dirty {
+                if visible.contains(e) || conn.entity_id == *e {
+                    if let Some(h) = self.hulls.get(e) {
+                        msgs.push(Message::ServerHull {
+                            entity: *e,
+                            shield: h.shield,
+                            armor: h.armor,
+                            destroyed: h.is_destroyed(),
+                        });
+                    }
+                }
             }
 
             // Обновляем «что клиент знает и в каком виде».
@@ -730,5 +865,75 @@ mod tests {
             });
         }
         assert_eq!(s.constructions[&e1].revision, 3, "ревизия растёт по числу правок");
+    }
+
+    // --- бой (авторитетная стрельба) ---
+
+    #[test]
+    fn fire_damages_nearest_target() {
+        let mut s = Server::new();
+        let a = s.connect(1, Vec3::ZERO);
+        let b = s.connect(2, Vec3::new(100.0, 0.0, 0.0));
+        let hull_before = s.hulls[&b];
+        // Игрок 1 стреляет.
+        let ev = s.resolve_fire(a, 1).expect("выстрел должен состояться");
+        assert_eq!(ev.attacker, a);
+        assert_eq!(ev.target, b, "цель — ближайшая сущность");
+        // Урон прошёл по цели (щит или броня уменьшились).
+        let hull_after = s.hulls[&b];
+        assert!(
+            hull_after.shield < hull_before.shield || hull_after.armor < hull_before.armor,
+            "попадание должно нанести урон"
+        );
+    }
+
+    #[test]
+    fn fire_respects_cooldown() {
+        let mut s = Server::new();
+        let a = s.connect(1, Vec3::ZERO);
+        s.connect(2, Vec3::new(100.0, 0.0, 0.0));
+        assert!(s.resolve_fire(a, 1).is_some(), "первый выстрел — ок");
+        // Второй выстрел в тот же тик — на перезарядке.
+        assert!(s.resolve_fire(a, 1).is_none(), "перезарядка не даёт стрелять сразу");
+    }
+
+    #[test]
+    fn fire_beyond_range_hits_nobody() {
+        let mut s = Server::new();
+        let a = s.connect(1, Vec3::ZERO);
+        // Далеко за пределами автопушки (1500 ед.).
+        s.connect(2, Vec3::new(50_000.0, 0.0, 0.0));
+        let ev = s.resolve_fire(a, 1).expect("выстрел в пустоту — тоже событие");
+        assert_eq!(ev.target, 0, "вне дальности цели нет");
+        assert!(!ev.hit);
+    }
+
+    #[test]
+    fn fire_is_deterministic_for_same_tick() {
+        let run = || {
+            let mut s = Server::new();
+            let a = s.connect(1, Vec3::ZERO);
+            s.connect(2, Vec3::new(300.0, 0.0, 0.0));
+            let e1 = s.resolve_fire(a, 5);
+            let e2 = s.resolve_fire(a, 5); // на перезарядке — None
+            (e1, e2, s.hulls[&2])
+        };
+        assert_eq!(run(), run(), "бои должен быть детерминированным");
+    }
+
+    #[test]
+    fn fire_broadcasts_shot_to_nearby_player() {
+        let mut s = Server::new();
+        s.connect(1, Vec3::ZERO);
+        s.connect(2, Vec3::new(100.0, 0.0, 0.0));
+        s.tick(); // базовый снимок
+        // Игрок 1 стреляет: ввод с fire.
+        s.receive_input(1, &[InputFrame { seq: 1, throttle: 0.0, yaw: 0.0, pitch: 0.0, fire: true }]);
+        let plan = s.tick();
+        let msgs = &plan.messages[&2];
+        assert!(
+            msgs.iter().any(|m| matches!(m, Message::ServerShot(_))),
+            "игрок 2 должен увидеть событие выстрела"
+        );
     }
 }

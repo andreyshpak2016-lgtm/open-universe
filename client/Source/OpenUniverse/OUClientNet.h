@@ -76,6 +76,52 @@ struct FOUBuildEdit
 	int64 Revision = 0;
 };
 
+/** Событие выстрела, полученное от сервера (для трассера и эффектов). */
+USTRUCT(BlueprintType)
+struct FOUShotEvent
+{
+	GENERATED_BODY()
+
+	/** Кто стрелял. */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Combat")
+	int32 Attacker = 0;
+
+	/** По кому (0 — промах без цели). */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Combat")
+	int32 Target = 0;
+
+	/** Попал ли. */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Combat")
+	bool bHit = false;
+
+	/** Прошло урона всего. */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Combat")
+	int32 Damage = 0;
+
+	/** Цель уничтожена. */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Combat")
+	bool bDestroyed = false;
+};
+
+/** Состояние корпуса сущности от сервера (щит/броня). */
+USTRUCT(BlueprintType)
+struct FOUHullState
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Combat")
+	int32 Entity = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Combat")
+	int32 Shield = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Combat")
+	int32 Armor = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Combat")
+	bool bDestroyed = false;
+};
+
 /**
  * Сетевой клиент Open Universe.
  *
@@ -143,6 +189,14 @@ public:
 	/** Может ли этот клиент строить (права на свою конструкцию). */
 	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Build")
 	bool bCanBuild = true;
+
+	/** Очередь событий выстрела от сервера (для трассеров/эффектов). */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Combat")
+	TArray<FOUShotEvent> PendingShots;
+
+	/** Щит/броня своей сущности (для HUD). */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Combat")
+	FOUHullState OwnHull;
 
 	/** Подключиться к серверу. */
 	UFUNCTION(BlueprintCallable, Category = "Open Universe|Net")

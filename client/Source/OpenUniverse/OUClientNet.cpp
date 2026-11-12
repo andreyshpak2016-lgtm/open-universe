@@ -319,6 +319,34 @@ void UOUClientNet::Poll()
 				bLastBuildAccepted = R.Accepted;
 			}
 		}
+		else if (Body[0] == OUWire::TagShot) // событие выстрела
+		{
+			OUWire::ShotEvent E;
+			if (OUWire::DecodeShot(Body.GetData(), static_cast<size_t>(Body.Num()), E))
+			{
+				FOUShotEvent S;
+				S.Attacker = static_cast<int32>(E.Attacker);
+				S.Target = static_cast<int32>(E.Target);
+				S.bHit = E.Hit;
+				S.Damage = static_cast<int32>(E.Damage);
+				S.bDestroyed = E.Destroyed;
+				PendingShots.Add(S);
+			}
+		}
+		else if (Body[0] == OUWire::TagHull) // состояние корпуса
+		{
+			OUWire::HullState H;
+			if (OUWire::DecodeHull(Body.GetData(), static_cast<size_t>(Body.Num()), H))
+			{
+				if (static_cast<int32>(H.Entity) == OwnEntityId)
+				{
+					OwnHull.Entity = static_cast<int32>(H.Entity);
+					OwnHull.Shield = static_cast<int32>(H.Shield);
+					OwnHull.Armor = static_cast<int32>(H.Armor);
+					OwnHull.bDestroyed = H.Destroyed;
+				}
+			}
+		}
 	}
 }
 

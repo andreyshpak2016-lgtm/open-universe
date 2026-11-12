@@ -254,6 +254,47 @@ int main(int argc, char** argv)
               "поля подтверждения сохранены");
     }
 
+    // --- 9. Бой: событие выстрела и состояние корпуса (теги 13, 14) ---
+    std::printf("\n=== 9. Бой: выстрел и корпус (теги 13, 14) ===\n");
+    {
+        // Выстрел: [tag][attacker varint][target varint][hit u8][damage varint][destroyed u8]
+        std::vector<uint8_t> sb;
+        sb.push_back(OUWire::TagShot);
+        OUWire::push_varint(sb, 1);    // attacker
+        OUWire::push_varint(sb, 2);    // target
+        sb.push_back(1);               // hit
+        OUWire::push_varint(sb, 42);   // damage
+        sb.push_back(0);               // destroyed
+        OUWire::ShotEvent se;
+        Check(OUWire::DecodeShot(sb.data(), sb.size(), se), "событие выстрела разобрано");
+        Check(se.Attacker == 1 && se.Target == 2 && se.Hit && se.Damage == 42 && !se.Destroyed,
+              "поля выстрела совпали");
+
+        // Промах без цели.
+        std::vector<uint8_t> mb;
+        mb.push_back(OUWire::TagShot);
+        OUWire::push_varint(mb, 3);
+        OUWire::push_varint(mb, 0);
+        mb.push_back(0);
+        OUWire::push_varint(mb, 0);
+        mb.push_back(0);
+        OUWire::ShotEvent me;
+        Check(OUWire::DecodeShot(mb.data(), mb.size(), me) && me.Target == 0 && !me.Hit,
+              "промах без цели разобран");
+
+        // Корпус: [tag][entity varint][shield varint][armor varint][destroyed u8]
+        std::vector<uint8_t> hb;
+        hb.push_back(OUWire::TagHull);
+        OUWire::push_varint(hb, 7);
+        OUWire::push_varint(hb, 30);
+        OUWire::push_varint(hb, 80);
+        hb.push_back(0);
+        OUWire::HullState hs;
+        Check(OUWire::DecodeHull(hb.data(), hb.size(), hs) && hs.Entity == 7 &&
+              hs.Shield == 30 && hs.Armor == 80 && !hs.Destroyed,
+              "состояние корпуса разобрано");
+    }
+
     std::printf("\n=== Итог ===\n");
     if (g_failures == 0)
     {

@@ -50,6 +50,8 @@ namespace OUWire
         TagBuildAck = 10,
         TagBuildGrant = 11,
         TagBuildAccess = 12,
+        TagShot = 13,
+        TagHull = 14,
     };
 
     /// Действия редактора конструкций.
@@ -131,6 +133,25 @@ namespace OUWire
     {
         uint32_t Entity = 0;
         bool CanEdit = false;
+    };
+
+    /// Состоявшийся выстрел (сервер → клиент, тег 13).
+    struct ShotEvent
+    {
+        uint32_t Attacker = 0;
+        uint32_t Target = 0;   // 0 — промах без цели
+        bool Hit = false;
+        uint32_t Damage = 0;
+        bool Destroyed = false;
+    };
+
+    /// Текущее состояние корпуса сущности (сервер → клиент, тег 14).
+    struct HullState
+    {
+        uint32_t Entity = 0;
+        uint32_t Shield = 0;
+        uint32_t Armor = 0;
+        bool Destroyed = false;
     };
 
     // --- Низкоуровневое чтение ---
@@ -344,6 +365,44 @@ namespace OUWire
         uint8_t can = 0;
         if (!r.U8(can)) return false;
         out.CanEdit = can != 0;
+        return true;
+    }
+
+    /// Разобрать событие выстрела (tag 13).
+    inline bool DecodeShot(const uint8_t* body, size_t len, ShotEvent& out)
+    {
+        Reader r{body, len, 0};
+        uint8_t tag = 0;
+        if (!r.U8(tag) || tag != TagShot) return false;
+        uint64_t attacker = 0, target = 0, damage = 0;
+        if (!r.Varint(attacker) || !r.Varint(target)) return false;
+        uint8_t hit = 0;
+        if (!r.U8(hit)) return false;
+        if (!r.Varint(damage)) return false;
+        uint8_t destroyed = 0;
+        if (!r.U8(destroyed)) return false;
+        out.Attacker = static_cast<uint32_t>(attacker);
+        out.Target = static_cast<uint32_t>(target);
+        out.Hit = hit != 0;
+        out.Damage = static_cast<uint32_t>(damage);
+        out.Destroyed = destroyed != 0;
+        return true;
+    }
+
+    /// Разобрать состояние корпуса (tag 14).
+    inline bool DecodeHull(const uint8_t* body, size_t len, HullState& out)
+    {
+        Reader r{body, len, 0};
+        uint8_t tag = 0;
+        if (!r.U8(tag) || tag != TagHull) return false;
+        uint64_t entity = 0, shield = 0, armor = 0;
+        if (!r.Varint(entity) || !r.Varint(shield) || !r.Varint(armor)) return false;
+        out.Entity = static_cast<uint32_t>(entity);
+        out.Shield = static_cast<uint32_t>(shield);
+        out.Armor = static_cast<uint32_t>(armor);
+        uint8_t destroyed = 0;
+        if (!r.U8(destroyed)) return false;
+        out.Destroyed = destroyed != 0;
         return true;
     }
 

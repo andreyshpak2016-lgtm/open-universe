@@ -21,3 +21,4 @@ ou-net = { path = "../net" }
 ou-persist = { path = "../persist" }
 ou-script = { path = "../script" }
 ou-build = { path = "../build" }
+ou-combat = { path = "../combat" }

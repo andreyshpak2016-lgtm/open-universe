@@ -180,6 +180,29 @@ pub enum Message {
     ClientGrantBuild { entity: NetId, player: NetId },
     /// Сообщение клиенту, может ли он редактировать конструкцию.
     ServerBuildAccess { entity: NetId, can_edit: bool },
+    /// Сервер: состоялся выстрел (для трассера и эффектов у всех рядом).
+    ServerShot(ShotEvent),
+    /// Сервер: текущие щит и броня сущности (для HUD и состояния цели).
+    ServerHull { entity: NetId, shield: u32, armor: u32, destroyed: bool },
+}
+
+/// Состоявшийся выстрел (сервер → клиенты).
+///
+/// Авторитетный: сервер сам решает, попал ли выстрел и какой урон прошёл,
+/// и рассылает событие. Клиент лишь рисует трассер/вспышку — «доверия» к
+/// клиентскому попаданию нет (античит).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ShotEvent {
+    /// Кто стрелял.
+    pub attacker: NetId,
+    /// По кому (0 — промах без цели / выстрел в пустоту).
+    pub target: NetId,
+    /// Попал ли.
+    pub hit: bool,
+    /// Прошло урона всего (щит + броня).
+    pub damage: u32,
+    /// Цель уничтожена этим выстрелом.
+    pub destroyed: bool,
 }
 
 /// Применённая правка конструкции (сервер → клиенты).
@@ -424,6 +447,8 @@ mod wire {
     const TAG_BUILD_ACK: u8 = 10;
     const TAG_BUILD_GRANT: u8 = 11;
     const TAG_BUILD_ACCESS: u8 = 12;
+    const TAG_SHOT: u8 = 13;
+    const TAG_HULL: u8 = 14;
 
     pub fn encode(msg: &Message) -> Vec<u8> {
         let mut w = Writer::new();
@@ -523,6 +548,21 @@ mod wire {
                 w.u8(TAG_BUILD_ACCESS);
                 w.varint(*entity as u64);
                 w.bool(*can_edit);
+            }
+            Message::ServerShot(e) => {
+                w.u8(TAG_SHOT);
+                w.varint(e.attacker as u64);
+                w.varint(e.target as u64);
+                w.bool(e.hit);
+                w.varint(e.damage as u64);
+                w.bool(e.destroyed);
+            }
+            Message::ServerHull { entity, shield, armor, destroyed } => {
+                w.u8(TAG_HULL);
+                w.varint(*entity as u64);
+                w.varint(*shield as u64);
+                w.varint(*armor as u64);
+                w.bool(*destroyed);
             }
         }
         w.buf
@@ -631,6 +671,19 @@ mod wire {
             TAG_BUILD_ACCESS => Ok(Message::ServerBuildAccess {
                 entity: r.varint()? as NetId,
                 can_edit: r.bool()?,
+            }),
+            TAG_SHOT => Ok(Message::ServerShot(ShotEvent {
+                attacker: r.varint()? as NetId,
+                target: r.varint()? as NetId,
+                hit: r.bool()?,
+                damage: r.varint()? as u32,
+                destroyed: r.bool()?,
+            })),
+            TAG_HULL => Ok(Message::ServerHull {
+                entity: r.varint()? as NetId,
+                shield: r.varint()? as u32,
+                armor: r.varint()? as u32,
+                destroyed: r.bool()?,
             }),
             other => Err(WireError::BadTag(other)),
         }
@@ -788,8 +841,31 @@ mod tests {
     }
 
     #[test]
-    fn build_ack_grant_access_roundtrip() {
-        let ack = Message::ClientBuildAck { entity: 2, revision: 300 };
+    fn shot_and_hull_roundtrip() {
+        let shot = Message::ServerShot(ShotEvent {
+            attacker: 1,
+            target: 2,
+            hit: true,
+            damage: 42,
+            destroyed: false,
+        });
+        assert_eq!(decode(&encode(&shot)).unwrap(), shot);
+
+        let miss = Message::ServerShot(ShotEvent {
+            attacker: 3,
+            target: 0,
+            hit: false,
+            damage: 0,
+            destroyed: false,
+        });
+        assert_eq!(decode(&encode(&miss)).unwrap(), miss);
+
+        let hull = Message::ServerHull { entity: 7, shield: 30, armor: 80, destroyed: false };
+        assert_eq!(decode(&encode(&hull)).unwrap(), hull);
+    }
+
+    #[test]
+    fn build_ack_grant_access_roundtrip() {        let ack = Message::ClientBuildAck { entity: 2, revision: 300 };
         assert_eq!(decode(&encode(&ack)).unwrap(), ack);
         let grant = Message::ClientGrantBuild { entity: 1, player: 9 };
         assert_eq!(decode(&encode(&grant)).unwrap(), grant);

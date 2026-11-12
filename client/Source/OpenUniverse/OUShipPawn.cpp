@@ -15,6 +15,9 @@
 #include "Engine/StaticMesh.h"
 #include "UObject/ConstructorHelpers.h"
 #include "Kismet/GameplayStatics.h"
+#include "DrawDebugHelpers.h"
+#include "Misc/CommandLine.h"
+#include "Misc/Parse.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogOUShip, Log, All);
 
@@ -144,6 +147,56 @@ void AOUShipPawn::BeginPlay()
 	// Менеджер начала координат (может отсутствовать — тогда работаем без него).
 	OriginManager = Cast<AUOOriginManager>(
 		UGameplayStatics::GetActorOfClass(GetWorld(), AUOOriginManager::StaticClass()));
+}
+
+void AOUShipPawn::DrawCombatEffects()
+{
+	if (!Net || Net->PendingShots.Num() == 0)
+	{
+		return;
+	}
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		Net->PendingShots.Reset();
+		return;
+	}
+	for (const FOUShotEvent& S : Net->PendingShots)
+	{
+		// Стрелок — либо своя сущность (корабль), либо чужой корабль рядом.
+		FVector From = GetActorLocation();
+		if (S.Attacker != State.Id)
+		{
+			if (TObjectPtr<AActor>* A = RemoteActors.Find(S.Attacker))
+			{
+				if (*A) { From = (*A)->GetActorLocation(); } else { continue; }
+			}
+			else { continue; }
+		}
+		UE_LOG(LogOUShip, Log, TEXT("Бой: выстрел %d → %d, попадание: %s, урон %d%s"),
+			S.Attacker, S.Target, S.bHit ? TEXT("да") : TEXT("нет"), S.Damage,
+			S.bDestroyed ? TEXT(", цель уничтожена") : TEXT(""));
+		// Цель: чужая сущность или своя.
+		FVector To = From + GetActorForwardVector() * 1500.f;   // промах — вперёд
+		if (S.Target != 0)
+		{
+			if (S.Target == State.Id)
+			{
+				To = GetActorLocation();
+			}
+			else if (TObjectPtr<AActor>* TA = RemoteActors.Find(S.Target))
+			{
+				if (*TA) { To = (*TA)->GetActorLocation(); }
+			}
+		}
+		const FColor Col = S.bHit ? FColor(255, 220, 80) : FColor(120, 160, 255);
+		DrawDebugLine(World, From, To, Col, false, 0.15f, 0, 4.f);
+		if (S.bHit)
+		{
+			DrawDebugPoint(World, To, 18.f, FColor(255, 120, 60), false, 0.15f);
+		}
+	}
+	Net->PendingShots.Reset();
 }
 
 void AOUShipPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
@@ -438,7 +491,26 @@ void AOUShipPawn::Tick(float DeltaSeconds)
 			{
 				State.Id = Net->OwnEntityId;
 			}
+			if (Net->IsConnected())
+			{
+				// Тестовый авто-огонь работает и у припаркованного корабля:
+				// шлём кадр с огнём (без тяги), чтобы проверить бой.
+				if (FParse::Param(FCommandLine::Get(), TEXT("OUAutoFire")))
+				{
+					FireTimer += DeltaSeconds;
+					if (FireTimer >= 0.5f)
+					{
+						FireTimer = 0.f;
+						FOUInputFrame Fire;
+						Fire.Seq = ++InputSeqAuto;
+						Fire.bFire = true;
+						Net->SendInput(Fire);
+					}
+				}
+			}
 		}
+		// Трассеры/попадания по событиям от сервера.
+		DrawCombatEffects();
 		ApplyStateToActor();
 		return;
 	}
@@ -458,6 +530,17 @@ void AOUShipPawn::Tick(float DeltaSeconds)
 
 	// Фиксированный шаг: сеть и предсказание идут на 30 Гц, рендер — быстрее.
 	const int32 Steps = FMath::Max(1, FMath::RoundToInt(DeltaSeconds / FixedDeltaSeconds));
+
+	// Тестовый авто-огонь (ключ `-OUAutoFire`): стреляем, чтобы проверить бой.
+	if (FParse::Param(FCommandLine::Get(), TEXT("OUAutoFire")))
+	{
+		FireTimer += DeltaSeconds;
+		CurrentInput.bFire = FireTimer >= 0.5f;
+		if (CurrentInput.bFire)
+		{
+			FireTimer = 0.f;
+		}
+	}
 
 	// Предсказываем движение нашим же шагом (сеть не требуется).
 	CurrentInput.Seq += 1;
@@ -502,6 +585,8 @@ void AOUShipPawn::Tick(float DeltaSeconds)
 			// Рисуем чужие корабли из последнего снимка.
 			UpdateRemotePlayers();
 		}
+		// Трассеры и попадания по событиям выстрела от сервера.
+		DrawCombatEffects();
 	}
 
 	// Переносим начало координат, если улетели далеко.
