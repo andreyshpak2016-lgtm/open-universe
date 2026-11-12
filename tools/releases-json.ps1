@@ -16,10 +16,28 @@ if (-not (Test-Path $gh)) { throw "GitHub CLI ne najden: $gh" }
 
 Write-Host "== Spisok versij -> releases.json ==" -ForegroundColor Cyan
 
-$json = & $gh api "repos/$repo/releases?per_page=100" 2>&1
-if ($LASTEXITCODE -ne 0) { throw "gh api releases: $json" }
-
-$rels = $json | ConvertFrom-Json
+# ВАЖНО про кодировку: `gh` печатает UTF-8, но PowerShell 5.1 декодирует вывод
+# внешних программ через консольную кодовую страницу (OEM, напр. CP866) — из-за
+# этого кириллица в notes превращалась в «кракозябры». Поэтому просим gh писать
+# во временный файл через cmd (байты как есть), а читаем файл строго как UTF-8.
+$tmp = Join-Path $env:TEMP ("ou-releases-" + [guid]::NewGuid().ToString("N") + ".json")
+try {
+  $cmd = '"{0}" api "repos/{1}/releases?per_page=100" > "{2}" 2>nul' -f $gh, $repo, $tmp
+  & $env:ComSpec /c $cmd
+  if (-not (Test-Path $tmp)) { throw "gh api releases: пустой ответ" }
+  $json = [System.IO.File]::ReadAllText($tmp, [System.Text.Encoding]::UTF8)
+} finally {
+  if (Test-Path $tmp) { Remove-Item $tmp -Force -ErrorAction SilentlyContinue }
+}
+if (-not $json) { throw "gh api releases: пустой ответ" }
+# Вытаскиваем код возврата gh нельзя (вывод ушёл в файл) — проверяем, что JSON
+# разбирается и это массив релизов.
+try {
+  $rels = $json | ConvertFrom-Json
+} catch {
+  throw "gh api releases: некорректный JSON: $_"
+}
+if (-not $rels) { throw "gh api releases: список пуст" }
 $latestTag = ""
 if ($rels.Count -gt 0) { $latestTag = $rels[0].tag_name }
 
