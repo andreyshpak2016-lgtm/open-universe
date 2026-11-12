@@ -38,6 +38,7 @@ foreach ($rel in $ordered) {
 }
 
 $list = @()
+$relIndex = 0
 foreach ($rel in $rels) {
   $assets = @($rel.assets)
   $setup     = ($assets | Where-Object { $_.name -match '^OpenUniverse-Setup.*\.exe$' } | Select-Object -First 1)
@@ -48,9 +49,19 @@ foreach ($rel in $rels) {
 
   $primary = if ($launcher) { $launcher } elseif ($setup) { $setup } elseif ($zip) { $zip }
 
+  # Текст новостей: тело релиза (обычно CHANGELOG). Держим только у свежих
+  # релизов и обрезаем — чтобы releases.json не разрастался.
+  $notes = ""
+  if ($relIndex -lt 8 -and $rel.body) {
+    $notes = [string]$rel.body
+    if ($notes.Length -gt 1500) { $notes = $notes.Substring(0, 1500) }
+  }
+  $relIndex++
+
   $list += [PSCustomObject]@{
     tag          = $rel.tag_name
     name         = $rel.name
+    notes        = $notes
     date         = $rel.published_at
     latest       = ($rel.tag_name -eq $latestTag)
     prerelease   = [bool]$rel.prerelease

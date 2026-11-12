@@ -58,6 +58,9 @@ try {
 
 # 3. Упаковка
 Write-Host "--> упаковка артефакта" -ForegroundColor Yellow
+# VERSION пишем ДО сборки установщиков: установщик кладёт этот файл в игру,
+# и лаунчер по нему определяет установленную версию.
+Set-Content -Path (Join-Path $root 'VERSION') -Value $Version -NoNewline -Encoding UTF8
 New-Item -ItemType Directory -Force -Path $dist | Out-Null
 $zip = Join-Path $dist "open-universe-$Version-windows-x64.zip"
 if (Test-Path $zip) { Remove-Item $zip -Force }
@@ -128,10 +131,7 @@ if ($iscc) {
 # а не только на архив. Только реальные исполняемые файлы.
 $exes = $files | Where-Object { $_ -match '\.exe$' -and (Test-Path $_) }
 
-# 4. Обновить VERSION
-Set-Content -Path (Join-Path $root 'VERSION') -Value $Version -NoNewline -Encoding UTF8
-
-# 4a. Обновить releases.json (список версий для сайта — без GitHub API).
+# 4. Обновить releases.json (список версий для сайта — без GitHub API).
 try {
   & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'releases-json.ps1')
 } catch {

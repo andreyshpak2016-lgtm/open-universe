@@ -2,8 +2,11 @@
 //
 // Возможности:
 //   * регистрация и вход по логину и паролю (профиль хранится локально);
+//   * автоматический вход, если логин и пароль уже вводились;
+//   * выбор языка интерфейса (русский / английский) с запоминанием;
+//   * показ установленной версии игры и доступной новой;
+//   * обновление только когда версии различаются (иначе — «уже актуально»);
 //   * новости об обновлениях (тела релизов GitHub прямо в окне);
-//   * автообновление: сравнение версии и скачивание установщика игры;
 //   * кнопка «Играть» для запуска установленной игры.
 //
 // Сборка (Windows, .NET Framework 4.x):
@@ -89,29 +92,154 @@ namespace OpenUniverseLauncher
         private const string SiteUrl = "https://andreyshpak2016-lgtm.github.io/open-universe/";
 
         private readonly string _profilePath;
+        private readonly string _settingsPath;
         private PilotProfile _profile;
         private readonly List<ReleaseInfo> _releases = new List<ReleaseInfo>();
 
-        // Вход / регистрация.
+        // Язык интерфейса: "ru" или "en".
+        private string _lang = "ru";
+
+        // Установленная и доступная версии игры.
+        private string _installedDisplay;
+        private string _latestGameDisplay;
+
+        // ---------------- Локализация ----------------
+        private static readonly Dictionary<string, string[]> S = new Dictionary<string, string[]>();
+        private static void Add(string key, string ru, string en) { S[key] = new string[] { ru, en }; }
+
+        static LauncherForm()
+        {
+            Add("app.title", "Open Universe — лаунчер", "Open Universe — launcher");
+            Add("lang.label", "Язык:", "Language:");
+
+            Add("tab.signin", "Вход", "Sign in");
+            Add("tab.register", "Регистрация", "Register");
+            Add("label.login", "Логин", "Login");
+            Add("label.password", "Пароль", "Password");
+            Add("label.callname", "Позывной (логин)", "Call sign (login)");
+            Add("label.passwordMin", "Пароль (от 4 символов)", "Password (min 4 chars)");
+            Add("label.repeat", "Повторите пароль", "Repeat password");
+            Add("chk.remember", "Запомнить логин", "Remember login");
+            Add("chk.rules", "Принимаю правила сообщества", "I accept the community rules");
+            Add("btn.signin", "Войти", "Sign in");
+            Add("btn.create", "Создать профиль", "Create profile");
+
+            Add("signed.title", "Вы вошли в систему", "You are signed in");
+            Add("signed.pilot", "Пилот: {0}", "Pilot: {0}");
+            Add("signed.note", "Логин и пароль сохранены — вход выполняется автоматически.",
+                "Login and password are saved — sign-in happens automatically.");
+
+            Add("ver.installed", "Установлено:", "Installed:");
+            Add("ver.latest", "Доступно:", "Available:");
+            Add("ver.none", "не установлена", "not installed");
+            Add("ver.checking", "проверяю версию…", "checking version…");
+
+            Add("news.title", "Новости и обновления", "News and updates");
+            Add("news.loading", "Загружаю новости…", "Loading news…");
+            Add("news.noVersions", "Не удалось получить список версий.\r\nПроверьте интернет-соединение.",
+                "Could not get the version list.\r\nCheck your internet connection.");
+            Add("news.fail", "Не удалось загрузить новости.\r\nПроверьте интернет-соединение.",
+                "Could not load the news.\r\nCheck your internet connection.");
+
+            Add("btn.play", "▶ Играть", "▶ Play");
+            Add("btn.playNotInstalled", "▶ Играть (не установлена)", "▶ Play (not installed)");
+            Add("btn.playSignIn", "▶ Играть (войдите)", "▶ Play (sign in)");
+            Add("btn.update", "⭳ Проверить обновления", "⭳ Check for updates");
+            Add("btn.site", "Сайт", "Website");
+            Add("btn.folder", "Папка игры", "Game folder");
+            Add("btn.logout", "Выйти", "Sign out");
+
+            Add("status.ready", "Готово к работе.", "Ready.");
+            Add("status.checking", "Проверяю обновления…", "Checking for updates…");
+            Add("status.upToDate", "Установлена актуальная версия {0} — обновление не требуется.",
+                "You already have the latest version {0} — no update needed.");
+            Add("status.notInstalled", "Игра не установлена. Доступна версия {0}.",
+                "The game is not installed. Version {0} is available.");
+            Add("status.noInstaller", "В релизах нет установщика игры.", "No game installer found in the releases.");
+            Add("status.noVersions", "Не удалось получить список версий (нет сети?).",
+                "Could not get the version list (no network?).");
+            Add("status.downloading", "Скачиваю… {0:N0} / {1:N0} МБ", "Downloading… {0:N0} / {1:N0} MB");
+            Add("status.downloading2", "Скачиваю… {0:N0} МБ", "Downloading… {0:N0} MB");
+            Add("status.installing", "Устанавливаю игру в фоне…", "Installing the game in the background…");
+            Add("status.installing2", "Идёт установка игры…", "Installing the game…");
+            Add("status.installed", "Готово: игра установлена ({0}). Нажмите «Играть».",
+                "Done: the game is installed ({0}). Press Play.");
+            Add("status.installFail", "Не удалось установить игру: ", "Could not install the game: ");
+            Add("status.launching", "Игра запускается…", "Launching the game…");
+            Add("status.launchFail", "Не удалось запустить игру: ", "Could not launch the game: ");
+            Add("status.updateError", "Ошибка проверки обновлений: ", "Update check error: ");
+            Add("status.needSignIn", "Сначала войдите или зарегистрируйтесь.", "Please sign in or register first.");
+            Add("status.noGameFile", "Игра не найдена. Нажмите «Проверить обновления».",
+                "The game was not found. Press “Check for updates”.");
+
+            Add("hint.profileFound", "Профиль найден: {0}. Введите пароль.", "Profile found: {0}. Enter your password.");
+            Add("hint.signedIn", "Вы вошли как {0}.", "Signed in as {0}.");
+            Add("hint.welcome", "Добро пожаловать, {0}!", "Welcome, {0}!");
+            Add("hint.signedOut", "Вы вышли из профиля.", "You signed out.");
+            Add("hint.created", "Профиль «{0}» создан. Можно играть.", "Profile “{0}” created. You can play.");
+
+            Add("err.callnameShort", "Позывной — минимум 2 символа.", "Call sign must be at least 2 characters.");
+            Add("err.callnameChars", "В позывном — только буквы, цифры, пробел, точка, дефис.",
+                "The call sign may contain only letters, digits, spaces, dots and hyphens.");
+            Add("err.passShort", "Пароль — минимум 4 символа.", "Password must be at least 4 characters.");
+            Add("err.passMismatch", "Пароли не совпадают.", "Passwords do not match.");
+            Add("err.needRules", "Нужно принять правила сообщества.", "You must accept the community rules.");
+            Add("err.enterLogin", "Введите логин.", "Enter your login.");
+            Add("err.enterPass", "Введите пароль.", "Enter your password.");
+            Add("err.profileMissing", "Профиль не найден. Откройте вкладку «Регистрация».",
+                "Profile not found. Open the “Register” tab.");
+            Add("err.wrongPass", "Неверный пароль.", "Wrong password.");
+
+            Add("prompt.title", "Обновление игры", "Game update");
+            Add("prompt.download", "Игра не установлена.\r\n\r\nСкачать игру {0} ({1} МБ)?",
+                "The game is not installed.\r\n\r\nDownload the game {0} ({1} MB)?");
+            Add("prompt.update", "Доступно обновление игры {0} (установлена {1}).\r\n\r\nСкачать обновление?",
+                "Game update {0} is available (installed {1}).\r\n\r\nDownload the update?");
+        }
+
+        private string T(string key)
+        {
+            string[] pair;
+            if (S.TryGetValue(key, out pair)) return _lang == "en" ? pair[1] : pair[0];
+            return key;
+        }
+
+        // ---------------- Поля интерфейса ----------------
+        private Label _title, _langLabel, _verInstalled, _verLatest;
+        private ComboBox _langCombo;
+
         private TabControl _authTabs;
+        private TabPage _enterTab, _regTab;
+        private Label _lblLogin, _lblPassword, _lblCallname, _lblPassMin, _lblRepeat;
         private TextBox _loginIn, _passIn;
         private TextBox _regLogin, _regPass, _regPass2;
         private CheckBox _regRules, _remember;
+        private Button _enterBtn, _regBtn;
         private Label _authHint;
 
-        // Новости и действия.
+        private Panel _signedPanel;
+        private Label _signedTitle, _signedPilot, _signedNote;
+
         private RichTextBox _news;
-        private Button _play, _update;
+        private Label _newsTitle;
+        private Button _play, _update, _site, _folder, _logout;
         private ProgressBar _progress;
-        private Label _status, _version;
+        private Label _status;
 
         public LauncherForm()
         {
             _profilePath = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                 "OpenUniverse", "launcher.ini");
+            _settingsPath = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "OpenUniverse", "settings.ini");
 
-            Text = "Open Universe — лаунчер";
+            // Язык: сохранённый выбор, иначе по языку системы.
+            string saved = ReadSetting("lang");
+            _lang = (saved == "ru" || saved == "en") ? saved : DetectDefaultLang();
+
+            Text = T("app.title");
             ClientSize = new Size(820, 560);
             MinimumSize = new Size(720, 520);
             StartPosition = FormStartPosition.CenterScreen;
@@ -120,6 +248,7 @@ namespace OpenUniverseLauncher
             Font = new Font("Segoe UI", 9.5f);
 
             BuildUi();
+            ApplyLanguage();
             LoadProfile();
 
             Shown += async (s, e) =>
@@ -131,7 +260,7 @@ namespace OpenUniverseLauncher
 
         private void BuildUi()
         {
-            var title = new Label
+            _title = new Label
             {
                 Text = "OPEN UNIVERSE",
                 Font = new Font("Segoe UI", 20f, FontStyle.Bold),
@@ -139,16 +268,63 @@ namespace OpenUniverseLauncher
                 AutoSize = true,
                 Location = new Point(24, 16)
             };
-            Controls.Add(title);
+            Controls.Add(_title);
 
-            _version = new Label
+            // ---- Выбор языка (в правом верхнем углу) ----
+            _langLabel = new Label
             {
-                Text = "проверяю версию…",
-                ForeColor = Color.FromArgb(130, 145, 180),
                 AutoSize = true,
-                Location = new Point(28, 54)
+                ForeColor = Color.FromArgb(160, 176, 210),
+                Location = new Point(592, 22)
             };
-            Controls.Add(_version);
+            Controls.Add(_langLabel);
+
+            _langCombo = new ComboBox
+            {
+                DropDownStyle = ComboBoxStyle.DropDownList,
+                Location = new Point(658, 18),
+                Size = new Size(138, 24),
+                FlatStyle = FlatStyle.Flat,
+                BackColor = Color.FromArgb(18, 24, 46),
+                ForeColor = Color.FromArgb(220, 228, 255)
+            };
+            _langCombo.Items.Add("Русский");
+            _langCombo.Items.Add("English");
+            _langCombo.SelectedIndex = _lang == "en" ? 1 : 0;
+            _langCombo.SelectedIndexChanged += (s, e) =>
+            {
+                _lang = _langCombo.SelectedIndex == 1 ? "en" : "ru";
+                WriteSetting("lang", _lang);
+                ApplyLanguage();
+            };
+            Controls.Add(_langCombo);
+
+            // ---- Панель версий (установлено / доступно) ----
+            var verPanel = new Panel
+            {
+                Location = new Point(560, 48),
+                Size = new Size(236, 34),
+                BackColor = Color.FromArgb(18, 24, 46)
+            };
+            Controls.Add(verPanel);
+
+            _verInstalled = new Label
+            {
+                AutoSize = true,
+                Location = new Point(8, 2),
+                ForeColor = Color.FromArgb(210, 220, 245),
+                Font = new Font("Segoe UI", 8.5f)
+            };
+            verPanel.Controls.Add(_verInstalled);
+
+            _verLatest = new Label
+            {
+                AutoSize = true,
+                Location = new Point(8, 18),
+                ForeColor = Color.FromArgb(150, 168, 205),
+                Font = new Font("Segoe UI", 8.5f)
+            };
+            verPanel.Controls.Add(_verLatest);
 
             // ---- Панель входа/регистрации (вкладки) ----
             _authTabs = new TabControl
@@ -159,14 +335,16 @@ namespace OpenUniverseLauncher
             Controls.Add(_authTabs);
 
             // Вкладка «Вход».
-            var enterTab = new TabPage("Вход") { BackColor = Color.FromArgb(18, 24, 46) };
-            _authTabs.TabPages.Add(enterTab);
-            enterTab.Controls.Add(MkLabel("Логин", 16, 20));
+            _enterTab = new TabPage("Вход") { BackColor = Color.FromArgb(18, 24, 46) };
+            _authTabs.TabPages.Add(_enterTab);
+            _lblLogin = MkLabel("Логин", 16, 20);
+            _enterTab.Controls.Add(_lblLogin);
             _loginIn = new TextBox { Location = new Point(16, 42), Width = 280 };
-            enterTab.Controls.Add(_loginIn);
-            enterTab.Controls.Add(MkLabel("Пароль", 16, 80));
+            _enterTab.Controls.Add(_loginIn);
+            _lblPassword = MkLabel("Пароль", 16, 80);
+            _enterTab.Controls.Add(_lblPassword);
             _passIn = new TextBox { Location = new Point(16, 102), Width = 280, UseSystemPasswordChar = true };
-            enterTab.Controls.Add(_passIn);
+            _enterTab.Controls.Add(_passIn);
             _remember = new CheckBox
             {
                 Text = "Запомнить логин",
@@ -174,23 +352,26 @@ namespace OpenUniverseLauncher
                 AutoSize = true,
                 ForeColor = Color.FromArgb(170, 185, 215)
             };
-            enterTab.Controls.Add(_remember);
-            var enterBtn = MkButton("Войти", 16, 170, 280, Color.FromArgb(90, 130, 255), Color.White);
-            enterBtn.Click += OnSignIn;
-            enterTab.Controls.Add(enterBtn);
+            _enterTab.Controls.Add(_remember);
+            _enterBtn = MkButton("Войти", 16, 170, 280, Color.FromArgb(90, 130, 255), Color.White);
+            _enterBtn.Click += OnSignIn;
+            _enterTab.Controls.Add(_enterBtn);
 
             // Вкладка «Регистрация».
-            var regTab = new TabPage("Регистрация") { BackColor = Color.FromArgb(18, 24, 46) };
-            _authTabs.TabPages.Add(regTab);
-            regTab.Controls.Add(MkLabel("Позывной (логин)", 16, 14));
+            _regTab = new TabPage("Регистрация") { BackColor = Color.FromArgb(18, 24, 46) };
+            _authTabs.TabPages.Add(_regTab);
+            _lblCallname = MkLabel("Позывной (логин)", 16, 14);
+            _regTab.Controls.Add(_lblCallname);
             _regLogin = new TextBox { Location = new Point(16, 36), Width = 280 };
-            regTab.Controls.Add(_regLogin);
-            regTab.Controls.Add(MkLabel("Пароль (от 4 символов)", 16, 70));
+            _regTab.Controls.Add(_regLogin);
+            _lblPassMin = MkLabel("Пароль (от 4 символов)", 16, 70);
+            _regTab.Controls.Add(_lblPassMin);
             _regPass = new TextBox { Location = new Point(16, 92), Width = 280, UseSystemPasswordChar = true };
-            regTab.Controls.Add(_regPass);
-            regTab.Controls.Add(MkLabel("Повторите пароль", 16, 126));
+            _regTab.Controls.Add(_regPass);
+            _lblRepeat = MkLabel("Повторите пароль", 16, 126);
+            _regTab.Controls.Add(_lblRepeat);
             _regPass2 = new TextBox { Location = new Point(16, 148), Width = 280, UseSystemPasswordChar = true };
-            regTab.Controls.Add(_regPass2);
+            _regTab.Controls.Add(_regPass2);
             _regRules = new CheckBox
             {
                 Text = "Принимаю правила сообщества",
@@ -198,10 +379,44 @@ namespace OpenUniverseLauncher
                 AutoSize = true,
                 ForeColor = Color.FromArgb(170, 185, 215)
             };
-            regTab.Controls.Add(_regRules);
-            var regBtn = MkButton("Создать профиль", 16, 208, 280, Color.FromArgb(0, 200, 170), Color.FromArgb(4, 18, 26));
-            regBtn.Click += OnRegister;
-            regTab.Controls.Add(regBtn);
+            _regTab.Controls.Add(_regRules);
+            _regBtn = MkButton("Создать профиль", 16, 208, 280, Color.FromArgb(0, 200, 170), Color.FromArgb(4, 18, 26));
+            _regBtn.Click += OnRegister;
+            _regTab.Controls.Add(_regBtn);
+
+            // ---- Панель «уже вошли в систему» (заменяет вкладки) ----
+            _signedPanel = new Panel
+            {
+                Location = new Point(24, 86),
+                Size = new Size(330, 300),
+                BackColor = Color.FromArgb(18, 24, 46),
+                Visible = false
+            };
+            Controls.Add(_signedPanel);
+            _signedTitle = new Label
+            {
+                Text = "Вы вошли в систему",
+                Font = new Font("Segoe UI", 12f, FontStyle.Bold),
+                ForeColor = Color.FromArgb(0, 220, 180),
+                AutoSize = true,
+                Location = new Point(20, 24)
+            };
+            _signedPanel.Controls.Add(_signedTitle);
+            _signedPilot = new Label
+            {
+                AutoSize = true,
+                Location = new Point(20, 70),
+                ForeColor = Color.FromArgb(220, 228, 255),
+                Font = new Font("Segoe UI", 11f, FontStyle.Bold)
+            };
+            _signedPanel.Controls.Add(_signedPilot);
+            _signedNote = new Label
+            {
+                Size = new Size(290, 80),
+                Location = new Point(20, 100),
+                ForeColor = Color.FromArgb(150, 168, 205)
+            };
+            _signedPanel.Controls.Add(_signedNote);
 
             _authHint = new Label
             {
@@ -220,7 +435,7 @@ namespace OpenUniverseLauncher
             };
             Controls.Add(newsPanel);
 
-            var newsTitle = new Label
+            _newsTitle = new Label
             {
                 Text = "Новости и обновления",
                 Font = new Font("Segoe UI", 12f, FontStyle.Bold),
@@ -228,7 +443,7 @@ namespace OpenUniverseLauncher
                 AutoSize = true,
                 Location = new Point(14, 10)
             };
-            newsPanel.Controls.Add(newsTitle);
+            newsPanel.Controls.Add(_newsTitle);
 
             _news = new RichTextBox
             {
@@ -252,28 +467,22 @@ namespace OpenUniverseLauncher
             _update.Click += async (s, e) => await CheckForUpdateAsync(silent: false);
             Controls.Add(_update);
 
-            var site = MkButton("Сайт", 424, 442, 90, Color.FromArgb(30, 40, 80), Color.FromArgb(200, 214, 255));
-            site.Click += (s, e) => Open(SiteUrl);
-            Controls.Add(site);
+            _site = MkButton("Сайт", 424, 442, 90, Color.FromArgb(30, 40, 80), Color.FromArgb(200, 214, 255));
+            _site.Click += (s, e) => Open(SiteUrl);
+            Controls.Add(_site);
 
-            var folder = MkButton("Папка игры", 524, 442, 120, Color.FromArgb(30, 40, 80), Color.FromArgb(200, 214, 255));
-            folder.Click += (s, e) =>
+            _folder = MkButton("Папка игры", 524, 442, 120, Color.FromArgb(30, 40, 80), Color.FromArgb(200, 214, 255));
+            _folder.Click += (s, e) =>
             {
                 var dir = GameDir();
                 Directory.CreateDirectory(dir);
                 Open("explorer.exe", "\"" + dir + "\"");
             };
-            Controls.Add(folder);
+            Controls.Add(_folder);
 
-            var logout = MkButton("Выйти", 654, 442, 142, Color.FromArgb(30, 40, 80), Color.FromArgb(200, 214, 255));
-            logout.Click += (s, e) =>
-            {
-                _profile = null;
-                try { if (File.Exists(_profilePath)) File.Delete(_profilePath); } catch { }
-                _authHint.Text = "Вы вышли из профиля.";
-                UpdatePlayButton();
-            };
-            Controls.Add(logout);
+            _logout = MkButton("Выйти", 654, 442, 142, Color.FromArgb(30, 40, 80), Color.FromArgb(200, 214, 255));
+            _logout.Click += OnSignOut;
+            Controls.Add(_logout);
 
             _progress = new ProgressBar
             {
@@ -322,16 +531,82 @@ namespace OpenUniverseLauncher
             return b;
         }
 
+        // ---------------- Язык ----------------
+
+        private static string DetectDefaultLang()
+        {
+            try
+            {
+                string two = System.Globalization.CultureInfo.CurrentUICulture.TwoLetterISOLanguageName;
+                if (two == "ru") return "ru";
+            }
+            catch { }
+            return "en";
+        }
+
+        private void ApplyLanguage()
+        {
+            Text = T("app.title");
+            _langLabel.Text = T("lang.label");
+            _enterTab.Text = T("tab.signin");
+            _regTab.Text = T("tab.register");
+            _lblLogin.Text = T("label.login");
+            _lblPassword.Text = T("label.password");
+            _lblCallname.Text = T("label.callname");
+            _lblPassMin.Text = T("label.passwordMin");
+            _lblRepeat.Text = T("label.repeat");
+            _remember.Text = T("chk.remember");
+            _regRules.Text = T("chk.rules");
+            _enterBtn.Text = T("btn.signin");
+            _regBtn.Text = T("btn.create");
+            _signedTitle.Text = T("signed.title");
+            _signedNote.Text = T("signed.note");
+            _newsTitle.Text = T("news.title");
+            _update.Text = T("btn.update");
+            _site.Text = T("btn.site");
+            _folder.Text = T("btn.folder");
+            _logout.Text = T("btn.logout");
+
+            // Статус-строку и подсказку тоже переводим, если они в состоянии покоя.
+            if (string.IsNullOrEmpty(_status.Text) || _status.Text == "Готово к работе." || _status.Text == "Ready.")
+                _status.Text = T("status.ready");
+
+            UpdateVersionLabels();
+            UpdatePlayButton();
+            if (_signedPanel.Visible && _profile != null)
+                _signedPilot.Text = string.Format(T("signed.pilot"), _profile.Login);
+        }
+
+        private void ShowSignedIn()
+        {
+            _authTabs.Visible = false;
+            _signedPanel.Visible = true;
+            _signedPilot.Text = string.Format(T("signed.pilot"), _profile.Login);
+        }
+
+        private void ShowSignedOut()
+        {
+            _signedPanel.Visible = false;
+            _authTabs.Visible = true;
+        }
+
         // ---------------- Профиль ----------------
 
         private void LoadProfile()
         {
             _profile = ReadProfile();
-            if (_profile != null)
+            if (_profile != null && !string.IsNullOrEmpty(_profile.PasswordHash))
             {
+                // Логин и пароль уже вводили ранее — входим автоматически.
                 _loginIn.Text = _profile.Login;
                 _remember.Checked = _profile.Remember;
-                _authHint.Text = "Профиль найден: " + _profile.Login + ". Введите пароль.";
+                ShowSignedIn();
+                SetHint(string.Format(T("hint.signedIn"), _profile.Login), false);
+            }
+            else
+            {
+                _profile = null;
+                ShowSignedOut();
             }
             UpdatePlayButton();
         }
@@ -371,6 +646,44 @@ namespace OpenUniverseLauncher
             catch { }
         }
 
+        private string ReadSetting(string key)
+        {
+            try
+            {
+                if (!File.Exists(_settingsPath)) return null;
+                foreach (var line in File.ReadAllLines(_settingsPath))
+                {
+                    int i = line.IndexOf('=');
+                    if (i <= 0) continue;
+                    if (line.Substring(0, i) == key) return line.Substring(i + 1);
+                }
+            }
+            catch { }
+            return null;
+        }
+
+        private void WriteSetting(string key, string value)
+        {
+            try
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(_settingsPath));
+                var dict = new Dictionary<string, string>();
+                if (File.Exists(_settingsPath))
+                {
+                    foreach (var line in File.ReadAllLines(_settingsPath))
+                    {
+                        int i = line.IndexOf('=');
+                        if (i > 0) dict[line.Substring(0, i)] = line.Substring(i + 1);
+                    }
+                }
+                dict[key] = value;
+                var lines = new List<string>();
+                foreach (var kv in dict) lines.Add(kv.Key + "=" + kv.Value);
+                File.WriteAllLines(_settingsPath, lines.ToArray());
+            }
+            catch { }
+        }
+
         private static string Hash(string password)
         {
             using (var sha = SHA256.Create())
@@ -387,18 +700,18 @@ namespace OpenUniverseLauncher
             string login = (_regLogin.Text ?? "").Trim();
             string p1 = _regPass.Text ?? "";
             string p2 = _regPass2.Text ?? "";
-            if (login.Length < 2) { SetHint("Позывной — минимум 2 символа.", true); return; }
+            if (login.Length < 2) { SetHint(T("err.callnameShort"), true); return; }
             if (!System.Text.RegularExpressions.Regex.IsMatch(login, "^[A-Za-z0-9_.\\-А-Яа-яЁё ]+$"))
-            { SetHint("В позывном — только буквы, цифры, пробел, точка, дефис.", true); return; }
-            if (p1.Length < 4) { SetHint("Пароль — минимум 4 символа.", true); return; }
-            if (p1 != p2) { SetHint("Пароли не совпадают.", true); return; }
-            if (!_regRules.Checked) { SetHint("Нужно принять правила сообщества.", true); return; }
+            { SetHint(T("err.callnameChars"), true); return; }
+            if (p1.Length < 4) { SetHint(T("err.passShort"), true); return; }
+            if (p1 != p2) { SetHint(T("err.passMismatch"), true); return; }
+            if (!_regRules.Checked) { SetHint(T("err.needRules"), true); return; }
 
             _profile = new PilotProfile { Login = login, PasswordHash = Hash(p1), Remember = true };
             SaveProfile(_profile);
-            SetHint("Профиль «" + login + "» создан. Можно играть.", false);
-            _authTabs.SelectedIndex = 0;
+            SetHint(string.Format(T("hint.created"), login), false);
             _loginIn.Text = login;
+            ShowSignedIn();
             UpdatePlayButton();
         }
 
@@ -406,25 +719,36 @@ namespace OpenUniverseLauncher
         {
             string login = (_loginIn.Text ?? "").Trim();
             string pass = _passIn.Text ?? "";
-            if (login.Length < 2) { SetHint("Введите логин.", true); return; }
-            if (pass.Length < 1) { SetHint("Введите пароль.", true); return; }
+            if (login.Length < 2) { SetHint(T("err.enterLogin"), true); return; }
+            if (pass.Length < 1) { SetHint(T("err.enterPass"), true); return; }
 
             var stored = ReadProfile();
             if (stored == null || !string.Equals(stored.Login, login, StringComparison.OrdinalIgnoreCase))
             {
-                SetHint("Профиль не найден. Откройте вкладку «Регистрация».", true);
+                SetHint(T("err.profileMissing"), true);
                 return;
             }
             if (!string.Equals(stored.PasswordHash, Hash(pass), StringComparison.Ordinal))
             {
-                SetHint("Неверный пароль.", true);
+                SetHint(T("err.wrongPass"), true);
                 return;
             }
 
             stored.Remember = _remember.Checked;
             _profile = stored;
             SaveProfile(stored);
-            SetHint("Добро пожаловать, " + stored.Login + "!", false);
+            SetHint(string.Format(T("hint.welcome"), stored.Login), false);
+            ShowSignedIn();
+            UpdatePlayButton();
+        }
+
+        private void OnSignOut(object sender, EventArgs e)
+        {
+            _profile = null;
+            try { if (File.Exists(_profilePath)) File.Delete(_profilePath); } catch { }
+            _passIn.Text = "";
+            ShowSignedOut();
+            SetHint(T("hint.signedOut"), false);
             UpdatePlayButton();
         }
 
@@ -438,7 +762,7 @@ namespace OpenUniverseLauncher
 
         private async Task RefreshNewsAsync()
         {
-            _news.Text = "Загружаю новости…";
+            _news.Text = T("news.loading");
             try
             {
                 _releases.Clear();
@@ -446,7 +770,7 @@ namespace OpenUniverseLauncher
 
                 if (_releases.Count == 0)
                 {
-                    _news.Text = "Не удалось получить список версий.\r\nПроверьте интернет-соединение.";
+                    _news.Text = T("news.noVersions");
                     return;
                 }
 
@@ -473,11 +797,10 @@ namespace OpenUniverseLauncher
                     if (++shown >= 4) break;
                 }
                 _news.Text = sb.ToString();
-                _version.Text = "последняя версия: " + _releases[0].Tag;
             }
             catch (Exception ex)
             {
-                _news.Text = "Не удалось загрузить новости.\r\nПроверьте интернет-соединение.\r\n\r\n(" + ex.Message + ")";
+                _news.Text = T("news.fail") + "\r\n\r\n(" + ex.Message + ")";
             }
         }
 
@@ -485,55 +808,76 @@ namespace OpenUniverseLauncher
 
         private async Task CheckForUpdateAsync(bool silent)
         {
-            if (!silent) SetStatus("Проверяю обновления…", false);
+            if (!silent) SetStatus(T("status.checking"), false);
             try
             {
                 if (_releases.Count == 0)
                     _releases.AddRange(await LoadReleasesAsync());
                 if (_releases.Count == 0)
                 {
-                    if (!silent) SetStatus("Не удалось получить список версий (нет сети?).", true);
+                    _installedDisplay = InstalledVersion();
+                    UpdateVersionLabels();
+                    if (!silent) SetStatus(T("status.noVersions"), true);
                     return;
                 }
 
                 var latest = _releases[0];
-                _version.Text = "последняя версия: " + latest.Tag;
 
                 // Установщик ищем в ближайшем релизе, где он есть:
                 // последние облегчённые релизы могут содержать только лаунчер.
                 var installable = FindInstallable(_releases);
+
+                // Версия игры — это версия установщика (может отличаться от тега
+                // последнего релиза, если свежие релизы содержат только лаунчер).
+                string gameTag = installable == null
+                    ? latest.Tag
+                    : (string.IsNullOrEmpty(installable.GameSetupTag) ? installable.Tag : installable.GameSetupTag);
+
+                _installedDisplay = InstalledVersion();
+                _latestGameDisplay = gameTag;
+                UpdateVersionLabels();
+
                 if (installable == null)
                 {
-                    if (!silent) SetStatus("В релизах нет установщика игры.", true);
+                    if (!silent) SetStatus(T("status.noInstaller"), true);
                     UpdatePlayButton();
                     return;
                 }
 
-                // Версия игры — это версия установщика (может быть старше последнего релиза,
-                // если свежие релизы содержат только лаунчер).
-                string gameTag = string.IsNullOrEmpty(installable.GameSetupTag)
-                    ? installable.Tag : installable.GameSetupTag;
-                string installed = InstalledVersion();
-                if (!string.IsNullOrEmpty(installed) && installed == gameTag)
+                bool upToDate = !string.IsNullOrEmpty(_installedDisplay)
+                    && Norm(_installedDisplay) == Norm(gameTag);
+
+                if (upToDate)
                 {
-                    if (!silent) SetStatus("Установлена актуальная игра (" + installed + ").", false);
+                    // Версии совпадают — ничего не скачиваем.
+                    if (!silent) SetStatus(string.Format(T("status.upToDate"), Pretty(gameTag)), false);
+                    UpdatePlayButton();
+                    return;
+                }
+
+                // Автопроверка при запуске только показывает статус, без вопроса.
+                if (silent)
+                {
+                    if (string.IsNullOrEmpty(_installedDisplay))
+                        SetStatus(string.Format(T("status.notInstalled"), Pretty(gameTag)), false);
+                    else
+                        SetStatus(string.Format(T("status.upToDate"), Pretty(gameTag)), false);
                     UpdatePlayButton();
                     return;
                 }
 
                 string what;
-                if (string.IsNullOrEmpty(installed))
+                if (string.IsNullOrEmpty(_installedDisplay))
                 {
-                    what = "Игра не установлена.\r\n\r\nСкачать игру " + gameTag +
-                           " (" + installable.GameSetupSizeMb.ToString("0") + " МБ)?";
+                    what = string.Format(T("prompt.download"), Pretty(gameTag),
+                        installable.GameSetupSizeMb.ToString("0"));
                 }
                 else
                 {
-                    what = "Доступно обновление игры " + gameTag +
-                           " (установлена " + installed + ").\r\n\r\nСкачать обновление?";
+                    what = string.Format(T("prompt.update"), Pretty(gameTag), Pretty(_installedDisplay));
                 }
 
-                if (MessageBox.Show(this, what, "Обновление игры",
+                if (MessageBox.Show(this, what, T("prompt.title"),
                         MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
                 {
                     UpdatePlayButton();
@@ -544,7 +888,7 @@ namespace OpenUniverseLauncher
             }
             catch (Exception ex)
             {
-                if (!silent) SetStatus("Ошибка проверки обновлений: " + ex.Message, true);
+                if (!silent) SetStatus(T("status.updateError") + ex.Message, true);
             }
         }
 
@@ -566,12 +910,12 @@ namespace OpenUniverseLauncher
                         _progress.Value = Math.Min(100, e.ProgressPercentage);
                         if (e.TotalBytesToReceive > 0)
                         {
-                            SetStatus(string.Format("Скачиваю… {0:N0} / {1:N0} МБ",
+                            SetStatus(string.Format(T("status.downloading"),
                                 e.BytesReceived / 1048576.0, e.TotalBytesToReceive / 1048576.0), false);
                         }
                         else
                         {
-                            SetStatus(string.Format("Скачиваю… {0:N0} МБ", e.BytesReceived / 1048576.0), false);
+                            SetStatus(string.Format(T("status.downloading2"), e.BytesReceived / 1048576.0), false);
                         }
                     };
                     var tcs = new TaskCompletionSource<bool>();
@@ -585,7 +929,7 @@ namespace OpenUniverseLauncher
                     await tcs.Task;
                 }
 
-                SetStatus("Устанавливаю игру в фоне…", false);
+                SetStatus(T("status.installing"), false);
                 // Тихая установка: без окон и вопросов. Установщик сам НЕ запускает
                 // лаунчер (флаг skipifsilent), поэтому второго окна не будет.
                 var psi = new ProcessStartInfo
@@ -599,21 +943,61 @@ namespace OpenUniverseLauncher
                 if (inst != null)
                 {
                     // Ждём завершения установки, не блокируя интерфейс.
-                    SetStatus("Идёт установка игры…", false);
+                    SetStatus(T("status.installing2"), false);
                     await Task.Run(() => inst.WaitForExit());
                 }
 
-                SetStatus("Готово: игра установлена (" + rel.GameSetupTag + "). Нажмите «Играть».", false);
+                _installedDisplay = InstalledVersion();
+                UpdateVersionLabels();
+                SetStatus(string.Format(T("status.installed"), Pretty(rel.GameSetupTag)), false);
                 UpdatePlayButton();
             }
             catch (Exception ex)
             {
-                SetStatus("Не удалось установить игру: " + ex.Message, true);
+                SetStatus(T("status.installFail") + ex.Message, true);
             }
             finally
             {
                 _progress.Visible = false;
             }
+        }
+
+        /// <summary>Нормализованная версия: без ведущей «v» и пробелов.</summary>
+        private static string Norm(string tag)
+        {
+            if (string.IsNullOrEmpty(tag)) return "";
+            return tag.Trim().TrimStart('v', 'V');
+        }
+
+        /// <summary>Версия для показа: с ведущей «v».</summary>
+        private static string Pretty(string tag)
+        {
+            if (string.IsNullOrEmpty(tag)) return "—";
+            if (tag[0] == 'v' || tag[0] == 'V') return tag;
+            return "v" + tag;
+        }
+
+        private void UpdateVersionLabels()
+        {
+            string inst = string.IsNullOrEmpty(_installedDisplay)
+                ? T("ver.none") : Pretty(_installedDisplay);
+            string latest = string.IsNullOrEmpty(_latestGameDisplay)
+                ? "—" : Pretty(_latestGameDisplay);
+
+            if (_verInstalled == null) return;
+            _verInstalled.Text = T("ver.installed") + " " + inst;
+            _verLatest.Text = T("ver.latest") + " " + latest;
+
+            bool upToDate = !string.IsNullOrEmpty(_installedDisplay)
+                && !string.IsNullOrEmpty(_latestGameDisplay)
+                && Norm(_installedDisplay) == Norm(_latestGameDisplay);
+
+            if (string.IsNullOrEmpty(_latestGameDisplay))
+                _verLatest.ForeColor = Color.FromArgb(150, 168, 205);
+            else if (upToDate)
+                _verLatest.ForeColor = Color.FromArgb(90, 220, 160);
+            else
+                _verLatest.ForeColor = Color.FromArgb(255, 200, 90);
         }
 
         // ---------------- Запуск игры ----------------
@@ -652,24 +1036,24 @@ namespace OpenUniverseLauncher
             bool hasGame = GameExe() != null;
             bool signed = _profile != null;
             _play.Enabled = hasGame && signed;
-            if (!hasGame) _play.Text = "▶ Играть (не установлена)";
-            else if (!signed) _play.Text = "▶ Играть (войдите)";
-            else _play.Text = "▶ Играть";
+            if (!hasGame) _play.Text = T("btn.playNotInstalled");
+            else if (!signed) _play.Text = T("btn.playSignIn");
+            else _play.Text = T("btn.play");
         }
 
         private void OnPlay(object sender, EventArgs e)
         {
-            if (_profile == null) { SetStatus("Сначала войдите или зарегистрируйтесь.", true); return; }
+            if (_profile == null) { SetStatus(T("status.needSignIn"), true); return; }
             string exe = GameExe();
-            if (exe == null) { SetStatus("Игра не найдена. Нажмите «Проверить обновления».", true); return; }
+            if (exe == null) { SetStatus(T("status.noGameFile"), true); return; }
             try
             {
                 Process.Start(new ProcessStartInfo { FileName = exe, WorkingDirectory = Path.GetDirectoryName(exe) });
-                SetStatus("Игра запускается…", false);
+                SetStatus(T("status.launching"), false);
             }
             catch (Exception ex)
             {
-                SetStatus("Не удалось запустить игру: " + ex.Message, true);
+                SetStatus(T("status.launchFail") + ex.Message, true);
             }
         }
 
@@ -718,7 +1102,7 @@ namespace OpenUniverseLauncher
         {
             using (var client = new HttpClient())
             {
-                client.DefaultRequestHeaders.UserAgent.ParseAdd("OpenUniverseLauncher/1.2");
+                client.DefaultRequestHeaders.UserAgent.ParseAdd("OpenUniverseLauncher/1.3");
                 return await client.GetStringAsync(url);
             }
         }
@@ -742,7 +1126,7 @@ namespace OpenUniverseLauncher
                 {
                     Tag = Str(d, "tag"),
                     Name = Str(d, "name"),
-                    Notes = Str(d, "name"),
+                    Notes = FirstNonEmpty(Str(d, "notes"), Str(d, "name")),
                     GameSetupUrl = Str(d, "gameSetup"),
                     GameSetupTag = Str(d, "gameSetupTag"),
                     LauncherUrl = Str(d, "launcher")
@@ -818,6 +1202,12 @@ namespace OpenUniverseLauncher
             object v;
             if (d.TryGetValue(key, out v) && v != null) return v.ToString();
             return null;
+        }
+
+        private static string FirstNonEmpty(string a, string b)
+        {
+            if (!string.IsNullOrWhiteSpace(a)) return a;
+            return b;
         }
     }
 }
