@@ -93,6 +93,7 @@ Write-Host ("Артефакт: {0} ({1:N0} байт)" -f $zip, (Get-Item $zip).L
 
 # 3a. Установщик (Inno Setup): один .exe, который всё ставит и делает ярлыки.
 $setup = Join-Path $dist "OpenUniverse-Setup-$Version.exe"
+$gameSetup = Join-Path $dist "OpenUniverse-Game-Setup-$Version.exe"
 $iscc = @(
   (Join-Path $env:LOCALAPPDATA 'Programs\Inno Setup 6\ISCC.exe'),
   'C:\Program Files (x86)\Inno Setup 6\ISCC.exe',
@@ -109,7 +110,6 @@ if ($iscc) {
   }
 
   # 3b. Установщик ГРАФИЧЕСКОЙ игры — если готова сборка клиента UE5.
-  $gameSetup = Join-Path $dist "OpenUniverse-Game-Setup-$Version.exe"
   $gamePkg = Join-Path $root 'client\Packaged\Windows\OpenUniverse'
   if (Test-Path (Join-Path $gamePkg '..\OpenUniverse.exe')) {
     Write-Host "--> установщик графической игры (Inno Setup)" -ForegroundColor Yellow
@@ -156,17 +156,36 @@ if ($Publish) {
   $launcherExe = Join-Path $root 'launcher\OpenUniverseLauncher.exe'
   if (Test-Path $launcherExe) { $upload = @($launcherExe) + $upload }
   if (Test-Path $setup) { $upload = @($setup) + $upload }
-  if ($gameSetup -and (Test-Path $gameSetup)) { $upload = @($gameSetup) + $upload }
+  if (Test-Path $gameSetup) { $upload = @($gameSetup) + $upload }
   $upload = $upload + @($zip)
   $seen = @{}
   $upload = $upload | Where-Object {
     $name = (Split-Path -Leaf $_).ToLower()
     if ($seen.ContainsKey($name)) { $false } else { $seen[$name] = $true; $true }
   }
-  & $gh release create $tag @upload `
+
+  # Создаём релиз без ассетов, затем грузим файлы по одному с повтором.
+  # Так сбой на одном большом файле (например, игровом установщике) не теряет
+  # остальные и легко повторяется.
+  & $gh release create $tag `
     --repo andreyshpak2016-lgtm/open-universe `
     --title "Open Universe $Version" `
     --notes-file $notesFile
+  if ($LASTEXITCODE -ne 0) {
+    # Релиз уже мог существовать — продолжаем, ассеты загрузим ниже.
+    Write-Host "Релиз уже существует или создан ранее — грузим ассеты." -ForegroundColor DarkYellow
+  }
+
+  foreach ($asset in $upload) {
+    $name = Split-Path -Leaf $asset
+    $ok = $false
+    for ($try = 1; $try -le 3 -and -not $ok; $try++) {
+      Write-Host ("--> загрузка {0} (попытка {1})" -f $name, $try) -ForegroundColor Yellow
+      & $gh release upload $tag $asset --repo andreyshpak2016-lgtm/open-universe --clobber
+      if ($LASTEXITCODE -eq 0) { $ok = $true } else { Start-Sleep -Seconds 5 }
+    }
+    if (-not $ok) { Write-Host ("Не удалось загрузить: {0}" -f $name) -ForegroundColor Red }
+  }
   Write-Host "Готово: релиз $tag опубликован" -ForegroundColor Green
 } else {
   Write-Host "Сборка готова. Для публикации запустите с -Publish." -ForegroundColor Cyan
