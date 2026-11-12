@@ -6,7 +6,7 @@
   <title>Open Universe — MMO-песочница в открытом космосе</title>
   <meta name="description" content="Open Universe — единый живой космос, воксельная постройка, игрок-экономика и программируемые конструкции. План разработки с живым прогрессом." />
   <link rel="icon" href="assets/blackhole.svg" type="image/svg+xml" />
-  <link rel="stylesheet" href="styles.css?v=0.25.5" />
+  <link rel="stylesheet" href="styles.css?v=0.25.6" />
 </head>
 <body>
 
@@ -459,13 +459,7 @@ $ cargo run -p ou-render --release -- lod 1280 720
             <span class="hero-badge" style="font-size:.72rem"><span class="dot"></span> Последняя версия</span>
           </div>
           <h3>Лаунчер Open Universe</h3>
-          <p class="dl-desc">Один файл — и всё готово: вход в профиль, новости об обновлениях и <b>автоматическое скачивание игры и её обновлений</b>. Сам лаунчер весит меньше мегабайта; игру он докачает сам.</p>
-          <ul class="dl-files">
-            <li><b>Вход по логину и паролю</b> — профиль пилота</li>
-            <li><b>Новости обновлений</b> — прямо в окне лаунчера</li>
-            <li><b>Авто-обновление</b> — проверяет версии и качает новую игру</li>
-            <li><b>Кнопка «Играть»</b> — запускает установленную игру</li>
-          </ul>
+          <p class="dl-desc">Скачайте лаунчер — он сам установит игру и будет держать её в актуальном состоянии.</p>
           <p class="dl-meta">Размер: <b id="dl-size">~25 КБ</b> · Платформа: Windows 10+ · Дата: <span id="dl-date">—</span></p>
 
           <!-- До регистрации: форма прямо здесь. После — кнопки скачивания. -->
@@ -498,7 +492,7 @@ $ cargo run -p ou-render --release -- lod 1280 720
               <a class="btn ghost" id="dl-latest" href="https://github.com/andreyshpak2016-lgtm/open-universe/releases/latest" target="_blank" rel="noopener">Игра (установщик)</a>
               <button class="btn ghost" type="button" id="dl-logout">Выйти из профиля</button>
             </div>
-            <p class="dl-note" style="margin-top:8px">Запустите <code>OpenUniverseLauncher.exe</code> — войдите, и лаунчер сам скачает и установит игру, а дальше будет обновлять её автоматически.</p>
+            <p class="dl-note" style="margin-top:8px">Запустите <code>OpenUniverseLauncher.exe</code> — он сам скачает и установит игру.</p>
           </div>
         </div>
 
@@ -506,11 +500,11 @@ $ cargo run -p ou-render --release -- lod 1280 720
           <h3>Как играть</h3>
           <ol class="dl-steps" style="margin:0 0 12px 18px;padding:0;line-height:1.7">
             <li>Скачайте и запустите <code>OpenUniverseLauncher.exe</code>.</li>
-            <li>Войдите в профиль (логин и пароль).</li>
-            <li>Лаунчер сам скачает игру — нажмите <b>«Играть»</b>.</li>
+            <li>Лаунчер сам скачает игру.</li>
+            <li>Нажмите <b>«Играть»</b>.</li>
           </ol>
-          <p class="dl-note">Дальше лаунчер будет следить за обновлениями и предлагать
-          новую версию. Unreal Engine или Rust ставить не нужно — всё уже внутри.</p>
+          <p class="dl-note">Дальше лаунчер сам следит за обновлениями. Unreal Engine
+          или Rust ставить не нужно — всё уже внутри.</p>
         </aside>
       </div>
 
@@ -597,7 +591,7 @@ powershell -File tools/test-client.ps1</code></pre>
     <span aria-hidden="true">❤</span> Стать спонсором
   </a>
 
-  <script src="data.js?v=0.25.5"></script>
-  <script src="app.js?v=0.25.5"></script>
+  <script src="data.js?v=0.25.6"></script>
+  <script src="app.js?v=0.25.6"></script>
 </body>
 </html>
