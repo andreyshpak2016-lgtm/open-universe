@@ -21,6 +21,7 @@ using System.Net;
 using System.Net.Http;
 using System.Security.Cryptography;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Web.Script.Serialization;
 using System.Windows.Forms;
@@ -29,6 +30,9 @@ namespace OpenUniverseLauncher
 {
     internal static class Program
     {
+        // Мьютекс: не даём открыть второй лаунчер (иначе «лаунчер в лаунчере»).
+        private static Mutex _single;
+
         [STAThread]
         private static void Main()
         {
@@ -39,9 +43,18 @@ namespace OpenUniverseLauncher
             }
             catch { }
 
+            bool created;
+            _single = new Mutex(true, "OpenUniverseLauncher_SingleInstance", out created);
+            if (!created)
+            {
+                // Лаунчер уже запущен — второе окно не открываем, выходим молча.
+                return;
+            }
+
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
             Application.Run(new LauncherForm());
+            GC.KeepAlive(_single);
         }
     }
 
@@ -572,13 +585,30 @@ namespace OpenUniverseLauncher
                     await tcs.Task;
                 }
 
-                SetStatus("Запускаю установщик игры…", false);
-                Process.Start(file);
-                SetStatus("Установщик открыт. После установки нажмите «Играть».", false);
+                SetStatus("Устанавливаю игру в фоне…", false);
+                // Тихая установка: без окон и вопросов. Установщик сам НЕ запускает
+                // лаунчер (флаг skipifsilent), поэтому второго окна не будет.
+                var psi = new ProcessStartInfo
+                {
+                    FileName = file,
+                    Arguments = "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /NOCANCEL /SP-",
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                };
+                var inst = Process.Start(psi);
+                if (inst != null)
+                {
+                    // Ждём завершения установки, не блокируя интерфейс.
+                    SetStatus("Идёт установка игры…", false);
+                    await Task.Run(() => inst.WaitForExit());
+                }
+
+                SetStatus("Готово: игра установлена (" + rel.GameSetupTag + "). Нажмите «Играть».", false);
+                UpdatePlayButton();
             }
             catch (Exception ex)
             {
-                SetStatus("Не удалось скачать установщик: " + ex.Message, true);
+                SetStatus("Не удалось установить игру: " + ex.Message, true);
             }
             finally
             {

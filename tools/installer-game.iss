@@ -37,6 +37,9 @@ PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog
 MinVersion=10.0
 DiskSpanning=no
+; Обновление поверх работающей игры: закрыть запущенные файлы и заменить их.
+CloseApplications=yes
+RestartApplications=no
 
 [Languages]
 Name: "russian"; MessagesFile: "compiler:Languages\Russian.isl"
@@ -71,4 +74,6 @@ Name: "{group}\Удалить Open Universe"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\Open Universe"; Filename: "{app}\OpenUniverseLauncher.exe"; Tasks: desktopicon
 
 [Run]
+; При обычной установке предлагаем запустить лаунчер. При тихой (её делает
+; сам лаунчер) — пропускаем: лаунчер уже открыт и остаётся работать.
 Filename: "{app}\OpenUniverseLauncher.exe"; Description: "Запустить лаунчер Open Universe"; Flags: nowait postinstall skipifsilent

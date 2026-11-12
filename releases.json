@@ -1,10 +1,10 @@
 {
-    "generated":  "2026-11-12T00:00:19Z",
+    "generated":  "2026-11-12T00:10:13Z",
     "repo":  "andreyshpak2016-lgtm/open-universe",
     "releases":  [
                      {
                          "tag":  "v0.25.4",
-                         "name":  "Open Universe 0.25.4",
+                         "name":  "Open Universe v0.25.4",
                          "date":  "2026-11-12T00:00:16Z",
                          "latest":  true,
                          "prerelease":  false,
@@ -16,7 +16,7 @@
                          "launcher":  "https://github.com/andreyshpak2016-lgtm/open-universe/releases/download/v0.25.4/OpenUniverseLauncher.exe",
                          "launcherSize":  30208,
                          "client":  null,
-                         "zip":  null,
+                         "zip":  "https://github.com/andreyshpak2016-lgtm/open-universe/releases/download/v0.25.4/open-universe-0.25.4-windows-x64.zip",
                          "page":  "https://github.com/andreyshpak2016-lgtm/open-universe/releases/tag/v0.25.4"
                      },
                      {

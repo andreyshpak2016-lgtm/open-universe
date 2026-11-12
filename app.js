@@ -520,16 +520,10 @@
       var links = "";
       if (registered) {
         if (rel.gameSetup) {
+          // Только игра: одну версию ставим одним установщиком.
           links += '<a class="version-btn primary" href="' + rel.gameSetup + '" target="_blank" rel="noopener">⬇ Игра (установщик)</a>';
-        }
-        if (rel.setup) {
-          links += '<a class="version-btn" href="' + rel.setup + '" target="_blank" rel="noopener">ядро (установщик)</a>';
-        }
-        if (rel.zip) {
-          links += '<a class="version-btn" href="' + rel.zip + '" target="_blank" rel="noopener">всё (zip)</a>';
-        }
-        if (!links) {
-          links = '<a class="version-btn" href="' + (rel.page || "#") + '" target="_blank" rel="noopener">на GitHub</a>';
+        } else {
+          links += '<span class="version-na">установщик недоступен</span>';
         }
       } else {
         // До регистрации кнопки ведут в форму, а не к файлу.
