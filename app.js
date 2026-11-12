@@ -3,9 +3,9 @@
   "use strict";
 
   var LABEL = {
-    done: "Готово",
-    in_progress: "В работе",
-    todo: "План"
+    get done() { return t("js.status.done"); },
+    get in_progress() { return t("js.status.in_progress"); },
+    get todo() { return t("js.status.todo"); }
   };
   var GLYPH = { done: "✓", in_progress: "…", todo: "" };
 
@@ -23,6 +23,13 @@
     return n;
   }
 
+  /** Поле с учётом языка: для «en» берём суффикс _en, иначе — базовое поле. */
+  function LF(obj, field) {
+    if (!obj) return "";
+    if (currentLang() === "en" && obj[field + "_en"] != null) return obj[field + "_en"];
+    return obj[field] != null ? obj[field] : "";
+  }
+
   function buildPhase(phase, index) {
     var tasks = phase.tasks || [];
     var p = pct(tasks);
@@ -31,9 +38,9 @@
     var head = el("div", "phase-head");
     head.innerHTML =
       '<span class="caret">▶</span>' +
-      '<span class="num">Фаза ' + index + '</span>' +
-      '<div><h3>' + phase.title + '</h3></div>' +
-      '<span class="goal">' + (phase.goal || "") + '</span>' +
+      '<span class="num">' + t("js.phase") + " " + index + '</span>' +
+      '<div><h3>' + LF(phase, "title") + '</h3></div>' +
+      '<span class="goal">' + LF(phase, "goal") + '</span>' +
       '<span class="bar"><i style="width:' + p + '%"></i></span>' +
       '<span class="pct">' + p + '%</span>';
     node.appendChild(head);
@@ -43,7 +50,7 @@
       var li = el("li", t.status);
       li.innerHTML =
         '<span class="check ' + t.status + '">' + (GLYPH[t.status] || "") + '</span>' +
-        '<span class="t">' + t.title + '</span>' +
+        '<span class="t">' + LF(t, "title") + '</span>' +
         '<span class="badge ' + t.status + '">' + (LABEL[t.status] || t.status) + '</span>';
       ul.appendChild(li);
     });
@@ -78,10 +85,10 @@
     document.getElementById("ring-pct").textContent = overall + "%";
     document.getElementById("ring").style.setProperty("--p", overall);
     document.getElementById("stats").innerHTML =
-      '<div><b style="color:var(--done)">' + done + '</b><span>готово</span></div>' +
-      '<div><b style="color:var(--wip)">' + wip + '</b><span>в работе</span></div>' +
-      '<div><b style="color:var(--todo)">' + todo + '</b><span>в планах</span></div>' +
-      '<div><b>' + plan.phases.length + '</b><span>фаз</span></div>';
+      '<div><b style="color:var(--done)">' + done + '</b><span>' + t("js.done") + '</span></div>' +
+      '<div><b style="color:var(--wip)">' + wip + '</b><span>' + t("js.wip") + '</span></div>' +
+      '<div><b style="color:var(--todo)">' + todo + '</b><span>' + t("js.todo") + '</span></div>' +
+      '<div><b>' + plan.phases.length + '</b><span>' + t("js.phases") + '</span></div>';
 
     // Timeline
     var tl = document.getElementById("timeline");
@@ -93,8 +100,8 @@
         ? "done"
         : (tasks.some(function (t) { return t.status !== "todo"; }) ? "in_progress" : "");
       var item = el("div", "tl-item " + state);
-      item.innerHTML = '<b>Фаза ' + i + ' — ' + ph.title + '</b>' +
-        '<span style="color:var(--muted);font-size:.88rem">' + (ph.goal || "") +
+      item.innerHTML = '<b>' + t("js.phase") + " " + i + ' — ' + LF(ph, "title") + '</b>' +
+        '<span style="color:var(--muted);font-size:.88rem">' + LF(ph, "goal") +
         ' · <span style="color:var(--txt)">' + p + '%</span></span>';
       tl.appendChild(item);
     });
@@ -119,40 +126,31 @@
   }
 
   /* ---------- Интерактивная схема слоёв ---------- */
+  // Тексты берутся из i18n.js по ключу — чтобы схема переводилась вместе с сайтом.
   var LAYERS = [
-    { name: "Клиент — Unreal Engine 5 (C++)", tag: "Рендер и отзывчивость", color: "#6a8bff",
-      chips: ["Воксельный рендер + LOD", "Планеты и небесные тела", "Floating origin", "Клиентский предикт", "Ввод и камера"],
-      text: "Отвечает за картинку и мгновенный отклик. Не решает, что истинно в мире, — только предсказывает и красиво рисует." },
-    { name: "Сеть — UDP, бинарные дельты", tag: "Единый контракт", color: "#00e6d0",
-      chips: ["UDP + дельты", "FlatBuffers / protobuf", "Сжатие и надёжность", "Интерполяция и ack"],
-      text: "Клиент и сервер общаются бинарными дельтами по общей схеме, чтобы не разрастаться в монолит и развиваться параллельно." },
-    { name: "Сервер — Rust, единый шард", tag: "Авторитетная симуляция", color: "#00e6d0",
-      chips: ["Tick loop 20–30 Гц", "Своя кинематика", "Interest management", "Власть над контентом", "Lua-скриптинг"],
-      text: "Истина мира: движение, воксель, инвентарь и правила. Живёт независимо от клиента и масштабируется по зонам." },
-    { name: "Сервисы", tag: "Микросервисы", color: "#a78bfa",
-      chips: ["Auth и сессии", "Чат и голос", "Рынок и экономика", "Логистика и инвентарь"],
-      text: "Вспомогательные сервисы, работающие рядом с игровой симуляцией и не нагружающие её тик." },
-    { name: "Хранилище данных", tag: "Персистентность 24/7", color: "#ffc24b",
-      chips: ["PostgreSQL — транзакции", "Объектное хранилище — воксель, blueprints", "Spatial-индекс"],
-      text: "Транзакционные данные — в PostgreSQL, тяжёлые воксель-чанки и шаблоны — в объектном хранилище." },
-    { name: "Инфраструктура", tag: "Kubernetes", color: "#8ea3d8",
-      chips: ["Автомасштабирование по регионам", "CI/CD (Perforce + Git LFS)", "Мониторинг и логи", "Резервные копии"],
-      text: "Обёртка вокруг всего: масштабирование, наблюдаемость и отказоустойчивость единого живого мира." }
+    { key: "client",   color: "#6a8bff" },
+    { key: "network",  color: "#00e6d0" },
+    { key: "server",   color: "#00e6d0" },
+    { key: "services", color: "#a78bfa" },
+    { key: "storage",  color: "#ffc24b" },
+    { key: "infra",    color: "#8ea3d8" }
   ];
 
   function initLayers() {
     var host = document.getElementById("layers-list");
     if (!host) return;
+    host.innerHTML = "";
     LAYERS.forEach(function (l, i) {
       var node = el("div", "layer" + (i === 0 ? " open" : ""));
-      var chips = l.chips.map(function (c) { return "<span>" + c + "</span>"; }).join("");
+      var chips = t("js.layers." + l.key + ".chips").split("\n")
+        .map(function (c) { return "<span>" + c + "</span>"; }).join("");
       node.innerHTML =
         '<div class="layer-head">' +
           '<span class="swatch" style="background:linear-gradient(180deg,' + l.color + ',' + l.color + '55)"></span>' +
-          '<div><h3>' + l.name + '</h3><span class="tag">' + l.tag + '</span></div>' +
+          '<div><h3>' + t("js.layers." + l.key + ".name") + '</h3><span class="tag">' + t("js.layers." + l.key + ".tag") + '</span></div>' +
           '<span class="caret2">▶</span>' +
         '</div>' +
-        '<div class="layer-body"><div class="chips">' + chips + '</div><p>' + l.text + '</p></div>';
+        '<div class="layer-body"><div class="chips">' + chips + '</div><p>' + t("js.layers." + l.key + ".text") + '</p></div>';
       node.addEventListener("click", function () {
         var wasOpen = node.classList.contains("open");
         host.querySelectorAll(".layer").forEach(function (x) { x.classList.remove("open"); });
@@ -167,31 +165,31 @@
   var ER_COLOR = { identity: "#6a8bff", world: "#00e6d0", content: "#a78bfa", economy: "#ffc24b" };
 
   var ER_TABLES = {
-    accounts:        { x: 40,   y: 70,  group: "identity", desc: "Аккаунты игроков и статус доступа.", cols: [["id","PK"],["email"],["status"],["created_at"]] },
-    characters:      { x: 370,  y: 70,  group: "identity", desc: "Игровые персонажи: привязаны к аккаунту и организации.", cols: [["id","PK"],["account_id","FK"],["org_id","FK"],["name"],["credits"]] },
-    star_systems:    { x: 1080, y: 70,  group: "world",    desc: "Звёздные системы единого мира.", cols: [["id","PK"],["name"],["seed"],["coords"]] },
-    organizations:   { x: 40,   y: 700, group: "identity", desc: "Организации игроков, владеющие пространством.", cols: [["id","PK"],["name"],["tag"],["owner_id","FK"]] },
-    blueprints:      { x: 370,  y: 700, group: "content",  desc: "Шаблоны конструкций; данные лежат в объектном хранилище.", cols: [["id","PK"],["owner_id","FK"],["name"],["price"],["data_oid"]] },
-    market_orders:   { x: 700,  y: 640, group: "economy",  desc: "Ордера рынка внутри звёздных систем.", cols: [["id","PK"],["system_id","FK"],["item_id","FK"],["seller_id","FK"],["side"],["price"],["qty"]] },
-    territories:     { x: 1080, y: 700, group: "world",    desc: "Территории, контроль и налоги.", cols: [["id","PK"],["system_id","FK"],["owner_id","FK"],["status"],["tax"]] },
-    inventory_items: { x: 370,  y: 930, group: "content",  desc: "Предметы во владении персонажей.", cols: [["id","PK"],["owner_id","FK"],["blueprint_id","FK"],["qty"],["location"]] },
-    transactions:    { x: 700,  y: 930, group: "economy",  desc: "История сделок по ордерам.", cols: [["id","PK"],["order_id","FK"],["buyer_id","FK"],["total"],["ts"]] },
-    voxel_chunks:    { x: 1080, y: 930, group: "world",    desc: "Воксельные чанки мира; данные — в объектном хранилище.", cols: [["id","PK"],["system_id","FK"],["coords"],["data_oid"],["version"]] }
+    accounts:        { x: 40,   y: 70,  group: "identity", desc: "js.er.accounts.desc", cols: [["id","PK"],["email"],["status"],["created_at"]] },
+    characters:      { x: 370,  y: 70,  group: "identity", desc: "js.er.characters.desc", cols: [["id","PK"],["account_id","FK"],["org_id","FK"],["name"],["credits"]] },
+    star_systems:    { x: 1080, y: 70,  group: "world",    desc: "js.er.star_systems.desc", cols: [["id","PK"],["name"],["seed"],["coords"]] },
+    organizations:   { x: 40,   y: 700, group: "identity", desc: "js.er.organizations.desc", cols: [["id","PK"],["name"],["tag"],["owner_id","FK"]] },
+    blueprints:      { x: 370,  y: 700, group: "content",  desc: "js.er.blueprints.desc", cols: [["id","PK"],["owner_id","FK"],["name"],["price"],["data_oid"]] },
+    market_orders:   { x: 700,  y: 640, group: "economy",  desc: "js.er.market_orders.desc", cols: [["id","PK"],["system_id","FK"],["item_id","FK"],["seller_id","FK"],["side"],["price"],["qty"]] },
+    territories:     { x: 1080, y: 700, group: "world",    desc: "js.er.territories.desc", cols: [["id","PK"],["system_id","FK"],["owner_id","FK"],["status"],["tax"]] },
+    inventory_items: { x: 370,  y: 930, group: "content",  desc: "js.er.inventory_items.desc", cols: [["id","PK"],["owner_id","FK"],["blueprint_id","FK"],["qty"],["location"]] },
+    transactions:    { x: 700,  y: 930, group: "economy",  desc: "js.er.transactions.desc", cols: [["id","PK"],["order_id","FK"],["buyer_id","FK"],["total"],["ts"]] },
+    voxel_chunks:    { x: 1080, y: 930, group: "world",    desc: "js.er.voxel_chunks.desc", cols: [["id","PK"],["system_id","FK"],["coords"],["data_oid"],["version"]] }
   };
 
   var ER_LINKS = [
-    ["accounts","characters","регистрирует"],
-    ["organizations","characters","состоит в"],
-    ["accounts","organizations","владеет"],
-    ["characters","blueprints","создаёт"],
-    ["blueprints","inventory_items","экземпляры"],
-    ["characters","market_orders","продаёт"],
-    ["blueprints","market_orders","лот"],
-    ["market_orders","transactions","исполняется"],
-    ["star_systems","market_orders","рынок"],
-    ["star_systems","territories","делится на"],
-    ["characters","territories","контролирует"],
-    ["star_systems","voxel_chunks","содержит"]
+    ["accounts","characters","js.er.l.accounts-characters"],
+    ["organizations","characters","js.er.l.organizations-characters"],
+    ["accounts","organizations","js.er.l.accounts-organizations"],
+    ["characters","blueprints","js.er.l.characters-blueprints"],
+    ["blueprints","inventory_items","js.er.l.blueprints-inventory_items"],
+    ["characters","market_orders","js.er.l.characters-market_orders"],
+    ["blueprints","market_orders","js.er.l.blueprints-market_orders"],
+    ["market_orders","transactions","js.er.l.market_orders-transactions"],
+    ["star_systems","market_orders","js.er.l.star_systems-market_orders"],
+    ["star_systems","territories","js.er.l.star_systems-territories"],
+    ["characters","territories","js.er.l.characters-territories"],
+    ["star_systems","voxel_chunks","js.er.l.star_systems-voxel_chunks"]
   ];
 
   function erEdges() {
@@ -200,6 +198,9 @@
     ER_LINKS.forEach(function (l) { out[l[0]].push(l[1]); out[l[1]].push(l[0]); });
     return out;
   }
+
+  // Сброс выделения в ER-схеме — доступен из applyLang при смене языка.
+  var ERD_clearAll = null;
 
   function erAnchor(a, b) {
     var ah = ER_HDR + ER_RH * a.cols.length, bh = ER_HDR + ER_RH * b.cols.length;
@@ -244,7 +245,7 @@
       mid.setAttribute("font-size", "11");
       mid.setAttribute("fill", "#93a0c4");
       mid.setAttribute("opacity", "0");
-      mid.textContent = l[2];
+      mid.textContent = t(l[2]);
       svg.appendChild(mid);
       linkEls.push({ a: l[0], b: l[1], path: path, label: mid });
     });
@@ -291,15 +292,15 @@
         le.path.setAttribute("stroke-width", "1.6");
         le.label.setAttribute("opacity", "0");
       });
-      document.getElementById("erd-title").textContent = "Модель данных";
-      document.getElementById("erd-desc").textContent = "Выберите таблицу, чтобы увидеть её поля и связи.";
-      document.getElementById("erd-cols").innerHTML = '<li class="muted">— выберите таблицу —</li>';
+      document.getElementById("erd-title").textContent = t("js.erd.title");
+      document.getElementById("erd-desc").textContent = t("js.erd.desc");
+      document.getElementById("erd-cols").innerHTML = '<li class="muted">' + t("js.erd.colsEmpty") + '</li>';
       document.getElementById("erd-links").innerHTML = '<span class="muted">—</span>';
     }
 
     function select(key) {
-      var t = ER_TABLES[key];
-      var c = ER_COLOR[t.group];
+      var tbl = ER_TABLES[key];
+      var c = ER_COLOR[tbl.group];
       var related = edges[key] || [];
       Object.keys(nodeEls).forEach(function (k) {
         var n = nodeEls[k];
@@ -316,12 +317,12 @@
         le.label.setAttribute("opacity", on ? "1" : "0");
       });
       document.getElementById("erd-title").textContent = key;
-      document.getElementById("erd-desc").textContent = t.desc;
-      document.getElementById("erd-cols").innerHTML = t.cols.map(function (col) {
+      document.getElementById("erd-desc").textContent = t(tbl.desc);
+      document.getElementById("erd-cols").innerHTML = tbl.cols.map(function (col) {
         return '<li><span>' + col[0] + '</span>' + (col[1] ? '<span class="k ' + col[1] + '">' + col[1] + '</span>' : '') + '</li>';
       }).join("");
       var links = related.map(function (k) { return '<span data-go="' + k + '">' + k + '</span>'; }).join("");
-      document.getElementById("erd-links").innerHTML = links || '<span class="muted">нет связей</span>';
+      document.getElementById("erd-links").innerHTML = links || '<span class="muted">' + t("js.erd.noLinks") + '</span>';
     }
 
     document.getElementById("erd-links").addEventListener("click", function (e) {
@@ -332,6 +333,7 @@
     graph.addEventListener("click", function (e) { if (e.target === graph || e.target === sizer) clear(); });
 
     clear();
+    ERD_clearAll = clear;
     requestAnimationFrame(fit);
     window.addEventListener("resize", function () { requestAnimationFrame(fit); });
   }
@@ -346,10 +348,10 @@
       // Размер основной кнопки — лаунчер (маленький); дату берём у релиза.
       var sizeEl = document.getElementById("dl-size");
       if (sizeEl && rel.launcherSize) {
-        sizeEl.textContent = "~" + Math.max(1, Math.round(rel.launcherSize / 1024)) + " КБ";
+        sizeEl.textContent = "~" + Math.max(1, Math.round(rel.launcherSize / 1024)) + " " + t("js.unit.kb");
       }
       var dateEl = document.getElementById("dl-date");
-      if (dateEl && rel.date) dateEl.textContent = new Date(rel.date).toLocaleDateString("ru-RU");
+      if (dateEl && rel.date) dateEl.textContent = new Date(rel.date).toLocaleDateString(t("js.locale"));
       // Кнопка лаунчера: прямая ссылка на файл в последнем релизе.
       var launcherEl = document.getElementById("dl-launcher");
       if (launcherEl && rel.launcher) launcherEl.href = rel.launcher;
@@ -415,8 +417,8 @@
     if (form) form.hidden = registered;
     if (unlocked) unlocked.hidden = !registered;
     if (welcome && pilot) {
-      welcome.textContent = "Профиль создан: " + pilot.name +
-        (pilot.email ? " · " + pilot.email : "") + ". Скачивание открыто.";
+      welcome.textContent = t("js.welcome") + " " + pilot.name +
+        (pilot.email ? " · " + pilot.email : "") + ". " + t("js.unlocked");
     }
     // Список версий: кнопки скачивания доступны только после регистрации.
     renderVersions(LAST_VERSIONS);
@@ -424,7 +426,7 @@
     // (форма находится в разделе «Скачать», поэтому якорь — #download).
     var nav = document.querySelector(".nav-cta");
     if (nav) {
-      nav.textContent = registered ? "⬇ Скачать" : "✦ Регистрация";
+      nav.textContent = registered ? t("nav.download") : t("nav.register");
       nav.setAttribute("href", "#download");
     }
   }
@@ -452,8 +454,8 @@
         var errEl = document.getElementById("reg-error");
         var name = (nameEl.value || "").trim();
         function fail(msg) { errEl.textContent = msg; errEl.hidden = false; }
-        if (name.length < 2) { fail("Позывной — минимум 2 символа."); return; }
-        if (!rulesEl.checked) { fail("Нужно принять правила сообщества."); return; }
+        if (name.length < 2) { fail(t("js.nameShort")); return; }
+        if (!rulesEl.checked) { fail(t("js.needRules")); return; }
         errEl.hidden = true;
         setPilot({ name: name, email: (emailEl.value || "").trim(),
                    at: new Date().toISOString() });
@@ -486,7 +488,64 @@
     applyRegistration();
   }
 
-  function boot() { render(); initTabs(); initLayers(); initERD(); loadLatestRelease(); loadVersions(); initRegister(); }
+  /* ---------- Язык сайта (EN по умолчанию, RU переключателем) ---------- */
+  var LANG_KEY = "ou.lang";
+
+  function currentLang() {
+    try {
+      var v = localStorage.getItem(LANG_KEY);
+      if (v === "ru" || v === "en") return v;
+    } catch (e) {}
+    return "en"; // английский — язык по умолчанию
+  }
+
+  function t(key) {
+    var pack = (window.OU_I18N || {})[currentLang()] || {};
+    if (pack[key] != null) return pack[key];
+    var en = (window.OU_I18N || {}).en || {};
+    return en[key] != null ? en[key] : key;
+  }
+
+  function applyLang() {
+    var lang = currentLang();
+    document.documentElement.lang = lang;
+
+    // Тексты из разметки.
+    document.querySelectorAll("[data-i18n]").forEach(function (el) {
+      el.innerHTML = t(el.getAttribute("data-i18n"));
+    });
+    document.querySelectorAll("[data-i18n-ph]").forEach(function (el) {
+      el.setAttribute("placeholder", t(el.getAttribute("data-i18n-ph")));
+    });
+
+    // Переключатель — активная кнопка.
+    document.querySelectorAll("#lang-switch button").forEach(function (b) {
+      b.classList.toggle("active", b.getAttribute("data-lang") === lang);
+    });
+
+    // Динамические части.
+    render();
+    initLayers();
+    if (ERD_clearAll) ERD_clearAll();
+    renderVersions(LAST_VERSIONS);
+    applyRegistration();
+  }
+
+  function setLang(lang) {
+    try { localStorage.setItem(LANG_KEY, lang); } catch (e) {}
+    applyLang();
+  }
+
+  function initLang() {
+    var sw = document.getElementById("lang-switch");
+    if (sw) {
+      sw.querySelectorAll("button").forEach(function (b) {
+        b.addEventListener("click", function () { setLang(b.getAttribute("data-lang")); });
+      });
+    }
+  }
+
+  function boot() { initLang(); applyLang(); initTabs(); initLayers(); initERD(); loadLatestRelease(); loadVersions(); initRegister(); }
 
   /* ---------- Все версии игры (из releases.json, без GitHub API) ---------- */
   // Статический файл рядом с сайтом: не зависит от лимита GitHub API (60/час)
@@ -498,15 +557,17 @@
       page: "https://github.com/andreyshpak2016-lgtm/open-universe/releases/tag/v0.21.0" }
   ];
 
-  var LAST_VERSIONS = [];
+  var LAST_VERSIONS = null;
 
   function renderVersions(rels) {
-    LAST_VERSIONS = rels || [];
+    // null/undefined — список ещё не загружен, не трогаем заглушку «Загрузка…».
+    if (rels === null || rels === undefined) return;
+    LAST_VERSIONS = rels;
     var box = document.getElementById("versions");
     if (!box) return;
-    if (!rels || !rels.length) { 
+    if (!rels.length) { 
       var st = document.getElementById("versions-status");
-      if (st) st.textContent = "Список версий недоступен — откройте релизы на GitHub.";
+      if (st) st.textContent = t("js.versionsUnavailable");
       return;
     }
     var registered = !!getPilot();
@@ -515,32 +576,34 @@
     var html = "";
     rels.forEach(function (rel, idx) {
       var tag = rel.tag || rel.name || "—";
-      var size = rel.size ? (rel.size / 1048576).toFixed(1).replace(".", ",") + " МБ" : "";
-      var date = rel.date ? new Date(rel.date).toLocaleDateString("ru-RU") : "";
+      var mbVal = (rel.size / 1048576).toFixed(1);
+      if (t("js.locale") === "ru-RU") mbVal = mbVal.replace(".", ",");
+      var size = rel.size ? mbVal + " " + t("js.unit.mb") : "";
+      var date = rel.date ? new Date(rel.date).toLocaleDateString(t("js.locale")) : "";
       var links = "";
       if (registered) {
         if (rel.gameSetup) {
           // Только игра: одну версию ставим одним установщиком.
-          links += '<a class="version-btn primary" href="' + rel.gameSetup + '" target="_blank" rel="noopener">⬇ Игра (установщик)</a>';
+          links += '<a class="version-btn primary" href="' + rel.gameSetup + '" target="_blank" rel="noopener">' + t("js.gameInstaller") + '</a>';
         } else {
-          links += '<span class="version-na">установщик недоступен</span>';
+          links += '<span class="version-na">' + t("js.noInstaller") + '</span>';
         }
       } else {
         // До регистрации кнопки ведут в форму, а не к файлу.
-        links = '<button type="button" class="version-btn primary locked js-need-reg">🔒 Скачать — нужна регистрация</button>';
+        links = '<button type="button" class="version-btn primary locked js-need-reg">' + t("js.needReg") + '</button>';
       }
       // Старые версии прячем под «показать ещё».
       var cls = idx >= SHOW ? "version version-old" : "version";
       var hidden = idx >= SHOW ? " hidden" : "";
       html += '<div class="' + cls + '"' + hidden + '>' +
-        '<span class="version-tag">' + tag + (rel.latest ? ' <span class="version-latest">последняя</span>' : '') + '</span>' +
+        '<span class="version-tag">' + tag + (rel.latest ? ' <span class="version-latest">' + t("js.lastVer") + '</span>' : '') + '</span>' +
         '<span class="version-meta">' + [date, size].filter(Boolean).join(" · ") + '</span>' +
         '<span class="version-actions">' + links + '</span></div>';
     });
     // Кнопка раскрытия — только если старых версий больше нуля.
     if (rels.length > SHOW) {
       html += '<button type="button" class="version-toggle" id="versions-toggle">' +
-        'Показать предыдущие версии (' + (rels.length - SHOW) + ') ▾</button>';
+        t("js.showOlder") + ' (' + (rels.length - SHOW) + ') ▾</button>';
     }
     box.innerHTML = html;
     // Кнопки-замки открывают регистрацию.
@@ -557,8 +620,8 @@
         });
         toggle.setAttribute("data-open", open ? "0" : "1");
         toggle.textContent = open
-          ? ("Показать предыдущие версии (" + (rels.length - SHOW) + ") ▾")
-          : "Скрыть предыдущие версии ▴";
+          ? (t("js.showOlder") + ' (' + (rels.length - SHOW) + ') ▾')
+          : (t("js.hideOlder") + ' ▴');
       });
     }
   }

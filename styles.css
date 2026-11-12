@@ -308,6 +308,21 @@ section .lead { color: var(--muted); max-width: 760px; margin: 0 0 34px; }
 .nav-cta:hover { text-decoration: none; filter: brightness(1.08); }
 .nav-report { color: var(--txt) !important; border: 1px solid var(--panel-brd); padding: 6px 14px; border-radius: 999px; font-weight: 600; background: rgba(120,150,255,.12); }
 .nav-report:hover { text-decoration: none; background: rgba(120,150,255,.22); border-color: rgba(140,170,255,.5); }
+
+/* Переключатель языка (EN по умолчанию) */
+.lang-switch {
+  display: inline-flex; align-items: center; padding: 3px; gap: 2px;
+  border: 1px solid var(--panel-brd); border-radius: 999px;
+  background: rgba(12, 16, 36, .5);
+}
+.lang-switch button {
+  font: inherit; font-size: .82rem; font-weight: 700; letter-spacing: .4px;
+  color: var(--muted); background: none; border: 0; cursor: pointer;
+  padding: 4px 11px; border-radius: 999px; line-height: 1.2;
+  transition: background .15s ease, color .15s ease;
+}
+.lang-switch button:hover { color: #fff; }
+.lang-switch button.active { color: #04121a; background: linear-gradient(90deg, #6a8bff, #00e6d0); }
 #download { padding-top: 20px; }
 .download-grid { display: grid; grid-template-columns: 1.35fr 1fr; gap: 18px; align-items: start; }
 .dl-card { padding: 26px; }

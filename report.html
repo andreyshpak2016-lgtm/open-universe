@@ -1,12 +1,12 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Open Universe — отчёт о разработке</title>
-  <meta name="description" content="Отчёт о разработке Open Universe: что сделано, скриншоты движка, метрики и результаты тестов." />
+  <title data-i18n="rep.title">Open Universe — development report</title>
+  <meta name="description" content="Open Universe development report: what is done, engine screenshots, metrics and test results." />
   <link rel="icon" href="assets/blackhole.svg" type="image/svg+xml" />
-  <link rel="stylesheet" href="styles.css?v=0.25.6" />
+  <link rel="stylesheet" href="styles.css?v=0.26.0" />
   <style>
     .report { max-width: 1100px; margin: 0 auto; padding: 0 24px 80px; }
     .report h1 { font-size: clamp(2rem, 5vw, 3rem); margin: 40px 0 8px; letter-spacing: -1px;
@@ -40,113 +40,116 @@
       <span>Open&nbsp;<span class="ou">Universe</span></span>
     </div>
     <nav>
-      <a href="index.html">← На главную</a>
-      <a href="index.html#download" class="nav-cta">⬇ Скачать</a>
+      <a href="index.html" data-i18n="rep.nav.home">← Back to home</a>
+      <span class="lang-switch" id="lang-switch" role="group" aria-label="Language">
+        <button type="button" data-lang="en" class="active">EN</button>
+        <button type="button" data-lang="ru">RU</button>
+      </span>
+      <a href="index.html#download" class="nav-cta" data-i18n="nav.download">⬇ Download</a>
     </nav>
   </header>
 
   <main class="report">
-    <h1>Отчёт о разработке</h1>
-    <p style="font-size:1.05rem">Что уже работает, с доказательствами: скриншотами движка, метриками и результатами тестов. Версия <b id="ver">0.24.0</b>.</p>
+    <h1 data-i18n="rep.h1">Development report</h1>
+    <p style="font-size:1.05rem" data-i18n="rep.intro">What already works, with evidence: engine screenshots, metrics and test results. Version <b id="ver">0.26.0</b>.</p>
 
     <div class="meta">
-      <div><b id="m-tests">223</b><span>тестов ядра (Rust)</span></div>
-      <div><b id="m-crates">13</b><span>модулей (крейтов)</span></div>
-      <div><b id="m-progress">73%</b><span>план выполнен</span></div>
-      <div><b id="m-version">v0.24.0</b><span>последний релиз</span></div>
+      <div><b id="m-tests">223</b><span data-i18n="rep.m.tests">core tests (Rust)</span></div>
+      <div><b id="m-crates">13</b><span data-i18n="rep.m.crates">modules (crates)</span></div>
+      <div><b id="m-progress">73%</b><span data-i18n="rep.m.progress">plan complete</span></div>
+      <div><b id="m-version">v0.26.0</b><span data-i18n="rep.m.version">latest release</span></div>
     </div>
 
-    <!-- ================= 1. Что сделано ================= -->
-    <h2>1. Что сделано</h2>
+    <!-- ================= 1. What is done ================= -->
+    <h2 data-i18n="rep.s1">1. What is done</h2>
     <ul class="done">
-      <li><b>Сайт-витрина</b> — план с живым прогрессом, галерея, диаграммы, раздел «Скачать».</li>
-      <li><b>Выбор движка (ADR-0001)</b> — клиент на Unreal Engine 5, сервер на Rust.</li>
-      <li><b>Сетевое ядро</b> — бинарный протокол, varint-сжатие, дельта-снимки, framing.</li>
-      <li><b>Детерминированная физика</b> — своя тригонометрия без <code>libm</code>, 30 Гц, контрольная сумма.</li>
-      <li><b>Netcode</b> — клиентское предсказание, реконсиляция, снапшот-интерполяция.</li>
-      <li><b>UDP-транспорт</b> — токен сессии, батчинг, отбрасывание повреждённых пакетов.</li>
-      <li><b>Interest management</b> — пространственный индекс (uniform grid).</li>
-      <li><b>Шардирование</b> — consistent hashing, миграция игроков между узлами.</li>
-      <li><b>Персистентность</b> — мир и экономика переживают перезапуск сервера.</li>
-      <li><b>Экономика</b> — рынок, стакан, сделки, производственные цепочки.</li>
-      <li><b>Боевые системы</b> — щит, броня, типы урона, территории и налоги.</li>
-      <li><b>Рендерер</b> — трассировка лучей на CPU, воксельные планеты с LOD, копание.</li>
-      <li><b>Рендер по сети</b> — клиент принимает UDP-снапшоты и рисует живой мир с сервера.</li>
-      <li><b>Каркас UE5-клиента (C++)</b> — <b>модуль собран и загружается в редакторе</b>: исправлены <code>uint64</code> в <code>UPROPERTY</code>, абстрактный <code>FInternetAddr</code>, <code>FColor</code>→<code>FLinearColor</code>; протокол проверен на реальном пакете сервера.</li>
-      <li><b>Скриптинг конструкций</b> — Lua-подобный язык с песочницей: автопилоты, турели, логистика.</li>
-      <li><b>Симуляция рынка</b> — экономика проверена агентами: цена, объём, дефицит, избыток.</li>
-      <li><b>Воксельный редактор</b> — ставить, удалять, красить; проверка целостности и шаблоны.</li>
+      <li data-i18n="rep.done1"><b>Showcase site</b> — a plan with live progress, a gallery, diagrams and a Download section.</li>
+      <li data-i18n="rep.done2"><b>Engine choice (ADR-0001)</b> — Unreal Engine 5 client, Rust server.</li>
+      <li data-i18n="rep.done3"><b>Networking core</b> — binary protocol, varint compression, delta snapshots, framing.</li>
+      <li data-i18n="rep.done4"><b>Deterministic physics</b> — custom trigonometry without <code>libm</code>, 30 Hz, checksum.</li>
+      <li data-i18n="rep.done5"><b>Netcode</b> — client prediction, reconciliation, snapshot interpolation.</li>
+      <li data-i18n="rep.done6"><b>UDP transport</b> — session token, batching, dropping corrupted packets.</li>
+      <li data-i18n="rep.done7"><b>Interest management</b> — spatial index (uniform grid).</li>
+      <li data-i18n="rep.done8"><b>Sharding</b> — consistent hashing, player migration between nodes.</li>
+      <li data-i18n="rep.done9"><b>Persistence</b> — the world and economy survive a server restart.</li>
+      <li data-i18n="rep.done10"><b>Economy</b> — market, order book, trades, production chains.</li>
+      <li data-i18n="rep.done11"><b>Combat systems</b> — shields, armor, damage types, territories and taxes.</li>
+      <li data-i18n="rep.done12"><b>Renderer</b> — CPU ray tracing, voxel planets with LOD, digging.</li>
+      <li data-i18n="rep.done13"><b>Networked rendering</b> — the client receives UDP snapshots and draws the live world from the server.</li>
+      <li data-i18n="rep.done14"><b>UE5 client skeleton (C++)</b> — <b>the module builds and loads in the editor</b>: fixed <code>uint64</code> in <code>UPROPERTY</code>, abstract <code>FInternetAddr</code>, <code>FColor</code>→<code>FLinearColor</code>; the protocol is verified against a real server packet.</li>
+      <li data-i18n="rep.done15"><b>Construction scripting</b> — a Lua-like language with a sandbox: autopilots, turrets, logistics.</li>
+      <li data-i18n="rep.done16"><b>Market simulation</b> — the economy is verified by agents: price, volume, shortage, surplus.</li>
+      <li data-i18n="rep.done17"><b>Voxel editor</b> — place, remove, paint; integrity checks and blueprints.</li>
     </ul>
 
-    <p style="margin-top:14px">Каркас клиента повторяет серверную логику: кинематика C++ за 1 с даёт <b>z = 23.101</b>
-    против серверных <b>23.10086</b> — то же число. Подробности: <code>client/README.md</code>.</p>
+    <p style="margin-top:14px" data-i18n="rep.sync">The client skeleton mirrors the server logic: C++ kinematics over 1 s gives <b>z = 23.101</b> versus the server's <b>23.10086</b> — the same number. Details: <code>client/README.md</code>.</p>
 
-    <!-- ================= 2. Скриншоты движка ================= -->
-    <h2>2. Скриншоты движка</h2>
-    <p>Все кадры ниже — реальный вывод трассировщика лучей из <code>server/crates/render</code>. Некоторые построены прямо из состояния симуляции.</p>
+    <!-- ================= 2. Engine screenshots ================= -->
+    <h2 data-i18n="rep.s2">2. Engine screenshots</h2>
+    <p data-i18n="rep.shots.lead">Every frame below is real output from the ray tracer in <code>server/crates/render</code>. Some are built straight from simulation state.</p>
 
     <figure class="shot">
-      <img src="assets/render-ship.png" alt="Блочный корабль у обитаемой планеты" />
-      <figcaption>Корабль у обитаемой планеты — блочная конструкция, планета с рельефом и атмосферным ореолом, звёздное поле.</figcaption>
+      <img src="assets/render-ship.png" alt="Block ship near a habitable planet" />
+      <figcaption data-i18n="rep.fig.ship">A ship near a habitable planet — a block construction, a planet with terrain and an atmospheric halo, and a star field.</figcaption>
     </figure>
 
     <div class="two">
       <figure class="shot">
-        <img src="assets/render-blackhole.png" alt="Чёрная дыра с аккреционным диском" />
-        <figcaption>Чёрная дыра: горизонт событий и аккреционный диск из колец.</figcaption>
+        <img src="assets/render-blackhole.png" alt="Black hole with an accretion disk" />
+        <figcaption data-i18n="rep.fig.bh">A black hole: the event horizon and an accretion disk of rings.</figcaption>
       </figure>
       <figure class="shot">
-        <img src="assets/render-asteroids.png" alt="Пояс астероидов" />
-        <figcaption>Пояс астероидов — неровные глыбы из кластеров блоков.</figcaption>
+        <img src="assets/render-asteroids.png" alt="Asteroid belt" />
+        <figcaption data-i18n="rep.fig.belt">An asteroid belt — jagged rocks made of clusters of blocks.</figcaption>
       </figure>
     </div>
 
-    <h3>Мир из симуляции</h3>
+    <h3 data-i18n="rep.h.simworld">World from the simulation</h3>
     <figure class="shot">
-      <img src="assets/render-sim.png" alt="Мир из симуляции: два корабля и планета" />
-      <figcaption>Кадр построен из <code>EntityState</code> — того же состояния, что сервер шлёт по сети. Ничего не расставлено вручную.</figcaption>
+      <img src="assets/render-sim.png" alt="World from the simulation: two ships and a planet" />
+      <figcaption data-i18n="rep.fig.simworld">The frame is built from <code>EntityState</code> — the same state the server sends over the network. Nothing is placed by hand.</figcaption>
     </figure>
 
-    <h3>Движение: 10 кадров симуляции</h3>
+    <h3 data-i18n="rep.h.motion">Motion: 10 simulation frames</h3>
     <figure class="shot">
-      <img src="assets/render-animation.png" alt="Контактный лист: 10 кадров" />
-      <figcaption>Симуляция прокручена на 150 тиков; каждый 15-й кадр отрендерен и собран в лист.</figcaption>
+      <img src="assets/render-animation.png" alt="Contact sheet: 10 frames" />
+      <figcaption data-i18n="rep.fig.motion">The simulation was advanced by 150 ticks; every 15th frame was rendered and collected into a sheet.</figcaption>
     </figure>
 
-    <h3>Воксельные планеты (Фаза 1)</h3>
+    <h3 data-i18n="rep.h.voxel">Voxel planets (Phase 1)</h3>
     <figure class="shot">
-      <img src="assets/render-voxel.png" alt="Воксельная планета" />
-      <figcaption>Кубическая сетка искривлена в сферу (cube-to-sphere), рельеф из двух октав шума, уровни: океан → песок → трава → камень → снег.</figcaption>
+      <img src="assets/render-voxel.png" alt="Voxel planet" />
+      <figcaption data-i18n="rep.fig.voxel">A cubic grid warped into a sphere (cube-to-sphere), terrain from two octaves of noise, levels: ocean → sand → grass → rock → snow.</figcaption>
     </figure>
 
     <div class="two">
       <figure class="shot">
-        <img src="assets/render-lod.png" alt="Сравнение LOD" />
-        <figcaption>LOD: слева грубая планета (<code>Far 4×4</code>), справа детальная (<code>Close 24×24</code>).</figcaption>
+        <img src="assets/render-lod.png" alt="LOD comparison" />
+        <figcaption data-i18n="rep.fig.lod">LOD: on the left a coarse planet (<code>Far 4×4</code>), on the right a detailed one (<code>Close 24×24</code>).</figcaption>
       </figure>
       <figure class="shot">
-        <img src="assets/render-dig.png" alt="Копание: до и после" />
-        <figcaption>Копание: слева поверхность до, справа — карьер с обнажённой породой.</figcaption>
+        <img src="assets/render-dig.png" alt="Digging: before and after" />
+        <figcaption data-i18n="rep.fig.dig">Digging: on the left the surface before, on the right a quarry with exposed rock.</figcaption>
       </figure>
     </div>
 
-    <h3>Рендер по сети: живой мир с сервера</h3>
+    <h3 data-i18n="rep.h.net">Networked rendering: a live world from the server</h3>
     <figure class="shot">
-      <img src="assets/render-net.png" alt="Рендер по сети: 4 кадра" />
-      <figcaption>Клиент подключился к серверу по UDP, принял 1 baseline + 236 дельт, собрал мир и нарисовал его. Между кадрами видно движение корабля и смещение планеты.</figcaption>
+      <img src="assets/render-net.png" alt="Networked rendering: 4 frames" />
+      <figcaption data-i18n="rep.fig.net">The client connected to the server over UDP, received 1 baseline + 236 deltas, assembled the world and drew it. Between frames you can see the ship moving and the planet shifting.</figcaption>
     </figure>
 
-    <h3>Посадка на поверхность</h3>
-    <p>Рельеф — часть данных мира (<code>sim::terrain</code>): сервер прижимает корабль к поверхности, гасит скорость и различает мягкую посадку и удар.</p>
-    <pre class="codeblock"><code>$ cargo run -p ou-sim --bin ou-landing-demo
-=== Мягкая посадка ===  тик 240: высота 15.2, скорость 21.3  Flying
-  итог: Landed, высота 0.000, проникновение 0.000000
-=== Жёсткий удар ===    → УДАР на тик 15: скорость 316.8
-  трение тормозит скольжение по поверхности</code></pre>
+    <h3 data-i18n="rep.h.landing">Landing on the surface</h3>
+    <p data-i18n="rep.landing.lead">The terrain is part of the world data (<code>sim::terrain</code>): the server presses the ship to the surface, kills its speed and tells a soft landing from an impact.</p>
+    <pre class="codeblock"><code data-i18n="rep.code.landing">$ cargo run -p ou-sim --bin ou-landing-demo
+=== Soft landing ===  tick 240: altitude 15.2, speed 21.3  Flying
+  result: Landed, altitude 0.000, penetration 0.000000
+=== Hard impact ===    → IMPACT at tick 15: speed 316.8
+  friction brakes sliding along the surface</code></pre>
 
-    <h3>Скриптинг конструкций</h3>
-    <p>Игроки программируют корабли встроенным Lua-подобным языком: автопилоты, турели, логистика. Скрипты идут на сервере и ограничены песочницей.</p>
-    <pre class="codeblock"><code>-- Автопилот игрока
+    <h3 data-i18n="rep.h.script">Construction scripting</h3>
+    <p data-i18n="rep.script.lead">Players program their ships in a built-in Lua-like language: autopilots, turrets, logistics. The scripts run on the server and are sandboxed.</p>
+    <pre class="codeblock"><code data-i18n="rep.code.script">-- Player autopilot
 local cruise = 80
 function tick(state)
     local s = speed()
@@ -155,128 +158,174 @@ end
 tick(state)
 
 $ cargo run -p ou-script --bin ou-script-demo
-=== Автопилот ===  тик 12: тяга 1.00, скорость 17.9
-=== Турель ===     цель близко (300) → огонь: ДА
-=== Песочница ===  бесконечный цикл остановлен: лимит шагов (200000)
-                   глубокая рекурсия остановлена (глубина 64)</code></pre>
+=== Autopilot ===  tick 12: thrust 1.00, speed 17.9
+=== Turret ===     target close (300) → fire: YES
+=== Sandbox ===    infinite loop stopped: step limit (200000)
+                   deep recursion stopped (depth 64)</code></pre>
 
-    <h3>Симуляция рынка</h3>
-    <p>Экономика проверена работающей симуляцией: агенты трёх ролей торгуют 200 тиков, деньги не печатаются. Модель — в <code>docs/economy-model.md</code>.</p>
-    <pre class="codeblock"><code>$ cargo run -p ou-economy --bin ou-market-sim
-=== Сбалансированная экономика ===
-  цена: min 7, max 65, VWAP 25
-  активных тиков: 192 из 200 (96%)
-  проверка денег: создано/сожжено кредитов = 0
-=== Дефицит ===  цена растёт   === Избыток ===  VWAP падает до 10</code></pre>
+    <h3 data-i18n="rep.h.market">Market simulation</h3>
+    <p data-i18n="rep.market.lead">The economy is verified by a running simulation: agents in three roles trade for 200 ticks, and money is not printed. The model is in <code>docs/economy-model.md</code>.</p>
+    <pre class="codeblock"><code data-i18n="rep.code.market">$ cargo run -p ou-economy --bin ou-market-sim
+=== Balanced economy ===
+  price: min 7, max 65, VWAP 25
+  active ticks: 192 of 200 (96%)
+  money check: credits created/destroyed = 0
+=== Shortage ===  price rises   === Surplus ===  VWAP falls to 10</code></pre>
 
-    <h3>Воксельный редактор</h3>
-    <p>Игрок строит из вокселей: ставить, удалять, красить. Сетка разрежённая, целостность проверяется от ядра.</p>
-    <pre class="codeblock"><code>$ cargo run -p ou-build --bin ou-build-demo
-=== Оторванный воксель ===  запрещено: оторван от ядра
-=== Ломаем середину ===     снято оторванных деталей: 1
-=== Шаблон корабля ===      31 воксель, связность ОК
-=== Детерминизм ===         повтор совпадает</code></pre>
+    <h3 data-i18n="rep.h.build">Voxel editor</h3>
+    <p data-i18n="rep.build.lead">A player builds from voxels: place, remove, paint. The grid is sparse and integrity is checked against the core.</p>
+    <pre class="codeblock"><code data-i18n="rep.code.build">$ cargo run -p ou-build --bin ou-build-demo
+=== Detached voxel ===  forbidden: detached from the core
+=== Break the middle ===  detached parts removed: 1
+=== Ship blueprint ===     31 voxels, connectivity OK
+=== Determinism ===        repeat matches</code></pre>
 
-    <h3>Каркас UE5-клиента и проверка протокола</h3>
-    <p>Движок Unreal Engine 5 установлен, C++-модуль <b>собран, редактор открывает 3D-сцену</b>, и клиент <b>подключается к Rust-серверу</b>: получает свой id, шлёт ввод 30 Гц и рисует других игроков. Стенд берёт реальный пакет Rust-сервера и разбирает его тем же кодом, что и клиент UE5.</p>
+    <h3 data-i18n="rep.h.ue">UE5 client skeleton and protocol verification</h3>
+    <p data-i18n="rep.ue.lead">Unreal Engine 5 is installed, the C++ module <b>builds and the editor opens a 3D scene</b>, and the client <b>connects to the Rust server</b>: it receives its own id, sends input at 30 Hz and draws other players. The test harness takes a real Rust server packet and parses it with the same code as the UE5 client.</p>
 
     <figure class="shot">
-      <img src="assets/ue-editor.png" alt="Unreal Engine 5: редактор с воксельной планетой" />
-      <figcaption>Редактор Unreal Engine 5, карта <code>/Game/Maps/OpenUniverse</code>: воксельная планета (cube-to-sphere, рельеф из двух октав шума, цвет по высоте — океан → трава → снег). Сцена достраивается автоматически в <code>AOUGameMode</code>.</figcaption>
+      <img src="assets/ue-editor.png" alt="Unreal Engine 5: editor with a voxel planet" />
+      <figcaption data-i18n="rep.fig.ueeditor">The Unreal Engine 5 editor, map <code>/Game/Maps/OpenUniverse</code>: a voxel planet (cube-to-sphere, terrain from two octaves of noise, color by height — ocean → grass → snow). The scene is assembled automatically in <code>AOUGameMode</code>.</figcaption>
     </figure>
 
     <figure class="shot">
-      <img src="assets/game-shipping.png" alt="Собранная игра Open Universe (standalone)" />
-      <figcaption><b>Готовая игра</b> <code>OpenUniverse.exe</code> — собранная Shipping-версия: запускается двойным кликом <b>без установки Unreal Engine</b>. Ставится установщиком <code>OpenUniverse-Game-Setup</code> (~180 МБ): ярлыки в меню «Пуск» и на рабочем столе.</figcaption>
+      <img src="assets/game-shipping.png" alt="The built Open Universe game (standalone)" />
+      <figcaption data-i18n="rep.fig.shipping"><b>The finished game</b> <code>OpenUniverse.exe</code> — a built Shipping version: it launches on a double click <b>without installing Unreal Engine</b>. It is installed by <code>OpenUniverse-Game-Setup</code> (~180 MB): shortcuts in the Start menu and on the desktop.</figcaption>
     </figure>
 
     <figure class="shot">
-      <img src="assets/ue-planet.png" alt="Unreal Engine 5: игра, вид от третьего лица" />
-      <figcaption>Режим игры (PIE) в UE5: корабль игрока в кадре, планета и атмосфера. Кадр сохранён <b>самим движком</b> (<code>FScreenshotRequest</code>) — так снимок не зависит от того, какое окно в фокусе. Клиент при этом подключён к Rust-серверу.</figcaption>
+      <img src="assets/ue-planet.png" alt="Unreal Engine 5: the game, third-person view" />
+      <figcaption data-i18n="rep.fig.uegame">Play mode (PIE) in UE5: the player's ship in frame, the planet and the atmosphere. The frame was saved <b>by the engine itself</b> (<code>FScreenshotRequest</code>) — so the capture does not depend on which window is focused. The client is connected to the Rust server.</figcaption>
     </figure>
 
-    <pre class="codeblock"><code>$ powershell -File tools/test-client.ps1
-[OK] заголовок прочитан, токен совпал
-[OK] снимок разобран · в снимке три сущности · тик совпал
+    <pre class="codeblock"><code data-i18n="rep.code.testclient">$ powershell -File tools/test-client.ps1
+[OK] header read, token matched
+[OK] snapshot parsed · three entities in the snapshot · tick matched
 [OK] id 1: pos (1169.48, 327.47, 9212.51), yaw 0.3660
 [OK] id 3: pos (-5607.76, 3327.47, 24309.50), yaw 0.1220
-16 проверок · Все проверки пройдены</code></pre>
-    <p>Позиции совпадают с сервером до сантиметра, углы — точно. Значит клиент и сервер видят один мир.</p>
+16 checks · all checks passed</code></pre>
+    <p data-i18n="rep.testclient.note">Positions match the server to the centimeter, angles exactly. So the client and the server see one world.</p>
 
-    <!-- ================= 3. Метрики ================= -->
-    <h2>3. Метрики</h2>
+    <!-- ================= 3. Metrics ================= -->
+    <h2 data-i18n="rep.s3">3. Metrics</h2>
     <table class="m">
-      <thead><tr><th>Показатель</th><th>Значение</th></tr></thead>
+      <thead><tr><th data-i18n="rep.tbl.metric">Metric</th><th data-i18n="rep.tbl.value">Value</th></tr></thead>
       <tbody>
-        <tr><td>Тесты ядра</td><td>223 пройдено</td></tr>
-        <tr><td>Модули (крейты)</td><td>13</td></tr>
-        <tr><td>Частота тика симуляции</td><td>30 Гц (149 тиков за 5 с)</td></tr>
-        <tr><td>Точность позиции по проводу</td><td>0.1 мм (i32, ±214 км)</td></tr>
-        <tr><td>Пустая дельта + ack</td><td>29 байт</td></tr>
-        <tr><td>Трафик на игрока (UDP)</td><td>≈ 202 байта/тик</td></tr>
-        <tr><td>Распределение зон по 4 узлам</td><td>21.8–28.2%</td></tr>
-        <tr><td>Макс. коррекция предсказания</td><td>0.006 у.е.</td></tr>
-        <tr><td>Вокселей на грань (LOD Close)</td><td>24×24</td></tr>
-        <tr><td>Скорость рендера (планета)</td><td>≈ 27 тыс. пикс/с</td></tr>
-        <tr><td>Сетевой рендер: baseline + дельт</td><td>1 + 236 за 8 с</td></tr>
-        <tr><td>Порог мягкой посадки</td><td>60 ед/с (иначе удар)</td></tr>
+        <tr><td data-i18n="rep.metric1">Core tests</td><td data-i18n="rep.metric1v">223 passed</td></tr>
+        <tr><td data-i18n="rep.metric2">Modules (crates)</td><td>13</td></tr>
+        <tr><td data-i18n="rep.metric3">Simulation tick rate</td><td data-i18n="rep.metric3v">30 Hz (149 ticks per 5 s)</td></tr>
+        <tr><td data-i18n="rep.metric4">Wire position precision</td><td data-i18n="rep.metric4v">0.1 mm (i32, ±214 km)</td></tr>
+        <tr><td data-i18n="rep.metric5">Empty delta + ack</td><td data-i18n="rep.metric5v">29 bytes</td></tr>
+        <tr><td data-i18n="rep.metric6">Traffic per player (UDP)</td><td data-i18n="rep.metric6v">≈ 202 bytes/tick</td></tr>
+        <tr><td data-i18n="rep.metric7">Zone distribution across 4 nodes</td><td>21.8–28.2%</td></tr>
+        <tr><td data-i18n="rep.metric8">Max prediction correction</td><td data-i18n="rep.metric8v">0.006 u</td></tr>
+        <tr><td data-i18n="rep.metric9">Voxels per face (LOD Close)</td><td>24×24</td></tr>
+        <tr><td data-i18n="rep.metric10">Render speed (planet)</td><td data-i18n="rep.metric10v">≈ 27k px/s</td></tr>
+        <tr><td data-i18n="rep.metric11">Networked render: baseline + deltas</td><td data-i18n="rep.metric11v">1 + 236 in 8 s</td></tr>
+        <tr><td data-i18n="rep.metric12">Soft landing threshold</td><td data-i18n="rep.metric12v">60 u/s (otherwise impact)</td></tr>
       </tbody>
     </table>
 
-    <!-- ================= 4. Результаты тестов ================= -->
-    <h2>4. Результаты тестов</h2>
-    <pre class="codeblock"><code>$ cargo test --workspace   →  223 passed (13 крейтов)
+    <!-- ================= 4. Test results ================= -->
+    <h2 data-i18n="rep.s4">4. Test results</h2>
+    <pre class="codeblock"><code data-i18n="rep.code.tests">$ cargo test --workspace   →  223 passed (13 crates)
 
 protocol 16 · sim 23 · spatial 6 · net 5 · shard 9 · persist 14
 economy 27 · combat 17 · render 37 · script 32 · build 15 · server 17 · client 9
 
 $ cargo run -p ou-combat --bin ou-combat-demo
-=== Шанс попадания (1000 выстрелов) ===
-  автопушка  дальность 1500:  97%  80%  62%  44%  31%
-=== Дуэль: лазер против рельсотрона ===
-  тик 27: щит 0 (0%), броня 0 (0%)  ← уничтожен
+=== Hit chance (1000 shots) ===
+  autocannon  range 1500:  97%  80%  62%  44%  31%
+=== Duel: laser vs railgun ===
+  tick 27: shield 0 (0%), armor 0 (0%)  ← destroyed
 
 $ cargo run -p ou-economy --bin ou-market-demo
-  сделка: продавец 2 → покупатель 9, 60 шт по 25 (итого 1500)
-VWAP = 26 · Всего сделок в журнале: 2
+  trade: seller 2 → buyer 9, 60 units at 25 (total 1500)
+VWAP = 26 · Trades in the log: 2
 
 $ cargo run -p ou-render --release -- voxel 900 506
-  voxel      900×506  17.44 с
+  voxel      900×506  17.44 s
 
 $ cargo run -p ou-render --release -- dig 640 360
-  dig        2 кадра → 1280×360  18.52 с  -> render-dig.png
+  dig        2 frames → 1280×360  18.52 s  -> render-dig.png
 
 $ cargo run -p ou-server --bin ou-netd -- 127.0.0.1:7777 10 &
 $ cargo run -p ou-render --release --bin ou-netrender -- 127.0.0.1:7777 8 4
-  получено baseline: 1 · дельт: 236 · сохранено 4 кадра -> render-net.png</code></pre>
+  baseline received: 1 · deltas: 236 · saved 4 frames -> render-net.png</code></pre>
 
-    <!-- ================= 5. Что дальше ================= -->
-    <h2>5. Что дальше</h2>
+    <!-- ================= 5. What's next ================= -->
+    <h2 data-i18n="rep.s5">5. What's next</h2>
     <ul class="done next">
-      <li>Рендер по сети — рисовать входящие UDP-снапшоты в реальном времени. ✓</li>
-      <li>Посадка корабля на воксельную поверхность (связь физики и рельефа). ✓</li>
-      <li>Шардирование: миграция состояния между узлами (сейчас — маршрутизация).</li>
-      <li>Kubernetes и автомасштабирование (единственный пункт Фазы 3).</li>
-      <li>Lua-скриптинг конструкций (Фаза 8). ✓</li>
-      <li>Каркас проекта на Unreal Engine 5. ✓ подключён к серверу</li>
+      <li data-i18n="rep.next1">Networked rendering — draw incoming UDP snapshots in real time. ✓</li>
+      <li data-i18n="rep.next2">Landing a ship on a voxel surface (linking physics and terrain). ✓</li>
+      <li data-i18n="rep.next3">Sharding: migrating state between nodes (currently routing).</li>
+      <li data-i18n="rep.next4">Kubernetes and autoscaling (the only Phase 3 item left).</li>
+      <li data-i18n="rep.next5">Lua scripting for constructions (Phase 8). ✓</li>
+      <li data-i18n="rep.next6">Unreal Engine 5 project skeleton. ✓ connected to the server</li>
     </ul>
 
-    <h2>6. Итог</h2>
-    <p>Проект прошёл путь от концепта до <b>работающего ядра на Rust</b>: детерминированная симуляция, сетевой код с предсказанием, экономика, бой, персистентность и собственный рендерер, который рисует воксельные планеты и реальный мир из симуляции. План выполнен на <b>52%</b>.</p>
-    <p>Репозиторий: <a href="https://github.com/andreyshpak2016-lgtm/open-universe">github.com/andreyshpak2016-lgtm/open-universe</a></p>
+    <h2 data-i18n="rep.s6">6. Summary</h2>
+    <p data-i18n="rep.summary">The project has gone from concept to a <b>working Rust core</b>: deterministic simulation, netcode with prediction, economy, combat, persistence and a custom renderer that draws voxel planets and the real world from the simulation. The plan is <b>52%</b> complete.</p>
+    <p data-i18n="rep.repo">Repository: <a href="https://github.com/andreyshpak2016-lgtm/open-universe">github.com/andreyshpak2016-lgtm/open-universe</a></p>
 
-    <a class="btn primary back" href="index.html">← Вернуться на главную</a>
+    <a class="btn primary back" href="index.html" data-i18n="rep.back">← Back to home</a>
   </main>
 
   <footer>
     <div class="wrap">
-      <span>© <span id="year"></span> Open Universe — концепт-проект.</span>
-      <span>Отчёт обновлён: <span id="updated">2026-11-11</span></span>
+      <span>© <span id="year"></span> <span data-i18n="footer.copy">Open Universe — a concept project.</span></span>
+      <span><span data-i18n="rep.updated">Report updated</span>: <span id="updated">2026-11-11</span></span>
     </div>
   </footer>
 
+  <script src="i18n.js?v=0.26.0"></script>
   <script>
-    document.getElementById("year").textContent = new Date().getFullYear();
+    (function () {
+      "use strict";
+      var LANG_KEY = "ou.lang";
+
+      function currentLang() {
+        try {
+          var v = localStorage.getItem(LANG_KEY);
+          if (v === "ru" || v === "en") return v;
+        } catch (e) {}
+        return "en";
+      }
+
+      function t(key) {
+        var pack = (window.OU_I18N || {})[currentLang()] || {};
+        if (pack[key] != null) return pack[key];
+        var en = (window.OU_I18N || {}).en || {};
+        return en[key] != null ? en[key] : key;
+      }
+
+      function applyLang() {
+        var lang = currentLang();
+        document.documentElement.lang = lang;
+        document.querySelectorAll("[data-i18n]").forEach(function (el) {
+          el.innerHTML = t(el.getAttribute("data-i18n"));
+        });
+        document.querySelectorAll("#lang-switch button").forEach(function (b) {
+          b.classList.toggle("active", b.getAttribute("data-lang") === lang);
+        });
+      }
+
+      function initLang() {
+        var sw = document.getElementById("lang-switch");
+        if (sw) {
+          sw.querySelectorAll("button").forEach(function (b) {
+            b.addEventListener("click", function () {
+              try { localStorage.setItem(LANG_KEY, b.getAttribute("data-lang")); } catch (e) {}
+              applyLang();
+            });
+          });
+        }
+      }
+
+      document.getElementById("year").textContent = new Date().getFullYear();
+      initLang();
+      applyLang();
+    })();
   </script>
 </body>
 </html>
