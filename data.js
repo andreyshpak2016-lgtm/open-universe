@@ -57,6 +57,7 @@ window.PLAN = {
         { "title": "Ньютоновская модель полёта в космосе", "title_en": "Newtonian spaceflight model", "status": "done" },
         { "title": "Гравитация планет: обратные квадраты у поверхности, инерция в космосе", "title_en": "Planet gravity: inverse-square near the surface, inertia in space", "status": "done" },
         { "title": "Появление игрока на поверхности планеты (суша, ландшафт)", "title_en": "Player spawn on the planet surface (land, terrain)", "status": "done" },
+        { "title": "Выход из корабля (удержание F) и пешие прогулки по планете", "title_en": "Exit ship (hold F) and walk on the planet", "status": "done" },
         { "title": "Interest management (репликация только нужного)", "title_en": "Interest management (replicate only what is needed)", "status": "done" },
         { "title": "Базовые сетевые протоколы (бинарный + дельты + varint)", "title_en": "Base network protocols (binary + deltas + varint)", "status": "done" },
         { "title": "UE5-клиент в сети: подключение, ввод, реконсиляция, другие игроки", "title_en": "UE5 client online: connect, input, reconciliation, other players", "status": "done" }

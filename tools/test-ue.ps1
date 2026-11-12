@@ -58,8 +58,14 @@ if (-not (Test-Path $serverExe)) { $serverExe = Join-Path $root 'server\target\r
 # Гарантированная очистка: закрываем все процессы, что запускает тест, даже при
 # ошибке или прерывании (Ctrl+C). Иначе после тестов остаются висеть игры.
 function Stop-TestProcs {
-  Get-Process UnrealEditor,OpenUniverse,UnrealEditor-Cmd,CrashReportClient,ou-netd -ErrorAction SilentlyContinue |
-    Stop-Process -Force -ErrorAction SilentlyContinue
+  # Повторяем, пока процессы не исчезнут: редактор порождает дочерний игровой
+  # процесс, который может пережить первый проход.
+  for ($i = 0; $i -lt 5; $i++) {
+    $procs = Get-Process UnrealEditor,OpenUniverse,UnrealEditor-Cmd,CrashReportClient,ou-netd -ErrorAction SilentlyContinue
+    if (-not $procs) { break }
+    $procs | Stop-Process -Force -ErrorAction SilentlyContinue
+    Start-Sleep -Milliseconds 800
+  }
 }
 # На старте подчищаем хвосты прошлых запусков.
 Stop-TestProcs
