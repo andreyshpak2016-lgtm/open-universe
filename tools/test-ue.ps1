@@ -88,7 +88,7 @@ if (Test-Path $serverExe) {
 }
 
 $p = Start-Process -FilePath $editor `
-  -ArgumentList "`"$proj`"",'-game','-windowed','-ResX=1280','-ResY=800','-OUAutoConnect','-OUAutoWalk','-OUAutoFire',("-OUName=" + $Pilot) -PassThru
+  -ArgumentList "`"$proj`"",'-game','-windowed','-ResX=1280','-ResY=800','-OUAutoConnect','-OUAutoWalk','-OUAutoFire','-OUAutoBuild',("-OUName=" + $Pilot) -PassThru
 Write-Host "client PID $($p.Id), waiting $WaitSec s"
 Start-Sleep -Seconds $WaitSec
 [void][OUt]::SetCursorPos(2, 2)

@@ -3,6 +3,7 @@
 #include "OUPlayerMenuController.h"
 #include "OUClientNet.h"
 #include "OUShipPawn.h"
+#include "OUCharacterPawn.h"
 #include "OpenUniverseTypes.h"
 #include "Engine/Canvas.h"
 #include "Engine/Engine.h"
@@ -672,3 +673,57 @@ void AOUPlayerMenuController::DrawMenu(UCanvas* InCanvas)
 	DrawText(InCanvas, Small, FString::Printf(TEXT("Пилот: %s"), *Profile.Name),
 		FVector2D(PanelPos.X + PanelW - 260, PanelPos.Y + 30), ColMuted);
 }
+
+void AOUPlayerMenuController::DrawBuildMenu(UCanvas* InCanvas)
+{
+	if (bMenuOpen || !InCanvas)   // в игре и есть канвас
+	{
+		return;
+	}
+	// Меню строительства живёт в персонаже; ищем его по текущей пешке.
+	AOUCharacterPawn* Char = Cast<AOUCharacterPawn>(GetPawn());
+	if (!Char || !Char->bBuildMenuOpen)
+	{
+		return;
+	}
+
+	const float W = InCanvas->SizeX;
+	const float H = InCanvas->SizeY;
+	UFont* Font = GEngine->GetLargeFont();
+	UFont* Small = GEngine->GetMediumFont();
+
+	// Панель палитры внизу экрана.
+	const int32 Count = (int32)EOUBuildPart::Count;
+	const float SlotW = 150.f, SlotH = 90.f, Gap = 12.f;
+	const float TotalW = Count * SlotW + (Count - 1) * Gap;
+	const FVector2D PanelPos((W - (TotalW + 48.f)) * 0.5f, H - SlotH - 84.f);
+	const FVector2D PanelSize(TotalW + 48.f, SlotH + 70.f);
+	FillBox(InCanvas, PanelPos, PanelSize, ColPanel);
+	StrokeBox(InCanvas, PanelPos, PanelSize, ColPanelBorder, 2.f);
+
+	DrawText(InCanvas, Font, TEXT("Строительство"), PanelPos + FVector2D(24, 14), ColAccent);
+
+	// Слоты: цвет блока, название, подсветка выбранного.
+	float X = PanelPos.X + 24;
+	const float SlotY = PanelPos.Y + 58;
+	for (int32 i = 0; i < Count; ++i)
+	{
+		const FVector2D SlotPos(X, SlotY);
+		const FVector2D SlotSize(SlotW, SlotH);
+		const FLinearColor PartCol = AOUCharacterPawn::BuildPartColor(i);
+		const bool bSel = (i == Char->BuildSelection);
+		FillBox(InCanvas, SlotPos, SlotSize, bSel ? FLinearColor(0.16f, 0.22f, 0.44f, 1.f) : FLinearColor(0.05f, 0.07f, 0.16f, 1.f));
+		StrokeBox(InCanvas, SlotPos, SlotSize, bSel ? ColAccent2 : ColPanelBorder, bSel ? 3.f : 1.f);
+		// Образец цвета блока.
+		FillBox(InCanvas, SlotPos + FVector2D(12, 12), FVector2D(SlotW - 24, 34), PartCol);
+		DrawText(InCanvas, Small, AOUCharacterPawn::BuildPartName(i), SlotPos + FVector2D(12, 54), ColText);
+		X += SlotW + Gap;
+	}
+
+	DrawText(InCanvas, Small, TEXT("B — закрыть   ·   ЛКМ — поставить   ·   колесо — выбор блока"),
+		FVector2D(PanelPos.X + 24, PanelPos.Y + PanelSize.Y + 8), ColMuted);
+
+	DrawText(InCanvas, Small, FString::Printf(TEXT("Блоков поставлено: %d"), Char->BuiltCount),
+		FVector2D(PanelPos.X + PanelSize.X - 220, PanelPos.Y + 16), ColOk);
+}
+

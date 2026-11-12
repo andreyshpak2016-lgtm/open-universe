@@ -147,6 +147,12 @@ public:
 	 */
 	void DrawMenu(class UCanvas* InCanvas);
 
+	/**
+	 * Нарисовать меню строительства поверх игры (палитра блоков и подсказки).
+	 * Вызывается из HUD, когда меню персонажа закрыто, а игрок в игре.
+	 */
+	void DrawBuildMenu(class UCanvas* InCanvas);
+
 	/** Курсор мыши показывать в меню, прятать в игре. */
 	void SetMenuCursor(bool bShow);
 

@@ -18,6 +18,7 @@
 #include "Misc/CommandLine.h"
 #include "Misc/Parse.h"
 #include "OUProjectile.h"
+#include "OUBuildBlock.h"
 #include "UObject/ConstructorHelpers.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogOUChar, Log, All);
@@ -185,6 +186,8 @@ void AOUCharacterPawn::BeginPlay()
 	bAutoWalk = FParse::Param(FCommandLine::Get(), TEXT("OUAutoWalk"));
 	// Тестовый автоматический огонь (для снимков оружия).
 	bAutoFire = FParse::Param(FCommandLine::Get(), TEXT("OUAutoFire"));
+	// Тестовое строительство (для снимка меню строительства и блока).
+	bAutoBuild = FParse::Param(FCommandLine::Get(), TEXT("OUAutoBuild"));
 
 	// Цвета фигурки задаём здесь (после регистрации компонентов — в конструкторе
 	// параметры материала ещё не применяются).
@@ -304,6 +307,12 @@ void AOUCharacterPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputCom
 	PlayerInputComponent->BindAction(TEXT("ExitShip"), IE_Released, this, &AOUCharacterPawn::OnExitReleased);
 	// Огонь: зажимание кнопки ведёт непрерывную стрельбу (окно оружия).
 	PlayerInputComponent->BindAction(TEXT("FireWeapon"), IE_Pressed, this, &AOUCharacterPawn::FireWeapon);
+	// Строительство: B открывает/закрывает меню, ЛКМ ставит выбранный блок.
+	PlayerInputComponent->BindAction(TEXT("BuildMode"), IE_Pressed, this, &AOUCharacterPawn::ToggleBuildMenu);
+	PlayerInputComponent->BindAction(TEXT("BuildPlace"), IE_Pressed, this, &AOUCharacterPawn::PlaceBuildBlock);
+	// Выбор блока в палитре: колесо мыши.
+	PlayerInputComponent->BindAction(TEXT("BuildNext"), IE_Pressed, this, &AOUCharacterPawn::OnBuildNext);
+	PlayerInputComponent->BindAction(TEXT("BuildPrev"), IE_Pressed, this, &AOUCharacterPawn::OnBuildPrev);
 }
 
 void AOUCharacterPawn::AxisForward(float Value) { InputForward = FMath::Clamp(Value, -1.f, 1.f); }
@@ -314,6 +323,86 @@ void AOUCharacterPawn::OnJumpPressed() { bJumpQueued = true; }
 void AOUCharacterPawn::OnJumpReleased() { }
 void AOUCharacterPawn::OnExitPressed() { bExitHeld = true; ExitHoldTime = 0.f; }
 void AOUCharacterPawn::OnExitReleased() { bExitHeld = false; ExitHoldTime = 0.f; }
+void AOUCharacterPawn::OnBuildNext() { if (bBuildMenuOpen) { SelectBuildPart((BuildSelection + 1) % (int32)EOUBuildPart::Count); } }
+void AOUCharacterPawn::OnBuildPrev() { if (bBuildMenuOpen) { SelectBuildPart((BuildSelection + (int32)EOUBuildPart::Count - 1) % (int32)EOUBuildPart::Count); } }
+
+void AOUCharacterPawn::ToggleBuildMenu()
+{
+	bBuildMenuOpen = !bBuildMenuOpen;
+	UE_LOG(LogOUChar, Log, TEXT("Меню строительства: %s (выбран %s)"),
+		bBuildMenuOpen ? TEXT("открыто") : TEXT("закрыто"), *BuildPartName(BuildSelection));
+}
+
+void AOUCharacterPawn::SelectBuildPart(int32 Index)
+{
+	const int32 Count = (int32)EOUBuildPart::Count;
+	if (Count > 0)
+	{
+		BuildSelection = ((Index % Count) + Count) % Count;
+	}
+}
+
+FString AOUCharacterPawn::BuildPartName(int32 Index)
+{
+	switch ((EOUBuildPart)Index)
+	{
+	case EOUBuildPart::Hull:  return TEXT("Корпус");
+	case EOUBuildPart::Panel: return TEXT("Панель");
+	case EOUBuildPart::Beam:  return TEXT("Балка");
+	case EOUBuildPart::Light: return TEXT("Свет");
+	default: return TEXT("Блок");
+	}
+}
+
+FLinearColor AOUCharacterPawn::BuildPartColor(int32 Index)
+{
+	switch ((EOUBuildPart)Index)
+	{
+	case EOUBuildPart::Hull:  return FLinearColor(0.45f, 0.55f, 0.70f);   // серо-стальной
+	case EOUBuildPart::Panel: return FLinearColor(0.85f, 0.60f, 0.25f);   // тёплый
+	case EOUBuildPart::Beam:  return FLinearColor(0.30f, 0.75f, 0.55f);   // зелёный
+	case EOUBuildPart::Light: return FLinearColor(1.00f, 0.92f, 0.45f);   // светящийся
+	default: return FLinearColor(0.60f, 0.60f, 0.60f);
+	}
+}
+
+void AOUCharacterPawn::PlaceBuildBlock()
+{
+	UWorld* World = GetWorld();
+	if (!World || !bBuildMenuOpen)
+	{
+		return;
+	}
+	// Ставим блок в сетку перед персонажем: точка привязана к рельефу.
+	const float BlockSize = 120.f;
+	const FVector Up = GetActorLocation().GetSafeNormal();
+	// «Вперёд-вправо» по касательной — блок стоит рядом, не закрывая персонажа.
+	FVector Fwd = GetActorForwardVector();
+	Fwd = FVector::VectorPlaneProject(Fwd, Up).GetSafeNormal();
+	if (Fwd.IsNearlyZero())
+	{
+		Fwd = FVector::CrossProduct(Up, FVector::RightVector).GetSafeNormal();
+	}
+	const FVector Right = FVector::CrossProduct(Up, Fwd).GetSafeNormal();
+	FVector Pos = GetActorLocation() + Fwd * (BlockSize * 2.2f) + Right * (BlockSize * 1.2f);
+	// Каждый следующий блок — дальше в ряд (видно, что их несколько).
+	Pos += Fwd * (BlockSize * 1.1f * BuiltCount);
+	// Привязка к поверхности планеты (как игрок): блок не висит и не тонет.
+	const FVector Dir = Pos.GetSafeNormal();
+	Pos = Dir * (SurfaceRadius(Dir) + BlockSize * 0.5f);
+
+	AOUBuildBlock* Block = World->SpawnActor<AOUBuildBlock>(
+		AOUBuildBlock::StaticClass(), FTransform(FRotationMatrix::MakeFromXZ(Fwd, Up).Rotator(), Pos));
+	if (Block)
+	{
+		Block->BlockSize = BlockSize;
+		Block->BlockColor = BuildPartColor(BuildSelection);
+		Block->ApplyLook();
+		++BuiltCount;
+		UE_LOG(LogOUChar, Log, TEXT("Построен блок «%s» #%d в %s"),
+			*BuildPartName(BuildSelection), BuiltCount, *Pos.ToString());
+	}
+}
 
 void AOUCharacterPawn::FireWeapon()
 {
@@ -419,8 +508,9 @@ void AOUCharacterPawn::Tick(float DeltaSeconds)
 	// Тестовый автоход: идём вперёд сами и понемногу поворачиваем — персонаж
 	// описывает небольшой круг возле корабля, а на снимке видна анимация бега
 	// (идти по прямой 45 с значило бы уйти за сотни метров от точки старта).
-	const float FwdInput = bAutoWalk ? 1.f : InputForward;
-	if (bAutoWalk)
+	// При авто-строительстве персонаж стоит на месте, чтобы блоки встали в ряд.
+	const float FwdInput = (bAutoWalk && !bAutoBuild) ? 1.f : InputForward;
+	if (bAutoWalk && !bAutoBuild)
 	{
 		ViewYaw += 1.5f * DeltaSeconds;
 	}
@@ -529,5 +619,21 @@ void AOUCharacterPawn::Tick(float DeltaSeconds)
 	if (bAutoFire)
 	{
 		FireWeapon();
+	}
+
+	// Тестовое строительство: открыть меню и поставить пару блоков.
+	if (bAutoBuild)
+	{
+		if (!bBuildMenuOpen)
+		{
+			ToggleBuildMenu();
+		}
+		BuildTimer += DeltaSeconds;
+		if (BuildTimer >= 1.0f && BuiltCount < 3)
+		{
+			BuildTimer = 0.f;
+			SelectBuildPart(BuiltCount);
+			PlaceBuildBlock();
+		}
 	}
 }

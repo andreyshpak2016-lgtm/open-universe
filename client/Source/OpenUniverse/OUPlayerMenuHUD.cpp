@@ -16,5 +16,6 @@ void AOUPlayerMenuHUD::DrawHUD()
 	if (Menu)
 	{
 		Menu->DrawMenu(Canvas);
+		Menu->DrawBuildMenu(Canvas);
 	}
 }

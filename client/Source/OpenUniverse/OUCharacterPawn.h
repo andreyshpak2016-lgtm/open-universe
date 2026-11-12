@@ -16,6 +16,18 @@ class USkeletalMeshComponent;
 class UPointLightComponent;
 class AOUShipPawn;
 class AOUProjectile;
+class AOUBuildBlock;
+
+/** Тип блока в палитре строительства. */
+UENUM(BlueprintType)
+enum class EOUBuildPart : uint8
+{
+	Hull    UMETA(DisplayName = "Корпус"),
+	Panel   UMETA(DisplayName = "Панель"),
+	Beam    UMETA(DisplayName = "Балка"),
+	Light   UMETA(DisplayName = "Свет"),
+	Count   UMETA(Hidden)
+};
 
 /**
  * Персонаж игрока (ходьба по поверхности планеты).
@@ -92,6 +104,38 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Open Universe|Weapon")
 	void FireWeapon();
 
+	// --- Меню строительства ---
+
+	/** Открыто ли меню строительства. */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Build")
+	bool bBuildMenuOpen = false;
+
+	/** Выбранный тип блока в палитре. */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Build")
+	int32 BuildSelection = 0;
+
+	/** Сколько блоков поставлено (для меню строительства). */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Build")
+	int32 BuiltCount = 0;
+
+	/** Открыть/закрыть меню строительства (клавиша B). */
+	UFUNCTION(BlueprintCallable, Category = "Open Universe|Build")
+	void ToggleBuildMenu();
+
+	/** Выбрать блок в палитре (стрелки/клик). */
+	UFUNCTION(BlueprintCallable, Category = "Open Universe|Build")
+	void SelectBuildPart(int32 Index);
+
+	/** Поставить выбранный блок перед персонажем. */
+	UFUNCTION(BlueprintCallable, Category = "Open Universe|Build")
+	void PlaceBuildBlock();
+
+	/** Название типа блока (для меню). */
+	static FString BuildPartName(int32 Index);
+
+	/** Цвет типа блока (для меню и самого блока). */
+	static FLinearColor BuildPartColor(int32 Index);
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void Tick(float DeltaSeconds) override;
@@ -117,6 +161,10 @@ protected:
 	/** Зажатие F: копим время и возвращаемся в корабль по порогу. */
 	void OnExitPressed();
 	void OnExitReleased();
+
+	/** Выбор следующего/предыдущего блока в палитре. */
+	void OnBuildNext();
+	void OnBuildPrev();
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Open Universe|Character")
 	UCapsuleComponent* Capsule = nullptr;
@@ -211,4 +259,10 @@ private:
 
 	/** Указатель на последний снаряд (для визуальной цепочки). */
 	TWeakObjectPtr<AOUProjectile> LastBolt;
+
+	/** Тестовое строительство (ключ `-OUAutoBuild`): поставить блок сами. */
+	bool bAutoBuild = false;
+
+	/** Таймер авто-строительства, с. */
+	float BuildTimer = 0.f;
 };
