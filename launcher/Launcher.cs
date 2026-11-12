@@ -1677,6 +1677,17 @@ namespace OpenUniverseLauncher
             catch { return false; }
         }
 
+        /// <summary>
+        /// Каталог установленной игры: рядом с найденным exe, иначе путь по
+        /// умолчанию. Проверка целостности и патч работают именно здесь.
+        /// </summary>
+        private static string InstallDir()
+        {
+            string exe = GameExe();
+            if (exe != null) return Path.GetDirectoryName(exe);
+            return GameDir();
+        }
+
         private static string InstalledVersion()
         {
             try
@@ -1741,7 +1752,7 @@ namespace OpenUniverseLauncher
         /// <returns>true — целостность в порядке (все файлы на месте и совпадают).</returns>
         private bool VerifyGame(GameManifest man, List<ManifestFile> missing)
         {
-            string dir = GameDir();
+            string dir = InstallDir();
             missing.Clear();
             foreach (var f in man.Files)
             {
@@ -1805,7 +1816,7 @@ namespace OpenUniverseLauncher
                 if (Directory.Exists(stage)) Directory.Delete(stage, true);
                 System.IO.Compression.ZipFile.ExtractToDirectory(tmp, stage);
 
-                string dir = GameDir();
+                string dir = InstallDir();
                 var need = new HashSet<string>(missing.ConvertAll(m => m.P.Replace('\\', '/')), StringComparer.OrdinalIgnoreCase);
                 int done = 0;
                 foreach (var f in man.Files)
