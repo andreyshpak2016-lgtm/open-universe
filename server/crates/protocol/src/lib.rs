@@ -184,6 +184,10 @@ pub enum Message {
     ServerShot(ShotEvent),
     /// Сервер: текущие щит и броня сущности (для HUD и состояния цели).
     ServerHull { entity: NetId, shield: u32, armor: u32, destroyed: bool },
+    /// Сервер: сущность уничтожена, возрождение ожидается на тике `respawn_tick`.
+    ServerDeath { entity: NetId, respawn_tick: u64 },
+    /// Сервер: сущность возрождена (полный корпус), неуязвима до `invuln_until`.
+    ServerRespawn { entity: NetId, invuln_until: u64 },
 }
 
 /// Состоявшийся выстрел (сервер → клиенты).
@@ -449,6 +453,8 @@ mod wire {
     const TAG_BUILD_ACCESS: u8 = 12;
     const TAG_SHOT: u8 = 13;
     const TAG_HULL: u8 = 14;
+    const TAG_DEATH: u8 = 15;
+    const TAG_RESPAWN: u8 = 16;
 
     pub fn encode(msg: &Message) -> Vec<u8> {
         let mut w = Writer::new();
@@ -563,6 +569,16 @@ mod wire {
                 w.varint(*shield as u64);
                 w.varint(*armor as u64);
                 w.bool(*destroyed);
+            }
+            Message::ServerDeath { entity, respawn_tick } => {
+                w.u8(TAG_DEATH);
+                w.varint(*entity as u64);
+                w.varint(*respawn_tick);
+            }
+            Message::ServerRespawn { entity, invuln_until } => {
+                w.u8(TAG_RESPAWN);
+                w.varint(*entity as u64);
+                w.varint(*invuln_until);
             }
         }
         w.buf
@@ -684,6 +700,14 @@ mod wire {
                 shield: r.varint()? as u32,
                 armor: r.varint()? as u32,
                 destroyed: r.bool()?,
+            }),
+            TAG_DEATH => Ok(Message::ServerDeath {
+                entity: r.varint()? as NetId,
+                respawn_tick: r.varint()?,
+            }),
+            TAG_RESPAWN => Ok(Message::ServerRespawn {
+                entity: r.varint()? as NetId,
+                invuln_until: r.varint()?,
             }),
             other => Err(WireError::BadTag(other)),
         }
@@ -862,6 +886,14 @@ mod tests {
 
         let hull = Message::ServerHull { entity: 7, shield: 30, armor: 80, destroyed: false };
         assert_eq!(decode(&encode(&hull)).unwrap(), hull);
+    }
+
+    #[test]
+    fn death_and_respawn_roundtrip() {
+        let death = Message::ServerDeath { entity: 5, respawn_tick: 4200 };
+        assert_eq!(decode(&encode(&death)).unwrap(), death);
+        let respawn = Message::ServerRespawn { entity: 5, invuln_until: 4260 };
+        assert_eq!(decode(&encode(&respawn)).unwrap(), respawn);
     }
 
     #[test]

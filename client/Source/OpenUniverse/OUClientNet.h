@@ -198,6 +198,22 @@ public:
 	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Combat")
 	FOUHullState OwnHull;
 
+	/** Своя сущность уничтожена (ждём возрождения). */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Combat")
+	bool bOwnDestroyed = false;
+
+	/** Тик сервера, на котором возродимся (0 — не ждём). */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Combat")
+	int64 OwnRespawnTick = 0;
+
+	/** Своя сущность неуязвима до этого тика (0 — нет). */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Combat")
+	int64 OwnInvulnUntil = 0;
+
+	/** Время последнего полученного тика (для отсчёта возрождения). */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Net")
+	int64 LastServerTick = 0;
+
 	/** Подключиться к серверу. */
 	UFUNCTION(BlueprintCallable, Category = "Open Universe|Net")
 	bool Connect();

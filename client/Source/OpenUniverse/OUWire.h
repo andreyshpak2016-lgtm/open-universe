@@ -52,6 +52,8 @@ namespace OUWire
         TagBuildAccess = 12,
         TagShot = 13,
         TagHull = 14,
+        TagDeath = 15,
+        TagRespawn = 16,
     };
 
     /// Действия редактора конструкций.
@@ -152,6 +154,20 @@ namespace OUWire
         uint32_t Shield = 0;
         uint32_t Armor = 0;
         bool Destroyed = false;
+    };
+
+    /// Смерть сущности (сервер → клиент, тег 15).
+    struct DeathEvent
+    {
+        uint32_t Entity = 0;
+        uint64_t RespawnTick = 0;
+    };
+
+    /// Возрождение сущности (сервер → клиент, тег 16).
+    struct RespawnEvent
+    {
+        uint32_t Entity = 0;
+        uint64_t InvulnUntil = 0;
     };
 
     // --- Низкоуровневое чтение ---
@@ -403,6 +419,32 @@ namespace OUWire
         uint8_t destroyed = 0;
         if (!r.U8(destroyed)) return false;
         out.Destroyed = destroyed != 0;
+        return true;
+    }
+
+    /// Разобрать смерть (tag 15).
+    inline bool DecodeDeath(const uint8_t* body, size_t len, DeathEvent& out)
+    {
+        Reader r{body, len, 0};
+        uint8_t tag = 0;
+        if (!r.U8(tag) || tag != TagDeath) return false;
+        uint64_t entity = 0, tick = 0;
+        if (!r.Varint(entity) || !r.Varint(tick)) return false;
+        out.Entity = static_cast<uint32_t>(entity);
+        out.RespawnTick = tick;
+        return true;
+    }
+
+    /// Разобрать возрождение (tag 16).
+    inline bool DecodeRespawn(const uint8_t* body, size_t len, RespawnEvent& out)
+    {
+        Reader r{body, len, 0};
+        uint8_t tag = 0;
+        if (!r.U8(tag) || tag != TagRespawn) return false;
+        uint64_t entity = 0, until = 0;
+        if (!r.Varint(entity) || !r.Varint(until)) return false;
+        out.Entity = static_cast<uint32_t>(entity);
+        out.InvulnUntil = until;
         return true;
     }
 

@@ -347,6 +347,31 @@ void UOUClientNet::Poll()
 				}
 			}
 		}
+		else if (Body[0] == OUWire::TagDeath) // смерть
+		{
+			OUWire::DeathEvent D;
+			if (OUWire::DecodeDeath(Body.GetData(), static_cast<size_t>(Body.Num()), D))
+			{
+				if (static_cast<int32>(D.Entity) == OwnEntityId)
+				{
+					bOwnDestroyed = true;
+					OwnRespawnTick = static_cast<int64>(D.RespawnTick);
+				}
+			}
+		}
+		else if (Body[0] == OUWire::TagRespawn) // возрождение
+		{
+			OUWire::RespawnEvent R;
+			if (OUWire::DecodeRespawn(Body.GetData(), static_cast<size_t>(Body.Num()), R))
+			{
+				if (static_cast<int32>(R.Entity) == OwnEntityId)
+				{
+					bOwnDestroyed = false;
+					OwnRespawnTick = 0;
+					OwnInvulnUntil = static_cast<int64>(R.InvulnUntil);
+				}
+			}
+		}
 	}
 }
 
@@ -364,6 +389,7 @@ bool UOUClientNet::ParseSnapshot(const TArray<uint8>& Body, FOUSnapshot& Out)
 	Out.Tick = Snap.Tick;
 	Out.AckInputSeq = Snap.AckInputSeq;
 	Out.bBaseline = Snap.Baseline;
+	LastServerTick = static_cast<int64>(Snap.Tick);
 	Out.Entities.Reset(static_cast<int32>(Snap.Entities.size()));
 	for (const OUWire::EntityState& E : Snap.Entities)
 	{

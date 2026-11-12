@@ -151,7 +151,25 @@ void AOUShipPawn::BeginPlay()
 
 void AOUShipPawn::DrawCombatEffects()
 {
-	if (!Net || Net->PendingShots.Num() == 0)
+	if (!Net)
+	{
+		return;
+	}
+
+	// Смерть/возрождение своей сущности: прячем корабль, пока ждём возрождения.
+	const bool bDead = Net->bOwnDestroyed;
+	if (bDead != bWasDestroyed)
+	{
+		bWasDestroyed = bDead;
+		if (ShipMesh)
+		{
+			ShipMesh->SetVisibility(!bDead);
+		}
+		UE_LOG(LogOUShip, Log, TEXT("Бой: своя сущность %s"),
+			bDead ? TEXT("уничтожена, ждём возрождения") : TEXT("возрождена"));
+	}
+
+	if (Net->PendingShots.Num() == 0)
 	{
 		return;
 	}

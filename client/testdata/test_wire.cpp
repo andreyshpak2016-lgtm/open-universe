@@ -293,6 +293,23 @@ int main(int argc, char** argv)
         Check(OUWire::DecodeHull(hb.data(), hb.size(), hs) && hs.Entity == 7 &&
               hs.Shield == 30 && hs.Armor == 80 && !hs.Destroyed,
               "состояние корпуса разобрано");
+
+        // Смерть (tag 15) и возрождение (tag 16).
+        std::vector<uint8_t> db;
+        db.push_back(OUWire::TagDeath);
+        OUWire::push_varint(db, 5);
+        OUWire::push_varint(db, 4200);
+        OUWire::DeathEvent de;
+        Check(OUWire::DecodeDeath(db.data(), db.size(), de) && de.Entity == 5 && de.RespawnTick == 4200,
+              "смерть разобрана (respawn_tick)");
+
+        std::vector<uint8_t> rb;
+        rb.push_back(OUWire::TagRespawn);
+        OUWire::push_varint(rb, 5);
+        OUWire::push_varint(rb, 4290);
+        OUWire::RespawnEvent re;
+        Check(OUWire::DecodeRespawn(rb.data(), rb.size(), re) && re.Entity == 5 && re.InvulnUntil == 4290,
+              "возрождение разобрано (invuln_until)");
     }
 
     std::printf("\n=== Итог ===\n");

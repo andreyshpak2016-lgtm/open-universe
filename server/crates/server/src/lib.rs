@@ -27,6 +27,11 @@ pub const INTEREST_RADIUS: f64 = 2_000.0;
 /// лишние проверки. Половина радиуса — хороший компромисс.
 pub const CELL_SIZE: f64 = INTEREST_RADIUS / 2.0;
 
+/// Через сколько тиков после уничтожения игрок возрождается.
+pub const RESPAWN_TICKS: u64 = 120;   // 4 секунды при 30 Гц
+/// Сколько тиков после возрождения игрок неуязвим.
+pub const RESPAWN_INVULN_TICKS: u64 = 90;   // 3 секунды
+
 /// Конструкция: воксельная сетка плюс права и ревизии (совместная стройка).
 #[derive(Clone, Debug)]
 pub struct Construction {
@@ -79,6 +84,10 @@ pub struct Connection {
     /// Последнее отправленное клиенту состояние каждой сущности.
     /// Позволяет слать только те сущности, что реально изменились.
     pub last_sent: BTreeMap<NetId, EntityState>,
+    /// Тик, на котором мёртвый игрок возродится (0 — жив).
+    pub respawn_tick: u64,
+    /// До какого тика игрок неуязвим после возрождения.
+    pub invuln_until: u64,
 }
 
 /// Результат шага: что нужно отправить каждому клиенту.
@@ -106,6 +115,10 @@ pub struct Server {
     pub last_fire_tick: BTreeMap<NetId, u64>,
     /// Номер выстрела сущности (для зерна детерминированного попадания).
     pub shot_seq: BTreeMap<NetId, u64>,
+    /// Учебные цели: точка спавна и тик возрождения (для полигона).
+    pub target_spawns: BTreeMap<NetId, Vec3>,
+    /// Тик, на котором дрон-цель возродится (0 — жив или удалён без возврата).
+    pub target_respawn_tick: BTreeMap<NetId, u64>,
     next_entity_id: NetId,
 }
 
@@ -122,6 +135,8 @@ impl Server {
             weapons: BTreeMap::new(),
             last_fire_tick: BTreeMap::new(),
             shot_seq: BTreeMap::new(),
+            target_spawns: BTreeMap::new(),
+            target_respawn_tick: BTreeMap::new(),
             next_entity_id: 1,
         }
     }
@@ -254,13 +269,22 @@ impl Server {
         }
         let from = self.world.entities.get(&attacker)?.state.pos;
 
-        // Ближайшая цель в пределах дальности (кроме себя и уже уничтоженных).
+        // Ближайшая цель в пределах дальности (кроме себя, уничтоженных и
+        // неуязвимых после возрождения).
         let mut best: Option<(NetId, f64)> = None;
         for (id, ent) in self.world.entities.iter() {
             if *id == attacker {
                 continue;
             }
             if self.hulls.get(id).map(|h| h.is_destroyed()).unwrap_or(true) {
+                continue;
+            }
+            // Неуязвимый после возрождения игрок не получает урона.
+            if self
+                .connections
+                .values()
+                .any(|c| c.entity_id == *id && tick < c.invuln_until)
+            {
                 continue;
             }
             let d = from.distance(ent.state.pos);
@@ -303,10 +327,14 @@ impl Server {
         let destroyed = self.hulls.get(&target).map(|h| h.is_destroyed()).unwrap_or(false);
         let damage = outcome.shield_damage + outcome.armor_damage + outcome.core_damage;
 
-        // Уничтоженную цель-дрон убираем из мира (у игроков есть соединение —
-        // их не удаляем: игрок «возрождается» логикой выше).
+        // Уничтоженный дрон-цель убираем из мира и планируем его возрождение
+        // (учебный полигон — цели возвращаются). Игрока не удаляем: срок его
+        // возрождения назначит `process_respawns`.
         if destroyed && !self.connections.values().any(|c| c.entity_id == target) {
             self.despawn(target);
+            if self.target_spawns.contains_key(&target) {
+                self.target_respawn_tick.insert(target, tick + RESPAWN_TICKS);
+            }
         }
 
         Some(ShotEvent {
@@ -316,6 +344,136 @@ impl Server {
             damage,
             destroyed,
         })
+    }
+
+    /// Обработать выстрел дрона: цель — только игроки (сущности с соединением).
+    ///
+    /// Логика та же, что у [`resolve_fire`], но набор целей ограничен игроками,
+    /// чтобы дроны не стреляли друг в друга.
+    pub fn resolve_fire_at_players(&mut self, attacker: NetId, tick: u64) -> Option<ShotEvent> {
+        let w = self.weapons.get(&attacker)?.clone();
+        if let Some(last) = self.last_fire_tick.get(&attacker) {
+            if tick.saturating_sub(*last) < w.cooldown {
+                return None;
+            }
+        }
+        let from = self.world.entities.get(&attacker)?.state.pos;
+
+        let mut best: Option<(NetId, f64)> = None;
+        for c in self.connections.values() {
+            let id = c.entity_id;
+            if id == attacker {
+                continue;
+            }
+            if self.hulls.get(&id).map(|h| h.is_destroyed()).unwrap_or(true) {
+                continue;
+            }
+            if tick < c.invuln_until {
+                continue;
+            }
+            let Some(ent) = self.world.entities.get(&id) else { continue };
+            let d = from.distance(ent.state.pos);
+            if d <= w.range {
+                match best {
+                    Some((_, bd)) if bd <= d => {}
+                    _ => best = Some((id, d)),
+                }
+            }
+        }
+
+        let seq = self.shot_seq.entry(attacker).or_insert(0);
+        *seq += 1;
+        let seed = tick
+            .wrapping_mul(0x9E3779B97F4A7C15)
+            ^ (attacker as u64).wrapping_mul(0xBF58476D1CE4E5B9)
+            ^ seq.wrapping_mul(0x94D049BB133111EB);
+        self.last_fire_tick.insert(attacker, tick);
+
+        let (target, dist) = match best {
+            Some((id, d)) => (id, d),
+            None => {
+                return Some(ShotEvent {
+                    attacker,
+                    target: 0,
+                    hit: false,
+                    damage: 0,
+                    destroyed: false,
+                });
+            }
+        };
+
+        let target_hull = *self.hulls.get(&target)?;
+        let outcome = ou_combat::resolve_shot(&target_hull, &w, dist, seed);
+        if let Some(h) = self.hulls.get_mut(&target) {
+            ou_combat::apply_outcome(h, &outcome);
+        }
+        let destroyed = self.hulls.get(&target).map(|h| h.is_destroyed()).unwrap_or(false);
+        let damage = outcome.shield_damage + outcome.armor_damage + outcome.core_damage;
+        Some(ShotEvent { attacker, target, hit: outcome.hit, damage, destroyed })
+    }
+
+    /// Возрождение и восстановление щита. Возвращает (мёртвые, возрождённые).
+    ///
+    /// Уничтоженные игроки ждут `RESPAWN_TICKS`, затем «встают» с полным
+    /// корпусом и краткой неуязвимостью. Щит живых медленно восстанавливается.
+    fn process_respawns(&mut self, tick: u64) -> (Vec<NetId>, Vec<NetId>) {
+        let mut died = Vec::new();
+        let mut respawned = Vec::new();
+        let ids: Vec<NetId> = self.connections.values().map(|c| c.entity_id).collect();
+        for id in ids {
+            let (respawn_tick, invuln_until) = match self.connections.values().find(|c| c.entity_id == id) {
+                Some(c) => (c.respawn_tick, c.invuln_until),
+                None => continue,
+            };
+            let dead = self.hulls.get(&id).map(|h| h.is_destroyed()).unwrap_or(false);
+            if dead && respawn_tick == 0 {
+                // Только что уничтожен — назначим срок и сообщим.
+                let rt = tick + RESPAWN_TICKS;
+                for c in self.connections.values_mut() {
+                    if c.entity_id == id {
+                        c.respawn_tick = rt;
+                    }
+                }
+                died.push(id);
+            } else if dead && tick >= respawn_tick {
+                // Возрождение: полный корпус + неуязвимость.
+                self.hulls.insert(id, ShipHull::new(100, 200));
+                if let Some(spawn) = self.respawn_point(id) {
+                    if let Some(ent) = self.world.entities.get_mut(&id) {
+                        ent.state.pos = spawn;
+                        ent.state.vel = Vec3::ZERO;
+                    }
+                    self.world.attach_terrain(id, ou_sim::home_planet());
+                }
+                let until = tick + RESPAWN_INVULN_TICKS;
+                for c in self.connections.values_mut() {
+                    if c.entity_id == id {
+                        c.respawn_tick = 0;
+                        c.invuln_until = until;
+                    }
+                }
+                respawned.push(id);
+            } else if !dead && invuln_until != 0 && tick >= invuln_until {
+                for c in self.connections.values_mut() {
+                    if c.entity_id == id {
+                        c.invuln_until = 0;
+                    }
+                }
+            }
+            // Регенерация щита живых: медленно (1 единица за 30 тиков = 1 с),
+            // иначе бой никогда не заканчивается победой.
+            if !dead {
+                if let Some(h) = self.hulls.get_mut(&id) {
+                    h.recharge(if tick % 30 == 0 { 1 } else { 0 });
+                }
+            }
+        }
+        (died, respawned)
+    }
+
+    /// Точка возрождения игрока — домашняя планета (на суше).
+    fn respawn_point(&self, _entity: NetId) -> Option<Vec3> {
+        Some(ou_sim::home_spawn(2.0))
     }
 
     /// Назначить сущности скрипт (автопилот). С этого момента её ввод
@@ -347,6 +505,8 @@ impl Server {
                 acked_seq: 0,
                 known: BTreeSet::new(),
                 last_sent: BTreeMap::new(),
+                respawn_tick: 0,
+                invuln_until: 0,
             },
         );
         entity_id
@@ -365,15 +525,47 @@ impl Server {
 
     /// Создать цель-дрон (мишень без игрока).
     ///
-    /// У дрона есть корпус (без щита, средняя броня), но нет соединения и
-    /// оружия: он служит целью для проверки боя и виден всем рядом. Дрон
-    /// «висит» в воздухе (гравитацию к нему не привязываем).
+    /// У дрона есть корпус (без щита, средняя броня) и оружие: он служит целью
+    /// для проверки боя и **отстреливается** по ближайшему игроку. Дрон висит
+    /// в воздухе (гравитацию к нему не привязываем).
     pub fn spawn_target(&mut self, pos: Vec3) -> NetId {
         let entity_id = self.next_entity_id;
         self.next_entity_id += 1;
         self.world.spawn(entity_id, pos);
         self.hulls.insert(entity_id, ShipHull::new(0, 40));
+        if let Some(w) = weapon("лазер") {
+            self.weapons.insert(entity_id, w);
+        }
+        // Учебная цель: помним точку спавна — после уничтожения возродится.
+        self.target_spawns.insert(entity_id, pos);
         entity_id
+    }
+
+    /// Респавн уничтоженных учебных целей на их точках появления.
+    fn process_target_respawns(&mut self, tick: u64) {
+        let due: Vec<NetId> = self
+            .target_respawn_tick
+            .iter()
+            .filter(|(_, t)| tick >= **t)
+            .map(|(id, _)| *id)
+            .collect();
+        for id in due {
+            if let Some(spawn) = self.target_spawns.get(&id).copied() {
+                if let Some(ent) = self.world.entities.get_mut(&id) {
+                    ent.state.pos = spawn;
+                    ent.state.vel = Vec3::ZERO;
+                    self.hulls.insert(id, ShipHull::new(0, 40));
+                } else {
+                    // Был удалён — создаём заново под тем же id.
+                    self.world.spawn(id, spawn);
+                    self.hulls.insert(id, ShipHull::new(0, 40));
+                    if let Some(w) = weapon("лазер") {
+                        self.weapons.insert(id, w);
+                    }
+                }
+            }
+            self.target_respawn_tick.remove(&id);
+        }
     }
 
     /// Убрать сущность из мира (например, уничтоженную в бою).
@@ -419,9 +611,18 @@ impl Server {
 
     /// Один авторитетный тик: шаг мира + формирование рассылки.
     pub fn tick(&mut self) -> SendPlan {
+        // 0. Возрождение и восстановление: мёртвые ждут срок, живые регенят щит.
+        let tick_now = self.world.tick;
+        let (died, respawned) = self.process_respawns(tick_now);
+        self.process_target_respawns(tick_now);
+
         // 1. Собрать вводы по сущностям.
         let mut inputs: BTreeMap<NetId, InputFrame> = BTreeMap::new();
         for conn in self.connections.values() {
+            // Мёртвый игрок ввод не применяет (корабль уничтожен).
+            if conn.respawn_tick != 0 {
+                continue;
+            }
             inputs.insert(conn.entity_id, conn.last_input);
         }
 
@@ -479,9 +680,42 @@ impl Server {
             }
         }
 
+        // 3b. Дроны (сущности без соединения) отстреливаются по ближайшему
+        //     игроку — так бой двусторонний и видно смерть/возрождение.
+        let drone_ids: Vec<NetId> = self
+            .world
+            .entities
+            .keys()
+            .copied()
+            .filter(|id| !self.connections.values().any(|c| c.entity_id == *id))
+            .filter(|id| self.weapons.contains_key(id))
+            .collect();
+        for id in drone_ids {
+            if let Some(ev) = self.resolve_fire_at_players(id, tick) {
+                hull_dirty.insert(id);
+                if ev.target != 0 {
+                    hull_dirty.insert(ev.target);
+                }
+                shots.push(ev);
+            }
+        }
+
         // 4. Для каждого клиента — интерес‑менеджмент и дельта.
         let mut plan = SendPlan::default();
         let all_states: BTreeMap<NetId, EntityState> = self.world.snapshot_map();
+
+        // Снимки сроков для сообщений о смерти/возрождении (до заимствования
+        // соединений на изменение).
+        let died_respawn: BTreeMap<NetId, u64> = self
+            .connections
+            .values()
+            .map(|c| (c.entity_id, c.respawn_tick))
+            .collect();
+        let respawn_until: BTreeMap<NetId, u64> = self
+            .connections
+            .values()
+            .map(|c| (c.entity_id, c.invuln_until))
+            .collect();
 
         // Фаза A: какие сущности видит каждый клиент (только чтение).
         let mut visible_by_player: BTreeMap<NetId, BTreeSet<NetId>> = BTreeMap::new();
@@ -577,6 +811,23 @@ impl Server {
                             destroyed: h.is_destroyed(),
                         });
                     }
+                }
+            }
+            // Смерть и возрождение: шлём владельцу сущности (и тем, кто видит).
+            for e in &died {
+                if conn.entity_id == *e || visible.contains(e) {
+                    msgs.push(Message::ServerDeath {
+                        entity: *e,
+                        respawn_tick: died_respawn.get(e).copied().unwrap_or(0),
+                    });
+                }
+            }
+            for e in &respawned {
+                if conn.entity_id == *e || visible.contains(e) {
+                    msgs.push(Message::ServerRespawn {
+                        entity: *e,
+                        invuln_until: respawn_until.get(e).copied().unwrap_or(0),
+                    });
                 }
             }
 
@@ -988,6 +1239,73 @@ mod tests {
         assert!(
             !s.world.entities.contains_key(&drone),
             "уничтоженный дрон убирается из мира"
+        );
+    }
+
+    #[test]
+    fn player_respawns_after_destroyed() {
+        let mut s = Server::new();
+        let a = s.connect(1, Vec3::ZERO);
+        let b = s.connect(2, Vec3::new(60.0, 0.0, 0.0));
+        // Взаимный огонь, пока кто-то не погибнет. Бьём игрока 2 напрямую:
+        // сильно ослабим его корпус, чтобы он уничтожился быстрее.
+        s.hulls.insert(b, ShipHull::new(0, 5));
+        let mut tick = 0u64;
+        let mut died = false;
+        while tick < 400 {
+            tick += 5;
+            if let Some(ev) = s.resolve_fire(a, tick) {
+                if ev.target == b && ev.destroyed {
+                    died = true;
+                    break;
+                }
+            }
+        }
+        assert!(died, "игрок 2 должен быть уничтожен");
+        // Прогоняем тики: игрок должен возродиться с полным корпусом.
+        let mut respawned = false;
+        for _ in 0..(RESPAWN_TICKS + 10) {
+            s.tick();
+        }
+        // Корпус восстановлен и не уничтожен.
+        let h = s.hulls[&b];
+        assert!(!h.is_destroyed(), "после возрождения корпус целый");
+        assert!(h.armor > 0, "броня восстановлена");
+        // Игрок всё ещё в мире (его не удаляют, в отличие от дронов).
+        assert!(s.world.entities.contains_key(&b), "игрок остаётся в мире");
+    }
+
+    #[test]
+    fn invulnerable_player_takes_no_damage() {
+        let mut s = Server::new();
+        let a = s.connect(1, Vec3::ZERO);
+        let b = s.connect(2, Vec3::new(60.0, 0.0, 0.0));
+        // Помечаем игрока 2 неуязвимым (как сразу после возрождения).
+        for c in s.connections.values_mut() {
+            if c.entity_id == b {
+                c.invuln_until = 10_000;
+            }
+        }
+        let hull_before = s.hulls[&b];
+        // Игрок 1 стреляет — но не должен найти неуязвимую цель.
+        let ev = s.resolve_fire(a, 1).expect("выстрел в пустоту — событие");
+        assert_eq!(ev.target, 0, "неуязвимая цель не выбирается");
+        assert_eq!(s.hulls[&b], hull_before, "урон не прошёл");
+    }
+
+    #[test]
+    fn drone_fires_back_at_player() {
+        let mut s = Server::new();
+        let a = s.connect(1, Vec3::ZERO);
+        let drone = s.spawn_target(Vec3::new(50.0, 0.0, 0.0));
+        let hull_before = s.hulls[&a];
+        // Дрон стреляет по игроку (цели — только игроки).
+        let ev = s.resolve_fire_at_players(drone, 1).expect("дрон должен стрелять");
+        assert_eq!(ev.target, a, "цель дрона — ближайший игрок");
+        let hull_after = s.hulls[&a];
+        assert!(
+            hull_after.shield < hull_before.shield || hull_after.armor < hull_before.armor,
+            "дрон должен нанести урон игроку"
         );
     }
 }
