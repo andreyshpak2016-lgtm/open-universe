@@ -374,7 +374,21 @@ void AOUGameMode::BuildSystemFromServer()
 	{
 		// Позиция в серверных осях → UE (с масштабом).
 		const FVector PosUE = OUInterop::ServerToUE(B.Position);
-		const float RadiusCm = static_cast<float>(B.Radius * OUInterop::ServerUnitToCm);
+		// Размер тела задаём по типу: серверный радиус — в «локальных» единицах,
+		// для игрового масштаба он мал, поэтому берём читаемый размер диска.
+		auto RadiusForKind = [](int32 Kind) -> float
+		{
+			switch (Kind)
+			{
+			case 0:  return 5000000.f;    // звезда: 50 км
+			case 5:  return 1500000.f;    // чёрная дыра: 15 км
+			case 3:  return 5000000.f;    // газовый гигант: 50 км
+			case 4:  return 2000000.f;    // пояс: 20 км
+			case 2:  return 1500000.f;    // луна: 15 км
+			default: return 3000000.f;    // планета: 30 км
+			}
+		};
+		const float RadiusCm = RadiusForKind(B.Kind);
 
 		if (B.Kind == 0 || B.Kind == 5)   // звезда или чёрная дыра
 		{
@@ -383,7 +397,7 @@ void AOUGameMode::BuildSystemFromServer()
 			if (Body)
 			{
 				Body->Kind = EOUSolarKind::Star;
-				Body->BodyRadiusCm = FMath::Max(RadiusCm, 100000.f);
+				Body->BodyRadiusCm = RadiusCm;
 				Body->BodyColor = B.Kind == 5
 					? FLinearColor(0.08f, 0.05f, 0.12f)      // чёрная дыра
 					: FLinearColor(1.0f, 0.86f, 0.35f);      // звезда
@@ -392,7 +406,6 @@ void AOUGameMode::BuildSystemFromServer()
 		}
 		else if (B.Kind == 1 || B.Kind == 3 || B.Kind == 2)   // планета/газ/луна
 		{
-			if (RadiusCm < 10000.f) { continue; }   // слишком мелкое — не рисуем
 			AOUVoxelPlanet* Planet = World->SpawnActor<AOUVoxelPlanet>(
 				AOUVoxelPlanet::StaticClass(), FTransform(FRotator::ZeroRotator, PosUE));
 			if (Planet)
@@ -401,7 +414,8 @@ void AOUGameMode::BuildSystemFromServer()
 				Planet->Radius = RadiusCm;
 				Planet->Amplitude = RadiusCm * 0.05f;
 				Planet->PlanetType = (B.Kind == 3) ? EOUPlanetType::GasGiant
-					: (B.Id % 2 == 0 ? EOUPlanetType::Ice : EOUPlanetType::Desert);
+					: (B.Kind == 2 ? EOUPlanetType::Airless
+					: (B.Id % 2 == 0 ? EOUPlanetType::Ice : EOUPlanetType::Desert));
 				Planet->Lod = EOUVoxelLod::Mid;
 				Planet->BuildPlanet();
 			}

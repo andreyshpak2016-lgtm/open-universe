@@ -346,12 +346,12 @@ int main(int argc, char** argv)
         OUWire::push_varint(sysb, 1);           // одно тело
         OUWire::push_varint(sysb, 1);           // body id
         sysb.push_back(1);                      // kind=планета
-        auto push_svarint_sys = [&sysb](int64_t v) {
-            uint64_t zz = (static_cast<uint64_t>(v) << 1) ^ static_cast<uint64_t>(v >> 63);
-            while (zz >= 0x80) { sysb.push_back(static_cast<uint8_t>(zz) | 0x80); zz >>= 7; }
-            sysb.push_back(static_cast<uint8_t>(zz));
+        auto push_f32 = [&sysb](float f) {
+            uint32_t bits = 0; std::memcpy(&bits, &f, 4);
+            sysb.push_back(bits & 0xFF); sysb.push_back((bits >> 8) & 0xFF);
+            sysb.push_back((bits >> 16) & 0xFF); sysb.push_back((bits >> 24) & 0xFF);
         };
-        push_svarint_sys(250000); push_svarint_sys(0); push_svarint_sys(0);  // pos (серверные ед.)
+        push_f32(25.0f); push_f32(0.0f); push_f32(0.0f);  // pos (серверные ед.)
         double rad = 120.0;
         uint64_t radBits = 0; std::memcpy(&radBits, &rad, 8);
         for (int k = 0; k < 8; ++k) sysb.push_back((radBits >> (8 * k)) & 0xFF);

@@ -542,11 +542,9 @@ impl Server {
         //  1) масштаб — растягиваем орбиты/радиусы в игровой масштаб;
         //  2) смещение — центр системы уводим В НЕБО (иначе звезда оказалась бы
         //     в центре домашней планеты).
-        const SYSTEM_VISUAL_SCALE: f64 = 10.0;
-        // Центр системы ставим «над и впереди» игрока. Ориентир берём от точки
-        // появления: Up — от центра планеты (серверные оси, вверх = Y);
-        // Fwd — та же касательная, что строит клиент (мировой +X в UE = ось Z
-        // серверных осей, спроецированная на плоскость поверхности).
+        // Орбиты генератора умножаем, чтобы тела разошлись по игровому масштабу
+        // (сотни-тысячи км). Радиусы клиент задаёт по типу (читаемый размер диска).
+        const SYSTEM_ORBIT_SCALE: f64 = 150.0;
         let spawn = ou_sim::home_spawn(2.0);
         let up = {
             let l = spawn.length();
@@ -557,15 +555,14 @@ impl Server {
         fwd = fwd.sub(up.scale(d));
         let fl = fwd.length();
         fwd = if fl > 1e-6 { fwd.scale(1.0 / fl) } else { Vec3::new(1.0, 0.0, 0.0) };
-        // Центр: 120 км вверх и 400 км вперёд — система видна над горизонтом.
-        let center = up.scale(120_000.0).add(fwd.scale(400_000.0));
+        // Центр системы — далеко впереди и выше, вне домашней планеты (100 км).
+        let center = up.scale(300_000.0).add(fwd.scale(1_000_000.0));
 
         let sys = ou_sim::generate_system(0, ou_sim::HOME_PLANET_SEED, Vec3::ZERO);
         let bodies = sys
             .bodies
             .iter()
             .map(|b| {
-                // Позиция тела на орбите в момент 0, относительно центра системы.
                 let rel = sys
                     .body_position_at(b.id, 0.0)
                     .unwrap_or(b.pos)
@@ -580,8 +577,10 @@ impl Server {
                         ou_sim::BodyKind::AsteroidBelt => 4,
                         ou_sim::BodyKind::BlackHole => 5,
                     },
-                    pos: center.add(rel.scale(SYSTEM_VISUAL_SCALE)),
-                    radius: b.radius * SYSTEM_VISUAL_SCALE,
+                    // Позиция — серверные единицы (клиент переводит сам).
+                    pos: center.add(rel.scale(SYSTEM_ORBIT_SCALE)),
+                    // Радиус шлём «сырым»: клиент задаёт размер по типу тела.
+                    radius: b.radius,
                 }
             })
             .collect();

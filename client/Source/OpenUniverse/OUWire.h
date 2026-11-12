@@ -530,12 +530,9 @@ namespace OUWire
             if (!r.Varint(bid)) return false;
             b.Id = static_cast<uint32_t>(bid);
             if (!r.U8(b.Kind)) return false;
-            int64_t px = 0, py = 0, pz = 0;
-            if (!r.SVarint(px) || !r.SVarint(py) || !r.SVarint(pz)) return false;
-            // Позиции в серверных единицах: 1 провод = 1e-4 игровых единиц.
-            b.X = static_cast<float>(px * WireScale);
-            b.Y = static_cast<float>(py * WireScale);
-            b.Z = static_cast<float>(pz * WireScale);
+            // Позиция — f32 в серверных единицах (дальние тела не влезают в
+            // штатное квантование i32 ±214 км).
+            if (!r.F32(b.X) || !r.F32(b.Y) || !r.F32(b.Z)) return false;
             // f64 LE — радиус в серверных единицах.
             const uint8_t* rb = nullptr;
             if (!r.Take(8, rb)) return false;

@@ -639,7 +639,12 @@ mod wire {
                 for b in bodies {
                     w.varint(b.id as u64);
                     w.u8(b.kind);
-                    w.vec3_qv(b.pos);
+                    // ВАЖНО: позиции тел системы — за пределами ±214 км, которые
+                    // выражает штатное квантование (i32, 0.1 мм). Поэтому шлём их
+                    // как f32 в серверных единицах: диапазона и точности хватает.
+                    w.f32(b.pos.x as f32);
+                    w.f32(b.pos.y as f32);
+                    w.f32(b.pos.z as f32);
                     w.f64(b.radius);
                 }
             }
@@ -794,7 +799,7 @@ mod wire {
                     bodies.push(SystemBodyDto {
                         id: r.varint()? as u32,
                         kind: r.u8()?,
-                        pos: r.vec3_qv()?,
+                        pos: Vec3::new(r.f32()? as f64, r.f32()? as f64, r.f32()? as f64),
                         radius: r.f64()?,
                     });
                 }
