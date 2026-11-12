@@ -148,6 +148,51 @@ float AOUVoxelPlanet::SurfaceRadiusAt(const FVector& Direction) const
 	return Radius + HeightAt(Direction);
 }
 
+FVector AOUVoxelPlanet::HomeSpawnDirection()
+{
+	// Совпадает с сервером (`ou_sim::home_spawn_direction`): фиксированный
+	// обход сферы, ищем первое «сухое» направление с заметной, но не пиковой
+	// высотой. Детерминированно — сервер и клиент выберут одну точку.
+	AOUVoxelPlanet* Probe = NewObject<AOUVoxelPlanet>();
+	Probe->Radius = 100000.f;
+	Probe->Amplitude = 3000.f;
+	Probe->Seed = 0xC0FFEE;
+
+	const float Step = 0.15f;
+	const float SeaLevel = 0.30f;
+	for (float Phi = -1.2f; Phi <= 1.2f; Phi += Step)
+	{
+		for (float Theta = 0.f; Theta < 2.f * PI; Theta += Step)
+		{
+			const FVector D(
+				FMath::Cos(Phi) * FMath::Cos(Theta),
+				FMath::Sin(Phi),
+				FMath::Cos(Phi) * FMath::Sin(Theta));
+			const float H = Probe->HeightAt(D);
+			// Та же полоса, что на сервере: заметная суша, не вершина горы.
+			if (H > Probe->Amplitude * 0.15f && H < Probe->Amplitude * 0.9f)
+			{
+				return D.GetSafeNormal();
+			}
+		}
+	}
+	return FVector(0.f, 1.f, 0.f);
+}
+
+FVector AOUVoxelPlanet::HomeSpawn(float Clearance)
+{
+	const FVector Dir = HomeSpawnDirection();
+	// Центр планеты — в начале координат (совпадает с сервером).
+	const float Radius = 100000.f;      // 1000 ед. сервера × масштаб UE
+	const float Amplitude = 3000.f;     // 30 ед. сервера × масштаб UE
+	AOUVoxelPlanet* Probe = NewObject<AOUVoxelPlanet>();
+	Probe->Radius = Radius;
+	Probe->Amplitude = Amplitude;
+	Probe->Seed = 0xC0FFEE;
+	const float Surface = Probe->SurfaceRadiusAt(Dir);
+	return Dir * (Surface + Clearance);
+}
+
 void AOUVoxelPlanet::BuildPlanet()
 {
 	if (!Mesh)

@@ -81,10 +81,12 @@ $files = @(
   (Join-Path $server 'target\release\ou-market-sim.exe'),
   (Join-Path $server 'target\release\ou-build-demo.exe'),
   (Join-Path $server 'target\release\ou-dump-packet.exe'),
+  (Join-Path $server 'target\release\ou-health.exe'),
   (Join-Path $root 'tools\play.ps1'),
   (Join-Path $root 'tools\server.ps1'),
   (Join-Path $root 'tools\game.ps1'),
   (Join-Path $root 'tools\ou-common.ps1'),
+  (Join-Path $root 'tools\health.ps1'),
   (Join-Path $root 'launcher\OpenUniverseLauncher.exe'),
   (Join-Path $root 'launcher\banner.jpg'),
   (Join-Path $root 'assets\openuniverse.ico'),
@@ -132,6 +134,14 @@ if ($iscc) {
 # Отдельные .exe: чтобы на сайте каждая версия давала прямую ссылку на клиент,
 # а не только на архив. Только реальные исполняемые файлы.
 $exes = $files | Where-Object { $_ -match '\.exe$' -and (Test-Path $_) }
+
+# 3c. Самопроверка «сервер+клиент» → свежий status.json для сайта и лаунчера.
+Write-Host "--> самопроверка сервер+клиент" -ForegroundColor Yellow
+try {
+  & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'health.ps1') -Out (Join-Path $root 'status.json')
+} catch {
+  Write-Host "status.json не обновлён: $_" -ForegroundColor DarkYellow
+}
 
 # 4. Обновить releases.json (список версий для сайта — без GitHub API).
 # При -Publish обновим ПОСЛЕ публикации релиза, чтобы попал и свежий релиз.
@@ -196,8 +206,8 @@ if ($Publish) {
   Write-Host "--> обновляю releases.json" -ForegroundColor Yellow
   try {
     & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'releases-json.ps1')
-    & git -C $root add releases.json
-    & git -C $root commit -m "chore: releases.json $Version" | Out-Null
+    & git -C $root add releases.json status.json
+    & git -C $root commit -m "chore: releases.json $Version + status.json" | Out-Null
     & git -C $root push origin HEAD
   } catch {
     Write-Host "releases.json не обновлён: $_" -ForegroundColor DarkYellow

@@ -1,0 +1,61 @@
+name: health
+
+# Постоянная проверка «сервер + клиент» и публикация статуса на сайт.
+on:
+  push:
+    branches: [ main ]
+  schedule:
+    # Каждые 30 минут — держим статус на сайте свежим.
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: health-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  health:
+    name: Сервер + клиент + статус
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Установка Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Кэш cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            server/target
+          key: ${{ runner.os }}-cargo-health-${{ hashFiles('server/**/Cargo.toml') }}
+
+      - name: Самопроверка сервер+клиент
+        shell: pwsh
+        run: |
+          # Пишем status.json. Если проверка не прошла — не валим job сразу,
+          # а всё равно публикуем статус со значением ok=false.
+          ./tools/health.ps1 -Out status.json
+          if (Test-Path status.json) { Get-Content status.json }
+
+      - name: Проверка симуляции (тесты ядра)
+        working-directory: server
+        run: cargo test --workspace
+
+      - name: Опубликовать статус на GitHub Pages
+        shell: pwsh
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add status.json
+          if (git diff --cached --quiet) {
+            Write-Host "status.json без изменений"
+          } else {
+            git commit -m "chore(health): статус сервер+клиент $(Get-Date -Format s)"
+            git push
+          }

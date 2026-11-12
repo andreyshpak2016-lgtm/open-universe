@@ -5,6 +5,7 @@
 #include "OUDeterministic.h"
 #include "OUInterop.h"
 #include "OUOriginManager.h"
+#include "OUVoxelPlanet.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/InputComponent.h"
 #include "Camera/CameraComponent.h"
@@ -14,6 +15,37 @@
 #include "Kismet/GameplayStatics.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogOUShip, Log, All);
+
+namespace
+{
+	/** Радиус домашней планеты в серверных единицах (совпадает с сервером). */
+	constexpr double OUPlanetRadius = 1000.0;
+	/** Ускорение свободного падения у поверхности, ед/с² (как на сервере). */
+	constexpr double OUSurfaceGravity = 18.0;
+	/** До какого расстояния (в радиусах) действует гравитация. */
+	constexpr double OUGravityRangeRadii = 30.0;
+
+	/**
+	 * Гравитационное ускорение в точке (серверные оси).
+	 * Та же формула обратных квадратов, что в `ou_sim::gravity_at`.
+	 */
+	FVector GravityAt(const FVector& Pos)
+	{
+		const double Dist = Pos.Size();
+		if (Dist < 1e-6)
+		{
+			return FVector::ZeroVector;
+		}
+		if (Dist > OUPlanetRadius * OUGravityRangeRadii)
+		{
+			return FVector::ZeroVector; // космос
+		}
+		const FVector Up = Pos / Dist;
+		const double R = FMath::Max(Dist, OUPlanetRadius);
+		const double Ratio = OUPlanetRadius / R;
+		return Up * (-OUSurfaceGravity * Ratio * Ratio);
+	}
+}
 
 AOUShipPawn::AOUShipPawn()
 {
@@ -57,8 +89,11 @@ void AOUShipPawn::BeginPlay()
 	Super::BeginPlay();
 
 	State.Id = 1;
-	// Позицию храним в серверных осях, поэтому переводим из UE.
-	State.Position = OUInterop::UEToServer(GetActorLocation());
+	// Точка появления — на домашней планете (совпадает с сервером).
+	// Пока сервер не подтвердил позицию, ставим корабль на сушу у поверхности.
+	const FVector SpawnUE = AOUVoxelPlanet::HomeSpawn(80.f * OUInterop::ServerUnitToCm);
+	State.Position = OUInterop::UEToServer(SpawnUE);
+	SetActorLocation(SpawnUE);
 
 	// Находим клиент сети: свой компонент или на уровне.
 	if (!Net)
@@ -142,10 +177,12 @@ void AOUShipPawn::StepPrediction(const FOUInputFrame& Input, float Dt)
 		DetSin(Pitch),
 		DetCos(Pitch) * DetCos(Yaw));
 
-	// 3. Тяга + демпфирование.
+	// 3. Тяга + демпфирование + гравитация планеты (как на сервере:
+	//    `integrate_with_accel` добавляет внешнее ускорение до шага).
 	const FVector Thrust = Forward * (Input.Throttle * Flight.MaxThrust);
 	const FVector Damp = State.Velocity * (-Flight.LinearDamping);
-	State.Velocity += (Thrust + Damp) * Dt;
+	const FVector Gravity = GravityAt(State.Position);
+	State.Velocity += (Thrust + Damp + Gravity) * Dt;
 
 	// 4. Ограничение скорости.
 	const double Speed = State.Velocity.Size();
@@ -172,8 +209,8 @@ void AOUShipPawn::ApplyStateToActor()
 		SetActorLocation(PosUE);
 	}
 	// Ориентация: куб-меш смотрит вдоль +X, поэтому направляем его
-	// вектором «вперёд» (переведённым в оси UE).
-	SetActorRotation(OUInterop::ServerToUE(ForwardVector()).Rotation());
+	// вектором «вперёд» (переведённым в оси UE, без масштаба).
+	SetActorRotation(OUInterop::ServerDirToUE(ForwardVector()).Rotation());
 }
 
 FVector AOUShipPawn::ForwardVector() const
@@ -327,10 +364,10 @@ void AOUShipPawn::UpdateRemotePlayers()
 		AActor* Actor = GetOrCreateRemoteActor(E.Id);
 		if (Actor)
 		{
-			// E.Position — в серверных осях: переводим в UE.
+			// E.Position — в серверных осях: переводим в UE (с масштабом).
 			Actor->SetActorLocation(OUInterop::ServerToUE(E.Position));
 			// Чужие корабли смотрят туда же, куда летят.
-			const FVector FwdUE = OUInterop::ServerToUE(ForwardVectorOf(E));
+			const FVector FwdUE = OUInterop::ServerDirToUE(ForwardVectorOf(E));
 			Actor->SetActorRotation(FwdUE.Rotation());
 		}
 	}

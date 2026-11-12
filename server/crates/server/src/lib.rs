@@ -254,6 +254,16 @@ impl Server {
         entity_id
     }
 
+    /// Подключение игрока **на домашней планете** (точка появления на суше).
+    ///
+    /// Корабль привязывается к рельефу: работают гравитация и посадка.
+    /// Используется реальным сервером (`ou-netd`).
+    pub fn connect_on_planet(&mut self, player_id: NetId) -> NetId {
+        let entity_id = self.connect(player_id, ou_sim::home_spawn(80.0));
+        self.world.attach_terrain(entity_id, ou_sim::home_planet());
+        entity_id
+    }
+
     /// Продолжить нумерацию сущностей после загрузки мира из снимка,
     /// чтобы новые сущности не столкнулись с уже существующими.
     pub fn adopt_world(&mut self, world: World) {

@@ -528,6 +528,7 @@
     initLayers();
     if (ERD_clearAll) ERD_clearAll();
     renderVersions(LAST_VERSIONS);
+    loadStatus();
     applyRegistration();
   }
 
@@ -545,7 +546,56 @@
     }
   }
 
-  function boot() { initLang(); applyLang(); initTabs(); initLayers(); initERD(); loadLatestRelease(); loadVersions(); initRegister(); }
+  function boot() { initLang(); applyLang(); initTabs(); initLayers(); initERD(); loadLatestRelease(); loadStatus(); loadVersions(); initRegister(); }
+
+  /* ---------- Статус «сервер+клиент» (status.json) ---------- */
+  // Файл обновляется регулярной проверкой (GitHub Actions / tools/health.ps1).
+  // Показываем на сайте, чтобы игрок видел, работает ли инфраструктура.
+  function loadStatus() {
+    var panel = document.getElementById("status-panel");
+    if (!panel) return;
+    fetch("status.json", { cache: "no-store" })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (st) { renderStatus(st); })
+      .catch(function () { renderStatus(null); });
+  }
+
+  function renderStatus(st) {
+    var dot = document.getElementById("status-dot");
+    var verdict = document.getElementById("status-verdict");
+    var grid = document.getElementById("status-grid");
+    if (!grid) return;
+
+    var known = st && typeof st.ok !== "undefined";
+    var ok = known && st.ok;
+
+    if (dot) dot.className = "status-dot " + (known ? (ok ? "ok" : "fail") : "");
+    if (verdict) {
+      verdict.textContent = known ? (ok ? t("status.ok") : t("status.fail")) : t("status.unknown");
+      verdict.className = "status-verdict " + (known ? (ok ? "ok" : "fail") : "");
+    }
+
+    function item(label, good, value) {
+      var cls = good ? "st-ok" : "st-fail";
+      var mark = good ? "✓" : "✕";
+      var val = value ? (" <b>" + value + "</b>") : "";
+      return '<span class="status-item"><span class="' + cls + '">' + mark + '</span> ' +
+        label + val + '</span>';
+    }
+
+    if (!known) {
+      grid.innerHTML = '<span class="status-item">' + t("status.unknown") + '</span>';
+      return;
+    }
+    var html = "";
+    html += item(t("status.sServer"), !!st.server);
+    html += item(t("status.sClient"), !!st.client);
+    html += item(t("status.sSim"), !!st.simulation);
+    html += item(t("status.sSpawn"), !!st.spawnOnPlanet);
+    if (st.tick) html += '<span class="status-item">' + t("status.sTick") + ": <b>" + st.tick + "</b></span>";
+    if (st.latencyMs) html += '<span class="status-item">' + t("status.sLatency") + ": <b>" + Math.round(st.latencyMs) + " ms</b></span>";
+    grid.innerHTML = html;
+  }
 
   /* ---------- Все версии игры (из releases.json, без GitHub API) ---------- */
   // Статический файл рядом с сайтом: не зависит от лимита GitHub API (60/час)

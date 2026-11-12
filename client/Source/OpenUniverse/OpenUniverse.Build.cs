@@ -18,7 +18,10 @@ public class OpenUniverse : ModuleRules
 			"NetCore",        // сетевые типы
 			"Sockets",        // UDP-сокеты
 			"Networking",     // транспорт
-			"ProceduralMeshComponent" // воксельные планеты (меши)
+			"ProceduralMeshComponent", // воксельные планеты (меши)
+			"HTTP",           // чтение status.json (статус сервер+клиент)
+			"Json",           // разбор статуса
+			"JsonUtilities"
 		});
 
 		PrivateDependencyModuleNames.AddRange(new string[]

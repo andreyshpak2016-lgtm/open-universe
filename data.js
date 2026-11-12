@@ -34,6 +34,7 @@ window.PLAN = {
       "goal_en": "Client module on Unreal Engine 5: voxels, planets, floating origin.",
       "tasks": [
         { "title": "Каркас проекта на Unreal Engine 5 — модуль собран, открывается 3D-сцена", "title_en": "Unreal Engine 5 project skeleton — module builds, 3D scene opens", "status": "done" },
+        { "title": "Стартовое меню персонажа и выбор сервера", "title_en": "Startup character menu and server selection", "status": "done" },
         { "title": "Floating origin / double-precision (AUOOriginManager)", "title_en": "Floating origin / double-precision (AUOOriginManager)", "status": "done" },
         { "title": "Воксельный рендер с LOD (cube-to-sphere)", "title_en": "Voxel rendering with LOD (cube-to-sphere)", "status": "done" },
         { "title": "Планеты как сферы с искривлением воксель-сетки", "title_en": "Planets as spheres with a warped voxel grid", "status": "done" },
@@ -54,6 +55,8 @@ window.PLAN = {
         { "title": "Клиентский предсказатель и реконсиляция", "title_en": "Client prediction and reconciliation", "status": "done" },
         { "title": "Снапшот-интерполяция удалённых сущностей", "title_en": "Snapshot interpolation of remote entities", "status": "done" },
         { "title": "Ньютоновская модель полёта в космосе", "title_en": "Newtonian spaceflight model", "status": "done" },
+        { "title": "Гравитация планет: обратные квадраты у поверхности, инерция в космосе", "title_en": "Planet gravity: inverse-square near the surface, inertia in space", "status": "done" },
+        { "title": "Появление игрока на поверхности планеты (суша, ландшафт)", "title_en": "Player spawn on the planet surface (land, terrain)", "status": "done" },
         { "title": "Interest management (репликация только нужного)", "title_en": "Interest management (replicate only what is needed)", "status": "done" },
         { "title": "Базовые сетевые протоколы (бинарный + дельты + varint)", "title_en": "Base network protocols (binary + deltas + varint)", "status": "done" },
         { "title": "UE5-клиент в сети: подключение, ввод, реконсиляция, другие игроки", "title_en": "UE5 client online: connect, input, reconciliation, other players", "status": "done" }

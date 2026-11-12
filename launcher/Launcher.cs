@@ -337,6 +337,8 @@ namespace OpenUniverseLauncher
             "https://andreyshpak2016-lgtm.github.io/open-universe/releases.json";
         private const string RepoApi =
             "https://api.github.com/repos/andreyshpak2016-lgtm/open-universe/releases?per_page=10";
+        private const string StatusUrl =
+            "https://andreyshpak2016-lgtm.github.io/open-universe/status.json";
         private const string SiteUrl = "https://andreyshpak2016-lgtm.github.io/open-universe/";
 
         private const int WM_NCLBUTTONDOWN = 0xA1;
@@ -354,6 +356,13 @@ namespace OpenUniverseLauncher
         private string _lang = "ru";
         private string _installedDisplay;
         private string _latestGameDisplay;
+
+        // Статус «сервер+клиент» с сайта (status.json).
+        private bool _healthKnown;
+        private bool _healthOk;
+        private int _healthTick;
+        private double _healthLatencyMs;
+        private string _healthNotes = "";
 
         // ---------------- Локализация ----------------
         private static readonly Dictionary<string, string[]> S = new Dictionary<string, string[]>();
@@ -385,6 +394,12 @@ namespace OpenUniverseLauncher
             L("ver.installed", "Установлено", "Installed");
             L("ver.latest", "Доступно", "Available");
             L("ver.none", "не установлена", "not installed");
+
+            L("health.label", "Сервер+клиент", "Server+client");
+            L("health.checking", "проверяется…", "checking…");
+            L("health.ok", "работают", "working");
+            L("health.fail", "проблемы", "issues");
+            L("health.unknown", "нет данных", "no data");
 
             L("news.title", "Новости и обновления", "News and updates");
             L("news.loading", "Загружаю новости…", "Loading news…");
@@ -494,7 +509,8 @@ namespace OpenUniverseLauncher
 
             Text = T("app.title");
             FormBorderStyle = FormBorderStyle.None;
-            ClientSize = new Size(1000, 792);            StartPosition = FormStartPosition.CenterScreen;
+            ClientSize = new Size(1000, 792);
+            StartPosition = FormStartPosition.CenterScreen;
             MaximizeBox = false;
             MinimizeBox = true;
             DoubleBuffered = true;
@@ -511,7 +527,58 @@ namespace OpenUniverseLauncher
             {
                 await RefreshNewsAsync();
                 await CheckForUpdateAsync(silent: true);
+                await FetchHealthAsync();
             };
+        }
+
+        /// <summary>Прочитать status.json с сайта: статус «сервер+клиент».</summary>
+        private async Task FetchHealthAsync()
+        {
+            try
+            {
+                string json = await HttpGetAsync(StatusUrl);
+                var ser = new JavaScriptSerializer { MaxJsonLength = int.MaxValue };
+                var d = ser.Deserialize<Dictionary<string, object>>(json);
+                if (d == null)
+                {
+                    _healthKnown = false;
+                }
+                else
+                {
+                    _healthKnown = true;
+                    _healthOk = GetBool(d, "ok");
+                    object tick;
+                    if (d.TryGetValue("tick", out tick) && tick != null)
+                        _healthTick = Convert.ToInt32(tick);
+                    object lat;
+                    if (d.TryGetValue("latencyMs", out lat) && lat != null)
+                        _healthLatencyMs = Convert.ToDouble(lat);
+                    _healthNotes = GetStr(d, "notes") ?? "";
+                }
+            }
+            catch
+            {
+                _healthKnown = false;
+            }
+            _header.Invalidate();
+        }
+
+        private static bool GetBool(Dictionary<string, object> d, string key)
+        {
+            object v;
+            if (d.TryGetValue(key, out v) && v != null)
+            {
+                bool b;
+                if (bool.TryParse(v.ToString(), out b)) return b;
+            }
+            return false;
+        }
+
+        private static string GetStr(Dictionary<string, object> d, string key)
+        {
+            object v;
+            if (d.TryGetValue(key, out v) && v != null) return v.ToString();
+            return null;
         }
 
         // Закруглённые углы окна в Windows 11 (на старых ОС просто не сработает).
@@ -832,6 +899,31 @@ namespace OpenUniverseLauncher
                 Color lc = string.IsNullOrEmpty(_latestGameDisplay) ? Color.FromArgb(200, 212, 240)
                     : (upToDate ? Skin.Ok : Color.FromArgb(255, 200, 90));
                 TextRenderer.DrawText(g, T("ver.latest") + ": " + latest, f, new Point(177, 172), lc,
+                    TextFormatFlags.NoPrefix | TextFormatFlags.NoPadding);
+            }
+
+            // Статус сервер+клиент (с сайта).
+            string healthText;
+            Color healthColor;
+            if (!_healthKnown)
+            {
+                healthText = T("health.label") + ": " + T("health.checking");
+                healthColor = Color.FromArgb(200, 212, 240);
+            }
+            else if (_healthOk)
+            {
+                healthText = T("health.label") + ": " + T("health.ok") +
+                    string.Format(" (tick {0}, {1:0} ms)", _healthTick, _healthLatencyMs);
+                healthColor = Skin.Ok;
+            }
+            else
+            {
+                healthText = T("health.label") + ": " + T("health.fail");
+                healthColor = Color.FromArgb(255, 120, 130);
+            }
+            using (var f = new Font("Segoe UI", 9f))
+            {
+                TextRenderer.DrawText(g, healthText, f, new Point(177, 192), healthColor,
                     TextFormatFlags.NoPrefix | TextFormatFlags.NoPadding);
             }
 

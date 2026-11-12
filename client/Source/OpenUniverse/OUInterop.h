@@ -23,15 +23,32 @@
  */
 namespace OUInterop
 {
-	/** Вектор: серверные оси → UE. */
+	/**
+	 * Сколько сантиметров UE в одной серверной единице.
+	 *
+	 * Сервер считает мир в «единицах» (домашняя планета — радиус 1000).
+	 * UE работает в сантиметрах, и визуальная планета задана радиусом
+	 * 100000 см. Значит 1 единица сервера = 100 см = 1 м. Один и тот же
+	 * масштаб применяется и к позиции, и к размеру планеты — поэтому клиент
+	 * и сервер видят мир одинакового размера.
+	 */
+	constexpr double ServerUnitToCm = 100.0;
+
+	/** Вектор: серверные оси → UE (смена осей + масштаб). */
 	inline FVector ServerToUE(const FVector& V)
+	{
+		return FVector(V.Z, V.X, V.Y) * ServerUnitToCm;
+	}
+
+	/** Направление: серверные оси → UE (без масштаба, для ориентации). */
+	inline FVector ServerDirToUE(const FVector& V)
 	{
 		return FVector(V.Z, V.X, V.Y);
 	}
 
-	/** Вектор: UE → серверные оси (обратный перевод). */
+	/** Вектор: UE → серверные оси (обратный перевод, с масштабом). */
 	inline FVector UEToServer(const FVector& V)
 	{
-		return FVector(V.Y, V.Z, V.X);
+		return FVector(V.Y, V.Z, V.X) / ServerUnitToCm;
 	}
 }

@@ -20,7 +20,7 @@ pub mod terrain;
 
 /// Реэкспорт базовых типов, чтобы потребителям хватало одного крейта.
 pub use ou_protocol::Vec3;
-pub use terrain::{landing, Terrain, TerrainParams};
+pub use terrain::{landing, normalize, Terrain, TerrainParams};
 
 // ---------------------------------------------------------------------------
 // Детерминированная тригонометрия
@@ -111,10 +111,51 @@ impl Default for ShipParams {
     }
 }
 
-/// Ньютоновская модель полёта в вакууме.
+/// Ускорение свободного падения у поверхности планеты, ед/с².
+///
+/// Меньше тяги двигателя (`max_thrust`), чтобы корабль мог оторваться от
+/// поверхности, но гравитация при этом заметна.
+pub const SURFACE_GRAVITY: f64 = 18.0;
+
+/// До какого расстояния от центра планеты действует гравитация (в радиусах).
+/// Дальше — космос: поле почти нулевое, полёт инерционный.
+pub const GRAVITY_RANGE_RADII: f64 = 30.0;
+
+/// Гравитационное ускорение в точке `pos` от планеты `terrain` (0 — космос).
+///
+/// Модель обратных квадратов: `g = g0·(R/r)²`, где `R` — радиус планеты.
+/// Это даёт «планетную» физику у поверхности и почти нулевую — вдали, то есть
+/// космический инерционный полёт без смены кода.
+pub fn gravity_at(pos: Vec3, terrain: &Terrain) -> Vec3 {
+    let rel = pos.sub(terrain.center);
+    let dist = rel.length();
+    if dist < 1e-6 {
+        return Vec3::ZERO;
+    }
+    let surface = terrain.params.radius;
+    if dist > surface * GRAVITY_RANGE_RADII {
+        return Vec3::ZERO; // далеко от планеты — космос
+    }
+    let up = rel.scale(1.0 / dist);
+    // Не даём ускорению «взрываться» у центра: считаем от поверхности.
+    let r = dist.max(surface);
+    let ratio = surface / r;
+    let g = SURFACE_GRAVITY * ratio * ratio;
+    up.scale(-g)
+}
+
+/// Ньютоновская модель полёта с внешним ускорением (гравитация планеты).
 ///
 /// Детерминизм: только `+ - * /`, `sqrt` (детерминирован), `det_sin/det_cos`.
-pub fn integrate(state: &mut EntityState, input: &InputFrame, p: &ShipParams, dt: f64) {
+/// `external_accel` — ускорение, не зависящее от корабля (гравитация); для
+/// открытого космоса передавайте [`Vec3::ZERO`].
+pub fn integrate_with_accel(
+    state: &mut EntityState,
+    input: &InputFrame,
+    p: &ShipParams,
+    dt: f64,
+    external_accel: Vec3,
+) {
     // Углы хранятся как f32 для провода, но вычисляются в f64.
     let yaw0 = state.yaw as f64;
     let pitch0 = state.pitch as f64;
@@ -139,10 +180,12 @@ pub fn integrate(state: &mut EntityState, input: &InputFrame, p: &ShipParams, dt
     let sy = det_sin(yaw);
     let forward = Vec3::new(cp * sy, sp, cp * cy);
 
-    // 3. Тяга + демпфирование.
+    // 3. Тяга + демпфирование + гравитация.
     let thrust = forward.scale(input.throttle as f64 * p.max_thrust);
     let damp = state.vel.scale(-p.linear_damping);
-    state.vel = state.vel.add(thrust.add(damp).scale(dt));
+    state.vel = state
+        .vel
+        .add(thrust.add(damp).add(external_accel).scale(dt));
 
     // 4. Ограничение скорости.
     let speed = state.vel.length();
@@ -152,6 +195,76 @@ pub fn integrate(state: &mut EntityState, input: &InputFrame, p: &ShipParams, dt
 
     // 5. Позиция.
     state.pos = state.pos.add(state.vel.scale(dt));
+}
+
+/// Ньютоновская модель полёта в вакууме (без гравитации).
+///
+/// Детерминизм: только `+ - * /`, `sqrt` (детерминирован), `det_sin/det_cos`.
+pub fn integrate(state: &mut EntityState, input: &InputFrame, p: &ShipParams, dt: f64) {
+    integrate_with_accel(state, input, p, dt, Vec3::ZERO);
+}
+
+// ---------------------------------------------------------------------------
+// Домашняя планета: общий мир для сервера и клиента
+// ---------------------------------------------------------------------------
+
+/// Радиус домашней планеты в игровых единицах.
+pub const HOME_PLANET_RADIUS: f64 = 1000.0;
+/// Размах рельефа домашней планеты.
+pub const HOME_PLANET_AMPLITUDE: f64 = 30.0;
+/// Семя рельефа (совпадает у сервера и клиента).
+pub const HOME_PLANET_SEED: u64 = 0xC0FFEE;
+
+/// Домашняя планета: точка появления игроков. Центр — в начале координат мира.
+pub fn home_planet() -> Terrain {
+    Terrain::new(
+        Vec3::ZERO,
+        TerrainParams {
+            radius: HOME_PLANET_RADIUS,
+            amplitude: HOME_PLANET_AMPLITUDE,
+            sea_level: 0.30,
+            seed: HOME_PLANET_SEED,
+        },
+    )
+}
+
+/// Направление точки появления: первое «сухое» направление на поверхности.
+///
+/// Ищем детерминированно (фиксированный обход), чтобы сервер и клиент
+/// поставили корабль в **одну и ту же точку**. Точка выбирается на суше
+/// (высота выше уровня моря), чтобы игрок видел ландшафт, а не океан.
+pub fn home_spawn_direction() -> Vec3 {
+    let t = home_planet();
+    // Обход по сфере фиксированным шагом; результат не зависит от платформы.
+    const STEP: f64 = 0.15;
+    let mut phi = -1.2_f64;
+    while phi <= 1.2 {
+        let mut theta = 0.0_f64;
+        while theta < 2.0 * PI {
+            let d = Vec3::new(
+                det_cos(phi) * det_cos(theta),
+                det_sin(phi),
+                det_cos(phi) * det_sin(theta),
+            );
+            // Хотим заметную сушу, но не самую вершину горы.
+            let h = t.height(d);
+            if h > t.params.amplitude * 0.15 && h < t.params.amplitude * 0.9 {
+                return normalize(d);
+            }
+            theta += STEP;
+        }
+        phi += STEP;
+    }
+    // Запасной вариант: «вверх».
+    Vec3::new(0.0, 1.0, 0.0)
+}
+
+/// Точка появления над поверхностью домашней планеты (на `clearance` над землёй).
+pub fn home_spawn(clearance: f64) -> Vec3 {
+    let t = home_planet();
+    let dir = home_spawn_direction();
+    let surface = t.surface_radius(dir);
+    t.center.add(dir.scale(surface + clearance))
 }
 
 // ---------------------------------------------------------------------------
@@ -205,13 +318,18 @@ impl World {
     /// Один детерминированный шаг мира.
     pub fn step(&mut self, inputs: &BTreeMap<NetId, InputFrame>) {
         for (id, ent) in self.entities.iter_mut() {
+            // Внешнее ускорение: гравитация планеты, если сущность к ней привязана.
+            let g = match ent.terrain {
+                Some(t) => gravity_at(ent.state.pos, &t),
+                None => Vec3::ZERO,
+            };
             if let Some(input) = inputs.get(id) {
-                integrate(&mut ent.state, input, &self.params, TICK_DT);
+                integrate_with_accel(&mut ent.state, input, &self.params, TICK_DT, g);
                 ent.last_input_seq = input.seq;
             } else {
-                // Без ввода — только инерция (демпфирование).
+                // Без ввода — только инерция (демпфирование) и гравитация.
                 let neutral = InputFrame::neutral(ent.last_input_seq);
-                integrate(&mut ent.state, &neutral, &self.params, TICK_DT);
+                integrate_with_accel(&mut ent.state, &neutral, &self.params, TICK_DT, g);
             }
             // Столкновение с рельефом: если у сущности есть планета, корабль
             // не может «провалиться» под поверхность.
@@ -606,5 +724,76 @@ mod tests {
             // задаём относительно r (ошибка ~1e-8, умноженная на r).
             assert!((d - r).abs() < r * 1e-6, "t={t} d={d} r={r}");
         }
+    }
+
+    // --- Домашняя планета и гравитация ---
+
+    #[test]
+    fn home_spawn_is_on_land_and_repeatable() {
+        let a = home_spawn_direction();
+        let b = home_spawn_direction();
+        assert_eq!(a.to_wire(), b.to_wire(), "точка появления должна быть неизменной");
+        let t = home_planet();
+        // Точка появления — над сушей (иначе игрок рождается в океане).
+        assert!(t.height(a) > 0.0, "точка появления должна быть на суше");
+        let p = home_spawn(50.0);
+        // Над поверхностью, но не слишком высоко.
+        let dist = p.length();
+        assert!(dist > t.params.radius, "точка появления над поверхностью");
+        assert!(dist < t.params.radius + t.params.amplitude * 2.0 + 100.0);
+    }
+
+    #[test]
+    fn gravity_pulls_toward_planet_and_zero_in_space() {
+        let t = home_planet();
+        // У поверхности гравитация направлена к центру и заметна.
+        let dir = normalize(Vec3::new(0.2, 0.9, -0.1));
+        let surface = t.surface_radius(dir);
+        let pos = t.center.add(dir.scale(surface + 10.0));
+        let g = gravity_at(pos, &t);
+        assert!(g.length() > 1.0, "у поверхности гравитация должна быть заметной");
+        // Направление — внутрь (против «вверх»).
+        assert!(g.dot(dir) < 0.0, "гравитация тянет к центру планеты");
+        // Далеко в космосе — нулевая.
+        let far = t.center.add(dir.scale(t.params.radius * (GRAVITY_RANGE_RADII + 5.0)));
+        assert_eq!(gravity_at(far, &t), Vec3::ZERO);
+    }
+
+    #[test]
+    fn ship_falls_under_gravity_without_input() {
+        let mut w = World::new();
+        let t = home_planet();
+        let dir = normalize(Vec3::new(0.0, 1.0, 0.0));
+        let surface = t.surface_radius(dir);
+        let start = t.center.add(dir.scale(surface + 400.0));
+        let id = w.spawn(1, start);
+        w.attach_terrain(id, t);
+        let empty = BTreeMap::new();
+        for _ in 0..60 {
+            w.step(&empty);
+        }
+        let e = w.entities.get(&1).unwrap();
+        // Корабль приблизился к центру планеты (упал).
+        assert!(e.state.pos.length() < start.length(), "корабль должен падать");
+    }
+
+    #[test]
+    fn space_flight_is_inertial_without_gravity() {
+        // Без планеты (terrain = None) полёт инерционный: тяга разгоняет,
+        // затем корабль летит по прямой.
+        let mut w = World::new();
+        w.spawn(1, Vec3::ZERO);
+        let mut inputs = BTreeMap::new();
+        inputs.insert(1, InputFrame { seq: 1, throttle: 1.0, yaw: 0.0, pitch: 0.0, fire: false });
+        for _ in 0..30 {
+            w.step(&inputs);
+        }
+        let z_after_thrust = w.entities.get(&1).unwrap().state.pos.z;
+        let empty = BTreeMap::new();
+        for _ in 0..30 {
+            w.step(&empty);
+        }
+        let z_after_coast = w.entities.get(&1).unwrap().state.pos.z;
+        assert!(z_after_coast > z_after_thrust, "в космосе корабль летит по инерции");
     }
 }

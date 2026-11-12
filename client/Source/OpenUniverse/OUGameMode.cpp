@@ -4,6 +4,8 @@
 #include "OUShipPawn.h"
 #include "OUOriginManager.h"
 #include "OUVoxelPlanet.h"
+#include "OUPlayerMenuController.h"
+#include "OUPlayerMenuHUD.h"
 
 #include "Engine/World.h"
 #include "Engine/DirectionalLight.h"
@@ -23,19 +25,23 @@ DEFINE_LOG_CATEGORY_STATIC(LogOUGameMode, Log, All);
 namespace
 {
 	/**
-	 * Смещение планеты в осях UE.
+	 * Центр домашней планеты в осях UE.
 	 *
-	 * Корабль стартует в начале координат и смотрит вперёд (в UE это +X).
-	 * Планета — впереди (по +X) и ниже, так что её поверхность видна как
-	 * «вид с орбиты»: в кадре и кривизна горизонта, и корабль на её фоне.
+	 * Совпадает с сервером: домашняя планета расположена в начале координат
+	 * мира (`ou_sim::home_planet`). Игрок появляется на её поверхности, поэтому
+	 * планета — в центре сцены, а не в стороне.
 	 */
-	const FVector GPlanetOffset(260000.f, 60000.f, -120000.f);
+	const FVector GPlanetOffset(0.f, 0.f, 0.f);
 }
 
 AOUGameMode::AOUGameMode()
 {
 	// Игрок управляет кораблём; мир — общий, начало координат подвижное.
 	DefaultPawnClass = AOUShipPawn::StaticClass();
+	// Стартовое меню: персонаж и выбор сервера.
+	PlayerControllerClass = AOUPlayerMenuController::StaticClass();
+	// HUD рисует само меню.
+	HUDClass = AOUPlayerMenuHUD::StaticClass();
 }
 
 void AOUGameMode::StartPlay()
@@ -81,7 +87,9 @@ void AOUGameMode::RequestShot(const FString& Label)
 AActor* AOUGameMode::ChoosePlayerStart_Implementation(AController* Player)
 {
 	// На пустой карте PlayerStart отсутствует — тогда UE не создаёт Pawn и
-	// камеры нет (тот самый чёрный экран). Создаём точку старта сами.
+	// камеры нет (тот самый чёрный экран). Создаём точку старта сами,
+	// **на поверхности домашней планеты**, чтобы игрок появлялся на суше
+	// с ландшафтом, а не в пустоте.
 	AActor* Existing = Super::ChoosePlayerStart_Implementation(Player);
 	if (Existing)
 	{
@@ -93,10 +101,13 @@ AActor* AOUGameMode::ChoosePlayerStart_Implementation(AController* Player)
 	{
 		return nullptr;
 	}
+	// Точка на суше у поверхности (совпадает с сервером).
+	const FVector Spawn = AOUVoxelPlanet::HomeSpawn(200.f);
+	// Смотрим «вниз» на горизонт, чтобы в кадре был рельеф.
 	APlayerStart* Start = World->SpawnActor<APlayerStart>(
 		APlayerStart::StaticClass(),
-		FTransform(FRotator(-20.f, 0.f, 0.f), FVector::ZeroVector));
-	UE_LOG(LogOUGameMode, Log, TEXT("Создана точка старта PlayerStart"));
+		FTransform(FRotator(-15.f, 0.f, 0.f), Spawn));
+	UE_LOG(LogOUGameMode, Log, TEXT("Создана точка старта PlayerStart на планете: %s"), *Spawn.ToString());
 	return Start;
 }
 

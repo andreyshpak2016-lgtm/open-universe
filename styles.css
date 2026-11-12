@@ -309,8 +309,7 @@ section .lead { color: var(--muted); max-width: 760px; margin: 0 0 34px; }
 .nav-report { color: var(--txt) !important; border: 1px solid var(--panel-brd); padding: 6px 14px; border-radius: 999px; font-weight: 600; background: rgba(120,150,255,.12); }
 .nav-report:hover { text-decoration: none; background: rgba(120,150,255,.22); border-color: rgba(140,170,255,.5); }
 
-/* Переключатель языка (EN по умолчанию) */
-.lang-switch {
+/* Переключатель языка (EN по умолчанию) */.lang-switch {
   display: inline-flex; align-items: center; padding: 3px; gap: 2px;
   border: 1px solid var(--panel-brd); border-radius: 999px;
   background: rgba(12, 16, 36, .5);
@@ -324,6 +323,26 @@ section .lead { color: var(--muted); max-width: 760px; margin: 0 0 34px; }
 .lang-switch button:hover { color: #fff; }
 .lang-switch button.active { color: #04121a; background: linear-gradient(90deg, #6a8bff, #00e6d0); }
 #download { padding-top: 20px; }
+
+/* Статус «сервер+клиент» (из status.json) */
+.status-panel { padding: 20px 24px; margin-bottom: 18px; }
+.status-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.status-dot { width: 12px; height: 12px; border-radius: 50%; background: var(--todo); box-shadow: 0 0 10px rgba(120,150,255,.5); flex: 0 0 auto; }
+.status-dot.ok { background: var(--done); box-shadow: 0 0 12px var(--done); }
+.status-dot.fail { background: #ff6a78; box-shadow: 0 0 12px #ff6a78; }
+.status-title { font-weight: 800; font-size: 1.05rem; }
+.status-verdict { color: var(--muted); font-size: .9rem; }
+.status-verdict.ok { color: var(--done); font-weight: 700; }
+.status-verdict.fail { color: #ff6a78; font-weight: 700; }
+.status-grid { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
+.status-item {
+  display: flex; align-items: center; gap: 8px; font-size: .86rem;
+  padding: 7px 12px; border-radius: 999px;
+  background: rgba(120,150,255,.08); border: 1px solid var(--panel-brd);
+}
+.status-item b { color: var(--txt); font-weight: 700; }
+.status-item .st-ok { color: var(--done); }
+.status-item .st-fail { color: #ff6a78; }
 .download-grid { display: grid; grid-template-columns: 1.35fr 1fr; gap: 18px; align-items: start; }
 .dl-card { padding: 26px; }
 .dl-head { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }

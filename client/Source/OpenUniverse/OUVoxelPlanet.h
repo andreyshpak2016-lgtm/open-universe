@@ -53,7 +53,7 @@ public:
 
 	/** Уровень детализации. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Open Universe|Planet")
-	EOUVoxelLod Lod = EOUVoxelLod::Mid;
+	EOUVoxelLod Lod = EOUVoxelLod::Close;
 
 	/** Построить меш планеты. */
 	UFUNCTION(BlueprintCallable, CallInEditor, Category = "Open Universe|Planet")
@@ -70,6 +70,19 @@ public:
 	/** Радиус поверхности в направлении. */
 	UFUNCTION(BlueprintPure, Category = "Open Universe|Planet")
 	float SurfaceRadiusAt(const FVector& Direction) const;
+
+	/**
+	 * Направление точки появления на домашней планете (суша).
+	 *
+	 * Совпадает с сервером (`ou_sim::home_spawn_direction`): тот же обход и
+	 * та же формула — сервер и клиент ставят корабль в одну точку.
+	 */
+	UFUNCTION(BlueprintPure, Category = "Open Universe|Planet")
+	static FVector HomeSpawnDirection();
+
+	/** Точка появления над поверхностью (на `Clearance` над землёй), оси UE. */
+	UFUNCTION(BlueprintPure, Category = "Open Universe|Planet")
+	static FVector HomeSpawn(float Clearance);
 
 protected:
 	virtual void BeginPlay() override;

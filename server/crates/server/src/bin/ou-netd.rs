@@ -51,7 +51,6 @@ fn main() {
     let mut build_results: Vec<(SocketAddr, BuildReason)> = Vec::new();
     // Продолжаем нумерацию игроков с учётом загруженного мира.
     let mut next_player: NetId = server.next_entity_id();
-    let mut next_spawn = 0.0;
 
     let tick_dt = Duration::from_secs_f64(TICK_DT);
     let start = Instant::now();
@@ -70,13 +69,19 @@ fn main() {
                 Ok(Some((from, msg))) => match msg {
                     Message::ClientHello { name, .. } => {
                         if !clients.contains_key(&from) {
-                            // Разносим точки спавна по оси −Z, чтобы игроки сближались.
-                            let spawn = Vec3::new(0.0, 0.0, -2000.0 - next_spawn);
-                            next_spawn += 400.0;
-                            let entity = server.connect(next_player, spawn);
+                            // Игрок появляется на домашней планете (на суше),
+                            // с привязкой к рельефу: гравитация и посадка.
+                            let entity = server.connect_on_planet(next_player);
                             clients.insert(from, next_player);
+                            let p = server
+                                .world
+                                .entities
+                                .get(&entity)
+                                .map(|e| e.state.pos)
+                                .unwrap_or(Vec3::ZERO);
                             println!(
-                                "игрок {next_player} «{name}» вошёл с {from} (сущность {entity})"
+                                "игрок {next_player} «{name}» вошёл с {from} (сущность {entity}, спавн {:.0},{:.0},{:.0})",
+                                p.x, p.y, p.z
                             );
                             // Сообщаем клиенту, какой сущностью он управляет.
                             net.send_to(token, from, &Message::ServerWelcome { entity }).ok();
