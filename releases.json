@@ -1,12 +1,29 @@
 {
-    "generated":  "2026-11-12T00:10:48Z",
+    "generated":  "2026-11-12T00:13:18Z",
     "repo":  "andreyshpak2016-lgtm/open-universe",
     "releases":  [
                      {
-                         "tag":  "v0.25.5",
-                         "name":  "Open Universe 0.25.5",
-                         "date":  "2026-11-12T00:10:45Z",
+                         "tag":  "v0.25.6",
+                         "name":  "Open Universe 0.25.6",
+                         "date":  "2026-11-12T00:13:15Z",
                          "latest":  true,
+                         "prerelease":  false,
+                         "size":  201126794,
+                         "gameSetup":  "https://github.com/andreyshpak2016-lgtm/open-universe/releases/download/v0.25.5/OpenUniverse-Game-Setup-0.25.5.exe",
+                         "gameSetupTag":  "v0.25.5",
+                         "setup":  null,
+                         "setupSize":  0,
+                         "launcher":  "https://github.com/andreyshpak2016-lgtm/open-universe/releases/download/v0.25.6/OpenUniverseLauncher.exe",
+                         "launcherSize":  31232,
+                         "client":  null,
+                         "zip":  null,
+                         "page":  "https://github.com/andreyshpak2016-lgtm/open-universe/releases/tag/v0.25.6"
+                     },
+                     {
+                         "tag":  "v0.25.5",
+                         "name":  "Open Universe v0.25.5",
+                         "date":  "2026-11-12T00:10:45Z",
+                         "latest":  false,
                          "prerelease":  false,
                          "size":  201126794,
                          "gameSetup":  "https://github.com/andreyshpak2016-lgtm/open-universe/releases/download/v0.25.5/OpenUniverse-Game-Setup-0.25.5.exe",
