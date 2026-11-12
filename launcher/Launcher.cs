@@ -60,11 +60,17 @@ namespace OpenUniverseLauncher
         public string Notes;
         public string GameSetupUrl;
         public string GameSetupName;
+        public string GameSetupTag;
         public double GameSetupSizeMb;
+        public string LauncherUrl;
     }
 
     internal sealed class LauncherForm : Form
     {
+        // Основной источник — статический releases.json на сайте (без лимитов API).
+        // Резерв — GitHub API (ограничен 60 запросами в час на IP).
+        private const string RepoJson =
+            "https://andreyshpak2016-lgtm.github.io/open-universe/releases.json";
         private const string RepoApi =
             "https://api.github.com/repos/andreyshpak2016-lgtm/open-universe/releases?per_page=10";
         private const string SiteUrl = "https://andreyshpak2016-lgtm.github.io/open-universe/";
@@ -422,22 +428,23 @@ namespace OpenUniverseLauncher
             _news.Text = "Загружаю новости…";
             try
             {
-                string json = await HttpGetAsync(RepoApi);
                 _releases.Clear();
-                _releases.AddRange(ParseReleases(json));
+                _releases.AddRange(await LoadReleasesAsync());
 
-                if (_releases.Count == 0) { _news.Text = "Новостей пока нет."; return; }
+                if (_releases.Count == 0)
+                {
+                    _news.Text = "Не удалось получить список версий.\r\nПроверьте интернет-соединение.";
+                    return;
+                }
 
                 var sb = new StringBuilder();
                 int shown = 0;
                 foreach (var r in _releases)
                 {
-                    sb.AppendLine("● " + r.Tag + "    " + r.Date.ToString("dd.MM.yyyy"));
+                    sb.AppendLine("● " + r.Tag + "    " + (r.Date == DateTime.MinValue ? "" : r.Date.ToString("dd.MM.yyyy")));
                     if (!string.IsNullOrWhiteSpace(r.Notes))
                     {
-                        string notes = r.Notes.Trim();
-                        // Показываем первые строки, без служебной разметки.
-                        var lines = notes.Split('\n');
+                        var lines = r.Notes.Trim().Split('\n');
                         int printed = 0;
                         foreach (var raw in lines)
                         {
@@ -469,35 +476,50 @@ namespace OpenUniverseLauncher
             try
             {
                 if (_releases.Count == 0)
+                    _releases.AddRange(await LoadReleasesAsync());
+                if (_releases.Count == 0)
                 {
-                    string json = await HttpGetAsync(RepoApi);
-                    _releases.AddRange(ParseReleases(json));
+                    if (!silent) SetStatus("Не удалось получить список версий (нет сети?).", true);
+                    return;
                 }
-                if (_releases.Count == 0) { if (!silent) SetStatus("Релизы не найдены.", true); return; }
 
                 var latest = _releases[0];
                 _version.Text = "последняя версия: " + latest.Tag;
 
+                // Установщик ищем в ближайшем релизе, где он есть:
+                // последние облегчённые релизы могут содержать только лаунчер.
+                var installable = FindInstallable(_releases);
+                if (installable == null)
+                {
+                    if (!silent) SetStatus("В релизах нет установщика игры.", true);
+                    UpdatePlayButton();
+                    return;
+                }
+
+                // Версия игры — это версия установщика (может быть старше последнего релиза,
+                // если свежие релизы содержат только лаунчер).
+                string gameTag = string.IsNullOrEmpty(installable.GameSetupTag)
+                    ? installable.Tag : installable.GameSetupTag;
                 string installed = InstalledVersion();
-                if (!string.IsNullOrEmpty(installed) && installed == latest.Tag)
+                if (!string.IsNullOrEmpty(installed) && installed == gameTag)
                 {
-                    if (!silent) SetStatus("Установлена последняя версия (" + installed + ").", false);
+                    if (!silent) SetStatus("Установлена актуальная игра (" + installed + ").", false);
                     UpdatePlayButton();
                     return;
                 }
 
-                if (string.IsNullOrEmpty(latest.GameSetupUrl))
+                string what;
+                if (string.IsNullOrEmpty(installed))
                 {
-                    if (!silent) SetStatus("В последнем релизе нет установщика игры.", true);
-                    UpdatePlayButton();
-                    return;
+                    what = "Игра не установлена.\r\n\r\nСкачать игру " + gameTag +
+                           " (" + installable.GameSetupSizeMb.ToString("0") + " МБ)?";
+                }
+                else
+                {
+                    what = "Доступно обновление игры " + gameTag +
+                           " (установлена " + installed + ").\r\n\r\nСкачать обновление?";
                 }
 
-                string what = string.IsNullOrEmpty(installed)
-                    ? "Игра не установлена.\r\n\r\nСкачать игру " + latest.Tag +
-                      " (" + latest.GameSetupSizeMb.ToString("0") + " МБ)?"
-                    : "Доступна новая версия " + latest.Tag +
-                      " (установлена " + installed + ").\r\n\r\nСкачать обновление?";
                 if (MessageBox.Show(this, what, "Обновление игры",
                         MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
                 {
@@ -505,7 +527,7 @@ namespace OpenUniverseLauncher
                     return;
                 }
 
-                await DownloadAndRunInstallerAsync(latest);
+                await DownloadAndRunInstallerAsync(installable);
             }
             catch (Exception ex)
             {
@@ -515,7 +537,10 @@ namespace OpenUniverseLauncher
 
         private async Task DownloadAndRunInstallerAsync(ReleaseInfo rel)
         {
-            string file = Path.Combine(Path.GetTempPath(), rel.GameSetupName);
+            string name = string.IsNullOrEmpty(rel.GameSetupName)
+                ? "OpenUniverse-Game-Setup.exe" : rel.GameSetupName;
+            rel.GameSetupName = name;
+            string file = Path.Combine(Path.GetTempPath(), name);
             _progress.Visible = true;
             _progress.Value = 0;
 
@@ -634,23 +659,81 @@ namespace OpenUniverseLauncher
             catch { }
         }
 
-        // ---------------- Сеть и разбор JSON ----------------
+        // ---------------- Сеть и разбор ----------------
+
+        /// <summary>Загрузить список релизов: сначала с сайта, потом GitHub API.</summary>
+        private async Task<List<ReleaseInfo>> LoadReleasesAsync()
+        {
+            var list = new List<ReleaseInfo>();
+            // 1) Статический файл сайта — без лимитов и работает всегда.
+            try
+            {
+                string json = await HttpGetAsync(RepoJson);
+                list = ParseSiteJson(json);
+                if (list.Count > 0) return list;
+            }
+            catch { /* перейдём к API */ }
+
+            // 2) GitHub API — резерв.
+            try
+            {
+                string json = await HttpGetAsync(RepoApi);
+                list = ParseApiJson(json);
+            }
+            catch { }
+            return list;
+        }
 
         private static async Task<string> HttpGetAsync(string url)
         {
             using (var client = new HttpClient())
             {
-                client.DefaultRequestHeaders.UserAgent.ParseAdd("OpenUniverseLauncher/1.1");
+                client.DefaultRequestHeaders.UserAgent.ParseAdd("OpenUniverseLauncher/1.2");
                 return await client.GetStringAsync(url);
             }
         }
 
-        /// <summary>Разбор ответа GitHub. Nested JSON — через JavaScriptSerializer.</summary>
-        private static List<ReleaseInfo> ParseReleases(string json)
+        /// <summary>Разбор releases.json сайта (свой простой формат).</summary>
+        private static List<ReleaseInfo> ParseSiteJson(string json)
+        {
+            var list = new List<ReleaseInfo>();
+            var ser = new JavaScriptSerializer { MaxJsonLength = int.MaxValue };
+            var root = ser.Deserialize<Dictionary<string, object>>(json);
+            object relObj;
+            if (root == null || !root.TryGetValue("releases", out relObj)) return list;
+            var arr = relObj as object[];
+            if (arr == null) return list;
+
+            foreach (var item in arr)
+            {
+                var d = item as Dictionary<string, object>;
+                if (d == null) continue;
+                var info = new ReleaseInfo
+                {
+                    Tag = Str(d, "tag"),
+                    Name = Str(d, "name"),
+                    Notes = Str(d, "name"),
+                    GameSetupUrl = Str(d, "gameSetup"),
+                    GameSetupTag = Str(d, "gameSetupTag"),
+                    LauncherUrl = Str(d, "launcher")
+                };
+                DateTime dt;
+                if (DateTime.TryParse(Str(d, "date"), out dt)) info.Date = dt;
+                object size;
+                if (d.TryGetValue("size", out size) && size != null)
+                    info.GameSetupSizeMb = Convert.ToDouble(size) / 1048576.0;
+                list.Add(info);
+            }
+            return list;
+        }
+
+        /// <summary>Разбор ответа GitHub API (вложенный JSON).</summary>
+        private static List<ReleaseInfo> ParseApiJson(string json)
         {
             var list = new List<ReleaseInfo>();
             var ser = new JavaScriptSerializer { MaxJsonLength = int.MaxValue };
             var root = ser.Deserialize<object[]>(json);
+            if (root == null) return list;
             foreach (var item in root)
             {
                 var rel = item as Dictionary<string, object>;
@@ -672,21 +755,32 @@ namespace OpenUniverseLauncher
                         var asset = a as Dictionary<string, object>;
                         if (asset == null) continue;
                         string name = Str(asset, "name");
-                        if (name != null && name.StartsWith("OpenUniverse-Game-Setup", StringComparison.Ordinal)
+                        if (name == null) continue;
+                        if (name.StartsWith("OpenUniverse-Game-Setup", StringComparison.Ordinal)
                             && name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
                         {
-                            info.GameSetupName = name;
                             info.GameSetupUrl = Str(asset, "browser_download_url");
                             object size;
                             if (asset.TryGetValue("size", out size) && size != null)
                                 info.GameSetupSizeMb = Convert.ToDouble(size) / 1048576.0;
-                            break;
+                        }
+                        else if (name.Equals("OpenUniverseLauncher.exe", StringComparison.OrdinalIgnoreCase))
+                        {
+                            info.LauncherUrl = Str(asset, "browser_download_url");
                         }
                     }
                 }
                 list.Add(info);
             }
             return list;
+        }
+
+        /// <summary>Ближайший релиз, в котором есть установщик игры.</summary>
+        private static ReleaseInfo FindInstallable(List<ReleaseInfo> rels)
+        {
+            foreach (var r in rels)
+                if (!string.IsNullOrEmpty(r.GameSetupUrl)) return r;
+            return null;
         }
 
         private static string Str(Dictionary<string, object> d, string key)

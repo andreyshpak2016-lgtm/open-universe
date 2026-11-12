@@ -23,18 +23,30 @@ $rels = $json | ConvertFrom-Json
 $latestTag = ""
 if ($rels.Count -gt 0) { $latestTag = $rels[0].tag_name }
 
+# Сначала проходим от старых к новым и запоминаем последний встреченный
+# установщик игры: свежие релизы часто содержат только лаунчер, и лаунчеру
+# нужен установщик из ближайшего более СТАРОГО релиза.
+$ordered = @($rels)              # API отдаёт новейшие первыми
+[array]::Reverse($ordered)       # теперь от старых к новым
+$carried = @{}                   # tag -> @{ url; size; tag }
+$lastUrl = $null; $lastSize = 0; $lastTag = $null
+foreach ($rel in $ordered) {
+  $assets = @($rel.assets)
+  $gs = ($assets | Where-Object { $_.name -match '^OpenUniverse-Game-Setup.*\.exe$' } | Select-Object -First 1)
+  if ($gs) { $lastUrl = $gs.browser_download_url; $lastSize = [int64]$gs.size; $lastTag = $rel.tag_name }
+  $carried[$rel.tag_name] = [PSCustomObject]@{ Url = $lastUrl; Size = $lastSize; Tag = $lastTag }
+}
+
 $list = @()
 foreach ($rel in $rels) {
   $assets = @($rel.assets)
-  # Установщик ГРАФИЧЕСКОЙ игры — главное, что нужно игроку.
-  $gameSetup = ($assets | Where-Object { $_.name -match '^OpenUniverse-Game-Setup.*\.exe$' } | Select-Object -First 1)
-  # Установщик консольного ядра (сервер + клиенты, без графики).
-  $setup  = ($assets | Where-Object { $_.name -match '^OpenUniverse-Setup.*\.exe$' } | Select-Object -First 1)
-  $client = ($assets | Where-Object { $_.name -match '^ou-netclient.*\.exe$' } | Select-Object -First 1)
-  # Лаунчер — то, что скачивают первым.
-  $launcher = ($assets | Where-Object { $_.name -eq 'OpenUniverseLauncher.exe' } | Select-Object -First 1)
-  $zip    = ($assets | Where-Object { $_.name -match '\.zip$' } | Select-Object -First 1)
-  $primary = if ($gameSetup) { $gameSetup } elseif ($setup) { $setup } elseif ($client) { $client } else { $zip }
+  $setup     = ($assets | Where-Object { $_.name -match '^OpenUniverse-Setup.*\.exe$' } | Select-Object -First 1)
+  $client    = ($assets | Where-Object { $_.name -match '^ou-netclient.*\.exe$' } | Select-Object -First 1)
+  $launcher  = ($assets | Where-Object { $_.name -eq 'OpenUniverseLauncher.exe' } | Select-Object -First 1)
+  $zip       = ($assets | Where-Object { $_.name -match '\.zip$' } | Select-Object -First 1)
+  $carry     = $carried[$rel.tag_name]
+
+  $primary = if ($launcher) { $launcher } elseif ($setup) { $setup } elseif ($zip) { $zip }
 
   $list += [PSCustomObject]@{
     tag          = $rel.tag_name
@@ -42,8 +54,9 @@ foreach ($rel in $rels) {
     date         = $rel.published_at
     latest       = ($rel.tag_name -eq $latestTag)
     prerelease   = [bool]$rel.prerelease
-    size         = if ($primary) { [int64]$primary.size } else { 0 }
-    gameSetup    = if ($gameSetup) { $gameSetup.browser_download_url } else { $null }
+    size         = if ($carry -and $carry.Size) { [int64]$carry.Size } elseif ($primary) { [int64]$primary.size } else { 0 }
+    gameSetup    = if ($carry) { $carry.Url } else { $null }
+    gameSetupTag = if ($carry) { $carry.Tag } else { $null }
     setup        = if ($setup) { $setup.browser_download_url } else { $null }
     setupSize    = if ($setup) { [int64]$setup.size } else { 0 }
     launcher     = if ($launcher) { $launcher.browser_download_url } else { $null }
