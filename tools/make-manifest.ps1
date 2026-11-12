@@ -90,9 +90,10 @@ if ($MakePatch) {
     $stage = Join-Path $env:TEMP ("ou-patch-" + [guid]::NewGuid().ToString("N"))
     New-Item -ItemType Directory -Force -Path $stage | Out-Null
     foreach ($e in $changed) {
-      $src = Join-Path $Root ($e.p -replace '/', '\')
+      $src = Join-Path $GameDir ($e.p -replace '/', '\')
       $dst = Join-Path $stage ($e.p -replace '/', '\')
-      New-Item -ItemType Directory -Force -Path (Split-Path $dst -Parent) | Out-Null
+      $parent = Split-Path $dst -Parent
+      if ($parent) { New-Item -ItemType Directory -Force -Path $parent | Out-Null }
       Copy-Item -Path $src -Destination $dst -Force
     }
     Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $patch -Force
