@@ -153,6 +153,8 @@ namespace OpenUniverseLauncher
             Add("status.checking", "Проверяю обновления…", "Checking for updates…");
             Add("status.upToDate", "Установлена актуальная версия {0} — обновление не требуется.",
                 "You already have the latest version {0} — no update needed.");
+            Add("status.updateAvail", "Доступно обновление: установлено {0}, новая версия {1}. Нажмите «Проверить обновления».",
+                "Update available: installed {0}, new version {1}. Press “Check for updates”.");
             Add("status.notInstalled", "Игра не установлена. Доступна версия {0}.",
                 "The game is not installed. Version {0} is available.");
             Add("status.noInstaller", "В релизах нет установщика игры.", "No game installer found in the releases.");
@@ -855,13 +857,15 @@ namespace OpenUniverseLauncher
                     return;
                 }
 
-                // Автопроверка при запуске только показывает статус, без вопроса.
+                // Автопроверка при запуске только показывает статус, без вопроса
+                // и без скачивания — установку запускает кнопка.
                 if (silent)
                 {
                     if (string.IsNullOrEmpty(_installedDisplay))
                         SetStatus(string.Format(T("status.notInstalled"), Pretty(gameTag)), false);
                     else
-                        SetStatus(string.Format(T("status.upToDate"), Pretty(gameTag)), false);
+                        SetStatus(string.Format(T("status.updateAvail"),
+                            Pretty(_installedDisplay), Pretty(gameTag)), false);
                     UpdatePlayButton();
                     return;
                 }
