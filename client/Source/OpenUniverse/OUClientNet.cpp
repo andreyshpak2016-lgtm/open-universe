@@ -177,6 +177,56 @@ void UOUClientNet::SendInput(const FOUInputFrame& Input)
 	SendPacket(Body);
 }
 
+void UOUClientNet::SendBuild(int32 Entity, int32 Action, int32 X, int32 Y, int32 Z, int32 R, int32 G, int32 B)
+{
+	if (!IsConnected())
+	{
+		return;
+	}
+	// Тело (тег 6): [tag][entity u32][action u8][x i32][y i32][z i32][r][g][b].
+	TArray<uint8> Body;
+	Body.Add(6);
+	auto AddU32 = [&Body](uint32 V)
+	{
+		for (int32 i = 0; i < 4; ++i) { Body.Add(static_cast<uint8>((V >> (8 * i)) & 0xFF)); }
+	};
+	auto AddI32 = [&Body](int32 V)
+	{
+		const uint32 U = static_cast<uint32>(V);
+		for (int32 i = 0; i < 4; ++i) { Body.Add(static_cast<uint8>((U >> (8 * i)) & 0xFF)); }
+	};
+	AddU32(static_cast<uint32>(Entity));
+	Body.Add(static_cast<uint8>(Action & 0xFF));
+	AddI32(X); AddI32(Y); AddI32(Z);
+	Body.Add(static_cast<uint8>(FMath::Clamp(R, 0, 255)));
+	Body.Add(static_cast<uint8>(FMath::Clamp(G, 0, 255)));
+	Body.Add(static_cast<uint8>(FMath::Clamp(B, 0, 255)));
+	SendPacket(Body);
+}
+
+void UOUClientNet::SendBuildAck(int32 Entity, int64 Revision)
+{
+	if (!IsConnected())
+	{
+		return;
+	}
+	// Тело (тег 10): [tag][entity varint][revision varint].
+	TArray<uint8> Body;
+	Body.Add(10);
+	auto AddVarint = [&Body](uint64 V)
+	{
+		while (V >= 0x80)
+		{
+			Body.Add(static_cast<uint8>(V) | 0x80);
+			V >>= 7;
+		}
+		Body.Add(static_cast<uint8>(V));
+	};
+	AddVarint(static_cast<uint64>(Entity));
+	AddVarint(static_cast<uint64>(Revision));
+	SendPacket(Body);
+}
+
 void UOUClientNet::Poll()
 {
 	if (!Socket)
@@ -236,6 +286,37 @@ void UOUClientNet::Poll()
 				LatestSnapshot = Snap;
 				++SnapshotsReceived;
 				State = EOUConnState::Connected;
+			}
+		}
+		else if (Body[0] == OUWire::TagBuildEdit) // авторитетная правка конструкции
+		{
+			OUWire::BuildEdit E;
+			if (OUWire::DecodeBuildEdit(Body.GetData(), static_cast<size_t>(Body.Num()), E))
+			{
+				FOUBuildEdit Edit;
+				Edit.Entity = static_cast<int32>(E.Entity);
+				Edit.Author = static_cast<int32>(E.Author);
+				Edit.Action = static_cast<int32>(E.Action);
+				Edit.X = E.X; Edit.Y = E.Y; Edit.Z = E.Z;
+				Edit.R = E.R; Edit.G = E.G; Edit.B = E.B;
+				Edit.Revision = static_cast<int64>(E.Revision);
+				PendingBuildEdits.Add(Edit);
+			}
+		}
+		else if (Body[0] == OUWire::TagBuildAccess) // права на конструкцию
+		{
+			OUWire::BuildAccess A;
+			if (OUWire::DecodeBuildAccess(Body.GetData(), static_cast<size_t>(Body.Num()), A))
+			{
+				bCanBuild = A.CanEdit;
+			}
+		}
+		else if (Body[0] == OUWire::TagBuildResult) // результат моей команды
+		{
+			OUWire::BuildResult R;
+			if (OUWire::DecodeBuildResult(Body.GetData(), static_cast<size_t>(Body.Num()), R))
+			{
+				bLastBuildAccepted = R.Accepted;
 			}
 		}
 	}

@@ -207,6 +207,53 @@ int main(int argc, char** argv)
         Check(!OUWire::DecodeWelcome(wbad, 1, entity), "чужой тег отклонён");
     }
 
+    // --- 8. Правка конструкции (сервер → клиент, авторитетное строительство) ---
+    std::printf("\n=== 8. Правка конструкции (build_edit, tag 9) ===\n");
+    {
+        // Формат: entity(varint), author(varint), action(u8),
+        //         coord(3×i32 LE), color(3×u8), revision(varint).
+        std::vector<uint8_t> b;
+        b.push_back(OUWire::TagBuildEdit);
+        OUWire::push_varint(b, 3);      // entity
+        OUWire::push_varint(b, 5);      // author
+        b.push_back(OUWire::BuildPaint);
+        auto push_i32 = [&b](int32_t v) {
+            const uint32_t u = static_cast<uint32_t>(v);
+            b.push_back(u & 0xFF);
+            b.push_back((u >> 8) & 0xFF);
+            b.push_back((u >> 16) & 0xFF);
+            b.push_back((u >> 24) & 0xFF);
+        };
+        push_i32(-4); push_i32(7); push_i32(0);
+        b.push_back(11); b.push_back(22); b.push_back(33);
+        OUWire::push_varint(b, 128);
+
+        OUWire::BuildEdit e;
+        Check(OUWire::DecodeBuildEdit(b.data(), b.size(), e), "правка конструкции разобрана");
+        Check(e.Entity == 3 && e.Author == 5 && e.Action == OUWire::BuildPaint,
+              "entity/author/action совпали");
+        Check(e.X == -4 && e.Y == 7 && e.Z == 0, "координаты вокселя совпали");
+        Check(e.R == 11 && e.G == 22 && e.B == 33, "цвет совпал");
+        Check(e.Revision == 128, "ревизия (varint) совпала");
+
+        // Права на редактирование (tag 12).
+        std::vector<uint8_t> ac;
+        ac.push_back(OUWire::TagBuildAccess);
+        OUWire::push_varint(ac, 4);
+        ac.push_back(1);
+        OUWire::BuildAccess acc;
+        Check(OUWire::DecodeBuildAccess(ac.data(), ac.size(), acc) && acc.Entity == 4 && acc.CanEdit,
+              "права на конструкцию разобраны (can_edit=1)");
+
+        // Подтверждение правки (тег 10) кодируется и оборачивается.
+        const std::vector<uint8_t> ack = OUWire::EncodeBuildAck(2, 300);
+        Check(ack[0] == OUWire::TagBuildAck, "тег подтверждения = 10");
+        OUWire::Reader ra{ack.data(), ack.size(), 1};
+        uint64_t ack_entity = 0, ack_rev = 0;
+        Check(ra.Varint(ack_entity) && ra.Varint(ack_rev) && ack_entity == 2 && ack_rev == 300,
+              "поля подтверждения сохранены");
+    }
+
     std::printf("\n=== Итог ===\n");
     if (g_failures == 0)
     {

@@ -144,7 +144,9 @@ impl Server {
         };
         match res {
             Ok(()) => {
-                // Записываем правку и готовим её к рассылке всем, кроме автора.
+                // Записываем правку и готовим её к рассылке ВСЕМ, включая автора:
+                // клиент рисует только то, что сервер авторитетно принял. Иначе
+                // автор не увидел бы свой блок (а при отказе — нарисовал бы лишнее).
                 c.revision += 1;
                 let edit = BuildEdit {
                     entity: cmd.entity,
@@ -154,10 +156,8 @@ impl Server {
                     color: ou_protocol::Color(cmd.color.0, cmd.color.1, cmd.color.2),
                     revision: c.revision,
                 };
-                for (player, slot) in c.pending.iter_mut() {
-                    if *player != author {
-                        slot.1.push(edit);
-                    }
+                for (_player, slot) in c.pending.iter_mut() {
+                    slot.1.push(edit);
                 }
                 BuildReason::Ok
             }

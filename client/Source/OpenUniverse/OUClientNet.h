@@ -37,6 +37,45 @@ struct FOUSnapshot
 	TArray<FOUEntityState> Entities;
 };
 
+/** Правка конструкции, пришедшая от сервера (авторитетное строительство). */
+USTRUCT(BlueprintType)
+struct FOUBuildEdit
+{
+	GENERATED_BODY()
+
+	/** Конструкция, к которой относится правка. */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Build")
+	int32 Entity = 0;
+
+	/** Кто применил. */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Build")
+	int32 Author = 0;
+
+	/** Действие: 0 — поставить, 1 — удалить, 2 — покрасить. */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Build")
+	int32 Action = 0;
+
+	/** Координаты вокселя в сетке конструкции. */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Build")
+	int32 X = 0;
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Build")
+	int32 Y = 0;
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Build")
+	int32 Z = 0;
+
+	/** Цвет (0..255). */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Build")
+	int32 R = 0;
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Build")
+	int32 G = 0;
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Build")
+	int32 B = 0;
+
+	/** Номер правки (для подтверждения). */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Build")
+	int64 Revision = 0;
+};
+
 /**
  * Сетевой клиент Open Universe.
  *
@@ -93,6 +132,18 @@ public:
 	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Net")
 	int32 SnapshotsReceived = 0;
 
+	/** Очередь авторитетных правок конструкций от сервера (забирается актором). */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Build")
+	TArray<FOUBuildEdit> PendingBuildEdits;
+
+	/** Последний результат команды строительства: принята ли. */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Build")
+	bool bLastBuildAccepted = false;
+
+	/** Может ли этот клиент строить (права на свою конструкцию). */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Build")
+	bool bCanBuild = true;
+
 	/** Подключиться к серверу. */
 	UFUNCTION(BlueprintCallable, Category = "Open Universe|Net")
 	bool Connect();
@@ -108,6 +159,14 @@ public:
 	/** Обработать входящие пакеты (вызывать раз в кадр). */
 	UFUNCTION(BlueprintCallable, Category = "Open Universe|Net")
 	void Poll();
+
+	/** Отправить команду строительства (поставить/удалить/покрасить воксель). */
+	UFUNCTION(BlueprintCallable, Category = "Open Universe|Build")
+	void SendBuild(int32 Entity, int32 Action, int32 X, int32 Y, int32 Z, int32 R, int32 G, int32 B);
+
+	/** Подтвердить серверу приём правок до этой ревизии (чтобы не слал снова). */
+	UFUNCTION(BlueprintCallable, Category = "Open Universe|Build")
+	void SendBuildAck(int32 Entity, int64 Revision);
 
 	/** Подключён ли клиент. */
 	UFUNCTION(BlueprintPure, Category = "Open Universe|Net")

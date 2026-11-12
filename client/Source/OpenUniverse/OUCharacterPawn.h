@@ -130,6 +130,17 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Open Universe|Build")
 	void PlaceBuildBlock();
 
+	/** Применить авторитетные правки конструкций, пришедшие от сервера. */
+	UFUNCTION(BlueprintCallable, Category = "Open Universe|Build")
+	void ApplyServerBuildEdits();
+
+	/** Мировая позиция центра вокселя по его координате в сетке конструкции. */
+	FVector VoxelWorld(const FVector& ServerCoord) const;
+
+	/** Сетевой клиент (для отправки команд строительства). */
+	UPROPERTY(BlueprintReadWrite, Category = "Open Universe|Build")
+	class UOUClientNet* Net = nullptr;
+
 	/** Название типа блока (для меню). */
 	static FString BuildPartName(int32 Index);
 
@@ -165,6 +176,9 @@ protected:
 	/** Выбор следующего/предыдущего блока в палитре. */
 	void OnBuildNext();
 	void OnBuildPrev();
+
+	/** Найти сетевой компонент (на корабле) для отправки команд строительства. */
+	void ResolveNet();
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Open Universe|Character")
 	UCapsuleComponent* Capsule = nullptr;
@@ -265,4 +279,13 @@ private:
 
 	/** Таймер авто-строительства, с. */
 	float BuildTimer = 0.f;
+
+	/** Воксели, уже применённые с сервера: ключ «(x,y,z)» → актор блока. */
+	TMap<FIntVector, TObjectPtr<AOUBuildBlock>> ServerBlocks;
+
+	/** Начало отсчёта сетки конструкции (в серверных единицах). */
+	FVector BuildOriginServer = FVector::ZeroVector;
+
+	/** Крайняя применённая ревизия правок (для подтверждения серверу). */
+	int64 LastAppliedRevision = 0;
 };

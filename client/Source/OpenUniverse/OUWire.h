@@ -46,6 +46,10 @@ namespace OUWire
         TagBuild = 6,
         TagBuildResult = 7,
         TagWelcome = 8,
+        TagBuildEdit = 9,
+        TagBuildAck = 10,
+        TagBuildGrant = 11,
+        TagBuildAccess = 12,
     };
 
     /// Действия редактора конструкций.
@@ -109,6 +113,24 @@ namespace OUWire
     {
         bool Accepted = false;
         BuildReason Reason = BuildOk;
+    };
+
+    /// Применённая правка конструкции (сервер → клиент, тег 9).
+    struct BuildEdit
+    {
+        uint32_t Entity = 0;
+        uint32_t Author = 0;
+        BuildAction Action = BuildPlace;
+        int32_t X = 0, Y = 0, Z = 0;
+        uint8_t R = 0, G = 0, B = 0;
+        uint64_t Revision = 0;
+    };
+
+    /// Права на редактирование конструкции (сервер → клиент, тег 12).
+    struct BuildAccess
+    {
+        uint32_t Entity = 0;
+        bool CanEdit = false;
     };
 
     // --- Низкоуровневое чтение ---
@@ -288,7 +310,55 @@ namespace OUWire
         return true;
     }
 
+    /// Разобрать правку конструкции (tag 9).
+    ///
+    /// Формат: entity(varint), author(varint), action(u8),
+    ///         coord(3×i32 LE), color(3×u8), revision(varint).
+    inline bool DecodeBuildEdit(const uint8_t* body, size_t len, BuildEdit& out)
+    {
+        Reader r{body, len, 0};
+        uint8_t tag = 0;
+        if (!r.U8(tag) || tag != TagBuildEdit) return false;
+        uint64_t entity = 0, author = 0;
+        if (!r.Varint(entity) || !r.Varint(author)) return false;
+        out.Entity = static_cast<uint32_t>(entity);
+        out.Author = static_cast<uint32_t>(author);
+        uint8_t action = 0;
+        if (!r.U8(action)) return false;
+        out.Action = static_cast<BuildAction>(action);
+        if (!r.I32(out.X) || !r.I32(out.Y) || !r.I32(out.Z)) return false;
+        if (!r.U8(out.R) || !r.U8(out.G) || !r.U8(out.B)) return false;
+        if (!r.Varint(out.Revision)) return false;
+        return true;
+    }
+
+    /// Разобрать права на редактирование (tag 12).
+    inline bool DecodeBuildAccess(const uint8_t* body, size_t len, BuildAccess& out)
+    {
+        Reader r{body, len, 0};
+        uint8_t tag = 0;
+        if (!r.U8(tag) || tag != TagBuildAccess) return false;
+        uint64_t entity = 0;
+        if (!r.Varint(entity)) return false;
+        out.Entity = static_cast<uint32_t>(entity);
+        uint8_t can = 0;
+        if (!r.U8(can)) return false;
+        out.CanEdit = can != 0;
+        return true;
+    }
+
     // --- Кодирование (для тестов и клиента) ---
+
+    /// Дописать LEB128-varint в буфер.
+    inline void push_varint(std::vector<uint8_t>& out, uint64_t v)
+    {
+        while (v >= 0x80)
+        {
+            out.push_back(static_cast<uint8_t>(v) | 0x80);
+            v >>= 7;
+        }
+        out.push_back(static_cast<uint8_t>(v));
+    }
 
     /// Собрать команду строительства.
     inline std::vector<uint8_t> EncodeBuild(const BuildCommand& cmd)
@@ -314,6 +384,16 @@ namespace OUWire
         out.push_back(cmd.R);
         out.push_back(cmd.G);
         out.push_back(cmd.B);
+        return out;
+    }
+
+    /// Собрать подтверждение правки (клиент → сервер, тег 10).
+    inline std::vector<uint8_t> EncodeBuildAck(uint32_t entity, uint64_t revision)
+    {
+        std::vector<uint8_t> out;
+        out.push_back(TagBuildAck);
+        push_varint(out, entity);
+        push_varint(out, revision);
         return out;
     }
 

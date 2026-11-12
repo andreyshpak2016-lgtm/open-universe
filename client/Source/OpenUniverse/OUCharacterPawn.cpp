@@ -373,10 +373,27 @@ void AOUCharacterPawn::PlaceBuildBlock()
 	{
 		return;
 	}
-	// Ставим блок в сетку перед персонажем: точка привязана к рельефу.
+
+	// Онлайн: команду строительства отправляем на СЕРВЕР — он авторитетно
+	// проверяет (целостность, права, лимиты) и рассылает правку всем. Блок
+	// появится, когда придёт авторитетная правка (ApplyServerBuildEdits).
+	if (Net && Net->IsConnected() && Net->OwnEntityId != 0)
+	{
+		// Следующая ячейка в ряду (ядро конструкции — (0,0,0) на сервере).
+		const int32 X = BuiltCount + 1;
+		const FLinearColor Col = BuildPartColor(BuildSelection);
+		Net->SendBuild(Net->OwnEntityId, /*Place=*/0, X, 0, 0,
+			FMath::RoundToInt(Col.R * 255.f),
+			FMath::RoundToInt(Col.G * 255.f),
+			FMath::RoundToInt(Col.B * 255.f));
+		++BuiltCount;
+		UE_LOG(LogOUChar, Log, TEXT("Строительство: отправлена команда на сервер (ячейка %d,0,0)"), X);
+		return;
+	}
+
+	// Оффлайн (без сервера) — ставим локально, как раньше, для одиночной игры.
 	const float BlockSize = 120.f;
 	const FVector Up = GetActorLocation().GetSafeNormal();
-	// «Вперёд-вправо» по касательной — блок стоит рядом, не закрывая персонажа.
 	FVector Fwd = GetActorForwardVector();
 	Fwd = FVector::VectorPlaneProject(Fwd, Up).GetSafeNormal();
 	if (Fwd.IsNearlyZero())
@@ -385,9 +402,7 @@ void AOUCharacterPawn::PlaceBuildBlock()
 	}
 	const FVector Right = FVector::CrossProduct(Up, Fwd).GetSafeNormal();
 	FVector Pos = GetActorLocation() + Fwd * (BlockSize * 2.2f) + Right * (BlockSize * 1.2f);
-	// Каждый следующий блок — дальше в ряд (видно, что их несколько).
 	Pos += Fwd * (BlockSize * 1.1f * BuiltCount);
-	// Привязка к поверхности планеты (как игрок): блок не висит и не тонет.
 	const FVector Dir = Pos.GetSafeNormal();
 	Pos = Dir * (SurfaceRadius(Dir) + BlockSize * 0.5f);
 
@@ -399,9 +414,94 @@ void AOUCharacterPawn::PlaceBuildBlock()
 		Block->BlockColor = BuildPartColor(BuildSelection);
 		Block->ApplyLook();
 		++BuiltCount;
-		UE_LOG(LogOUChar, Log, TEXT("Построен блок «%s» #%d в %s"),
-			*BuildPartName(BuildSelection), BuiltCount, *Pos.ToString());
+		UE_LOG(LogOUChar, Log, TEXT("Построен блок «%s» #%d (оффлайн)"),
+			*BuildPartName(BuildSelection), BuiltCount);
 	}
+}
+
+FVector AOUCharacterPawn::VoxelWorld(const FVector& ServerCoord) const
+{
+	// ВАЖНО: базис считаем в ОСЯХ UE (как и «вперёд» персонажа), иначе сетка
+	// окажется повёрнутой относительно игрока: серверные оси (y — вверх) и
+	// UE-оси (z — вверх) не совпадают, и проекция «мирового +X» даёт разное.
+	const double VoxelCm = 150.0;   // 1.5 м на воксель в см UE
+	const FVector BaseUE = AOUVoxelPlanet::HomeSpawn(2.0f);   // UE-см
+	const FVector UpUE = BaseUE.GetSafeNormal();
+	FVector FwdUE = FVector::VectorPlaneProject(FVector(1.f, 0.f, 0.f), UpUE).GetSafeNormal();
+	if (FwdUE.IsNearlyZero())
+	{
+		FwdUE = FVector::VectorPlaneProject(FVector::ForwardVector, UpUE).GetSafeNormal();
+	}
+	const FVector RightUE = FVector::CrossProduct(UpUE, FwdUE).GetSafeNormal();
+	// Якорь — сразу перед персонажем (он в 2200 см от базы, смотрит по FwdUE).
+	const FVector CharUE = BaseUE + FwdUE * 2200.f;
+	const FVector AnchorUE = CharUE + FwdUE * (6.0 * VoxelCm);
+	return AnchorUE
+		+ FwdUE * (ServerCoord.X * VoxelCm)
+		+ UpUE * (ServerCoord.Y * VoxelCm + VoxelCm * 0.5)
+		+ RightUE * (ServerCoord.Z * VoxelCm);
+}
+
+void AOUCharacterPawn::ApplyServerBuildEdits()
+{
+	if (!Net || Net->PendingBuildEdits.Num() == 0)
+	{
+		return;
+	}
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+	// Забираем очередь правок (сервер уже авторитетно их применил).
+	int64 MaxRev = LastAppliedRevision;
+	for (const FOUBuildEdit& E : Net->PendingBuildEdits)
+	{
+		const FIntVector Key(E.X, E.Y, E.Z);
+		if (E.Action == 0) // Place
+		{
+			TObjectPtr<AOUBuildBlock>* Found = ServerBlocks.Find(Key);
+			if (!Found)
+			{
+				const FVector Pos = VoxelWorld(FVector(E.X, E.Y, E.Z));
+				AOUBuildBlock* Block = World->SpawnActor<AOUBuildBlock>(
+					AOUBuildBlock::StaticClass(), FTransform(FRotator::ZeroRotator, Pos));
+				if (Block)
+				{
+					Block->BlockSize = 150.f;   // 1.5 м — совпадает с шагом сетки
+					Block->BlockColor = FLinearColor(E.R / 255.f, E.G / 255.f, E.B / 255.f);
+					Block->ApplyLook();
+					ServerBlocks.Add(Key, Block);
+					UE_LOG(LogOUChar, Log, TEXT("Авторитетный блок (%d,%d,%d) от сервера"), E.X, E.Y, E.Z);
+				}
+			}
+		}
+		else if (E.Action == 1) // Remove
+		{
+			if (TObjectPtr<AOUBuildBlock>* Found = ServerBlocks.Find(Key))
+			{
+				if (*Found) { (*Found)->Destroy(); }
+				ServerBlocks.Remove(Key);
+			}
+		}
+		else if (E.Action == 2) // Paint
+		{
+			if (TObjectPtr<AOUBuildBlock>* Found = ServerBlocks.Find(Key))
+			{
+				if (*Found)
+				{
+					(*Found)->BlockColor = FLinearColor(E.R / 255.f, E.G / 255.f, E.B / 255.f);
+					(*Found)->ApplyLook();
+				}
+			}
+		}
+		MaxRev = FMath::Max(MaxRev, E.Revision);
+	}
+	LastAppliedRevision = MaxRev;
+	// Подтверждаем приём — сервер не будет слать эти правки снова.
+	const int32 Entity = (Net->OwnEntityId != 0) ? Net->OwnEntityId : 1;
+	Net->SendBuildAck(Entity, MaxRev);
+	Net->PendingBuildEdits.Reset();
 }
 
 void AOUCharacterPawn::FireWeapon()
@@ -606,6 +706,10 @@ void AOUCharacterPawn::Tick(float DeltaSeconds)
 	const float HSpd = FVector::VectorPlaneProject(Velocity, Up).Size();
 	AnimateLocomotion(DeltaSeconds, HSpd);
 
+	// Авторитетное строительство: применяем правки, пришедшие от сервера.
+	ResolveNet();
+	ApplyServerBuildEdits();
+
 	// Оружие: кулдаун, угасание вспышки, автоогонь для тестов.
 	FireTimer = FMath::Max(0.f, FireTimer - DeltaSeconds);
 	if (MuzzleTimer > 0.f)
@@ -634,6 +738,27 @@ void AOUCharacterPawn::Tick(float DeltaSeconds)
 			BuildTimer = 0.f;
 			SelectBuildPart(BuiltCount);
 			PlaceBuildBlock();
+		}
+	}
+}
+
+void AOUCharacterPawn::ResolveNet()
+{
+	if (Net)
+	{
+		return;
+	}
+	// Сетевой компонент живёт на корабле (носителе соединения).
+	if (Ship && Ship->Net)
+	{
+		Net = Ship->Net;
+		return;
+	}
+	if (AOUShipPawn* S = Ship)
+	{
+		if (UOUClientNet* Found = S->FindComponentByClass<UOUClientNet>())
+		{
+			Net = Found;
 		}
 	}
 }
