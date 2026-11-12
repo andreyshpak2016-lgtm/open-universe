@@ -29,8 +29,11 @@ Thumbs.db
 launcher/OpenUniverseLauncher.exe
 launcher/AssemblyVersion.cs
 
-# Скриншоты проверки UE-клиента (см. AGENTS.md)   
+# пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ UE-пїЅпїЅпїЅпїЅпїЅпїЅпїЅ (пїЅпїЅ. AGENTS.md)   
 shots/
+
+# Р”РµРјРѕ-РєР°СЂС‚Р° Р»Р°РЅРґС€Р°С„С‚Р° вЂ” РіРµРЅРµСЂРёСЂСѓРµС‚СЃСЏ tools/make-landscape.ps1 (~30 РњР‘).
+client/Content/Maps/OULandscapeDemo.umap
 
 client/testdata/test_wire.exe
 client/testdata/test_wire.obj
