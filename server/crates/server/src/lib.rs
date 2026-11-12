@@ -259,7 +259,8 @@ impl Server {
     /// Корабль привязывается к рельефу: работают гравитация и посадка.
     /// Используется реальным сервером (`ou-netd`).
     pub fn connect_on_planet(&mut self, player_id: NetId) -> NetId {
-        let entity_id = self.connect(player_id, ou_sim::home_spawn(80.0));
+        // Небольшой зазор над поверхностью: гравитация мягко опустит корабль.
+        let entity_id = self.connect(player_id, ou_sim::home_spawn(2.0));
         self.world.attach_terrain(entity_id, ou_sim::home_planet());
         entity_id
     }

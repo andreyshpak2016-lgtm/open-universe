@@ -6,6 +6,7 @@
 #include "OUInterop.h"
 #include "OUOriginManager.h"
 #include "OUVoxelPlanet.h"
+#include "OUPlayerMenuController.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/InputComponent.h"
 #include "Camera/CameraComponent.h"
@@ -69,11 +70,13 @@ AOUShipPawn::AOUShipPawn()
 	ShipMesh->SetSimulatePhysics(false);
 	ShipMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 
-	// Камера: штанга назад-вверх, вид от третьего лица.
+	// Камера: штанга назад-вверх, вид от третьего лица. Наклон вниз задаём
+	// заметным, чтобы на поверхности планеты в кадр попадал ландшафт, а не
+	// только небо.
 	SpringArm = CreateDefaultSubobject<USpringArmComponent>(TEXT("SpringArm"));
 	SpringArm->SetupAttachment(RootComponent);
-	SpringArm->TargetArmLength = 2500.f;
-	SpringArm->SetRelativeRotation(FRotator(-20.f, 0.f, 0.f));
+	SpringArm->TargetArmLength = 4200.f;
+	SpringArm->SetRelativeRotation(FRotator(-22.f, 0.f, 0.f));
 	SpringArm->bDoCollisionTest = false;
 	SpringArm->bUsePawnControlRotation = false;
 
@@ -90,8 +93,9 @@ void AOUShipPawn::BeginPlay()
 
 	State.Id = 1;
 	// Точка появления — на домашней планете (совпадает с сервером).
-	// Пока сервер не подтвердил позицию, ставим корабль на сушу у поверхности.
-	const FVector SpawnUE = AOUVoxelPlanet::HomeSpawn(80.f * OUInterop::ServerUnitToCm);
+	// Пока сервер не подтвердил позицию, ставим корабль на сушу у поверхности
+	// (невысоко — чтобы сразу был виден ландшафт). Clearance — в единицах сервера.
+	const FVector SpawnUE = AOUVoxelPlanet::HomeSpawn(2.0f);
 	State.Position = OUInterop::UEToServer(SpawnUE);
 	SetActorLocation(SpawnUE);
 
@@ -193,7 +197,45 @@ void AOUShipPawn::StepPrediction(const FOUInputFrame& Input, float Dt)
 
 	// 5. Позиция.
 	State.Position += State.Velocity * Dt;
+
+	// 6. Столкновение с поверхностью планеты — как `resolve_ground` на сервере.
+	// Без этого гравитация проваливает корабль сквозь планету, и он «не на
+	// планете». Корабль не может быть ниже поверхности.
+	//
+	// ВАЖНО: State.Position — в СЕРВЕРНЫХ единицах (радиус планеты = 1000),
+	// поэтому и поверхность считаем в тех же единицах: у актора Radius и
+	// Amplitude в сантиметрах UE (100000/3000), приводим их делением на масштаб.
+	const FVector Rel = State.Position;                    // серверные оси
+	const double Dist = Rel.Size();
+	if (Dist > 1e-6)
+	{
+		const FVector UpS = Rel / Dist;                    // серверные оси
+		AOUVoxelPlanet* Planet = Cast<AOUVoxelPlanet>(
+			UGameplayStatics::GetActorOfClass(GetWorld(), AOUVoxelPlanet::StaticClass()));
+		// Поверхность в серверных единицах (Radius/Amplitude актора → у.е.).
+		const double ToWorld = 1.0 / OUInterop::ServerUnitToCm;
+		const double SurfaceR = Planet
+			? Planet->SurfaceRadiusAtServer(UpS) * ToWorld
+			: 1000.0;
+		if (Dist < SurfaceR)
+		{
+			// Прижимаем к поверхности и гасим радиальную (внутрь) скорость.
+			State.Position = UpS * SurfaceR;
+			const double VNorm = State.Velocity.Dot(UpS);
+			if (VNorm < 0.0)
+			{
+				State.Velocity -= UpS * VNorm;
+			}
+		}
+	}
+
 	ApplyStateToActor();
+}
+
+AOUPlayerMenuController* AOUShipPawn::GetMenuController() const
+{
+	// Контроллер игрока может быть меню; если да — отдаём его.
+	return Cast<AOUPlayerMenuController>(GetController());
 }
 
 void AOUShipPawn::ApplyStateToActor()
@@ -208,9 +250,25 @@ void AOUShipPawn::ApplyStateToActor()
 	{
 		SetActorLocation(PosUE);
 	}
-	// Ориентация: куб-меш смотрит вдоль +X, поэтому направляем его
-	// вектором «вперёд» (переведённым в оси UE, без масштаба).
-	SetActorRotation(OUInterop::ServerDirToUE(ForwardVector()).Rotation());
+
+	// Ориентация. На поверхности планеты «верх» — это радиус от центра, а не
+	// глобальный +Z. Поэтому строим поворот так, чтобы локальный «верх» смотрел
+	// от центра планеты, а «вперёд» — по касательной. Иначе камера смотрит
+	// в небо и ландшафта не видно.
+	const FVector FwdUE = OUInterop::ServerDirToUE(ForwardVector()).GetSafeNormal();
+	const FVector UpRadial = PosUE.GetSafeNormal();          // от центра планеты
+	const FVector NearSurface = UpRadial.SizeSquared() > 0.5f ? UpRadial : FVector::UpVector;
+
+	// Вычитаем радиальную составляющую из «вперёд»: остаётся касательная.
+	FVector Tangent = FwdUE - NearSurface * FVector::DotProduct(FwdUE, NearSurface);
+	if (Tangent.SizeSquared() < 0.01f)
+	{
+		// Вперёд почти совпал с радиусом — берём любую касательную.
+		Tangent = FVector::CrossProduct(NearSurface, FVector::RightVector);
+	}
+	Tangent = Tangent.GetSafeNormal();
+
+	SetActorRotation(FRotationMatrix::MakeFromXZ(Tangent, NearSurface).Rotator());
 }
 
 FVector AOUShipPawn::ForwardVector() const
@@ -249,6 +307,17 @@ void AOUShipPawn::ApplyAuthoritative(const FOUEntityState& Authoritative)
 void AOUShipPawn::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
+
+	// Пока открыто стартовое меню (персонаж/сервер) — корабль стоит на месте и
+	// ввод не отправляется: игрок сначала выбирает персонажа и сервер.
+	if (AOUPlayerMenuController* Menu = GetMenuController())
+	{
+		if (Menu->IsMenuOpen())
+		{
+			ApplyStateToActor();
+			return;
+		}
+	}
 
 	// Фиксированный шаг: сеть и предсказание идут на 30 Гц, рендер — быстрее.
 	const int32 Steps = FMath::Max(1, FMath::RoundToInt(DeltaSeconds / FixedDeltaSeconds));

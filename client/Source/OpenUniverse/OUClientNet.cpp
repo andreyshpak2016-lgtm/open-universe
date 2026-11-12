@@ -20,7 +20,8 @@ UOUClientNet::UOUClientNet()
 void UOUClientNet::BeginPlay()
 {
 	Super::BeginPlay();
-	Connect();
+	// Подключение запускает меню персонажа/сервера (кнопка «Подключиться»),
+	// а не сам компонент: иначе игра стартовала бы сразу, минуя меню.
 }
 
 void UOUClientNet::EndPlay(const EEndPlayReason::Type Reason)
@@ -259,10 +260,13 @@ bool UOUClientNet::ParseSnapshot(const TArray<uint8>& Body, FOUSnapshot& Out)
 	{
 		FOUEntityState S;
 		S.Id = E.Id;
-		// Храним координаты как есть (серверные оси). Перевод в оси UE
-		// делается при применении к актору — так State совпадает с сервером.
-		S.Position = FVector(E.X, E.Y, E.Z);
-		S.Velocity = FVector(E.VX, E.VY, E.VZ);
+		// OUWire уже перевёл провод в сантиметры UE (WireToCm), но оси остались
+		// серверными. State хранит позицию в СЕРВЕРНЫХ ЕДИНИЦАХ (1 ед. = 100 см),
+		// как и вся физика предсказания, — поэтому делим на масштаб. Иначе
+		// ApplyStateToActor умножит ещё раз на 100 (двойной масштаб).
+		const double ToWorld = 1.0 / OUInterop::ServerUnitToCm;
+		S.Position = FVector(E.X, E.Y, E.Z) * ToWorld;
+		S.Velocity = FVector(E.VX, E.VY, E.VZ) * ToWorld;
 		S.Yaw = E.Yaw;
 		S.Pitch = E.Pitch;
 		Out.Entities.Add(S);

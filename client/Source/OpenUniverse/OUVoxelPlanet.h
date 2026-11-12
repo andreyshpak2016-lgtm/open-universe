@@ -45,7 +45,7 @@ public:
 
 	/** Размах рельефа, см. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Open Universe|Planet")
-	float Amplitude = 3000.f;
+	float Amplitude = 6000.f;
 
 	/** Семя генерации (совпадает с сервером). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Open Universe|Planet")
@@ -67,20 +67,30 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Open Universe|Planet")
 	float HeightAt(const FVector& Direction) const;
 
-	/** Радиус поверхности в направлении. */
+	/** Высота в СЕРВЕРНЫХ осях (совпадает с сервером бит-в-бит). */
+	float HeightAtServer(const FVector& DirServer) const;
+
+	/** Радиус поверхности в направлении (UE-оси). */
 	UFUNCTION(BlueprintPure, Category = "Open Universe|Planet")
 	float SurfaceRadiusAt(const FVector& Direction) const;
 
-	/**
-	 * Направление точки появления на домашней планете (суша).
-	 *
-	 * Совпадает с сервером (`ou_sim::home_spawn_direction`): тот же обход и
-	 * та же формула — сервер и клиент ставят корабль в одну точку.
-	 */
+	/** Радиус поверхности в СЕРВЕРНЫХ осях. */
+	float SurfaceRadiusAtServer(const FVector& DirServer) const
+	{
+		return Radius + HeightAtServer(DirServer);
+	}
+
+	/** Направление точки появления в UE-осях (для камеры и ориентации). */
 	UFUNCTION(BlueprintPure, Category = "Open Universe|Planet")
 	static FVector HomeSpawnDirection();
 
-	/** Точка появления над поверхностью (на `Clearance` над землёй), оси UE. */
+	/** Направление точки появления в СЕРВЕРНЫХ осях (как сервер). */
+	static FVector HomeSpawnDirectionServer();
+
+	/** Точка появления в СЕРВЕРНЫХ единицах (как хранит корабль). */
+	static FVector HomeSpawnServer(float Clearance);
+
+	/** Точка появления над поверхностью (на `Clearance` ед. сервера), UE-оси. */
 	UFUNCTION(BlueprintPure, Category = "Open Universe|Planet")
 	static FVector HomeSpawn(float Clearance);
 

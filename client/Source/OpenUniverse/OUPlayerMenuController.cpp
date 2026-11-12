@@ -73,10 +73,25 @@ void AOUPlayerMenuController::BeginPlay()
 	bMenuOpen = true;
 	Screen = EOUMenuScreen::Character;
 
-	// Список серверов по умолчанию: локальный и публичный.
+	// Список серверов. Авто-подключение перебирает их по порядку и
+	// подключается к первому, кто ответит. Список можно расширять.
 	Servers.Reset();
 	Servers.Add(FOUServerInfo(TEXT("Локальный (свой ПК)"), TEXT("127.0.0.1"), 7777));
 	Servers.Add(FOUServerInfo(TEXT("Open Universe (публичный)"), TEXT("127.0.0.1"), 7777));
+
+	// --- Авто-подключение для тестов/автоматики: -OUAutoConnect ---
+	const TCHAR* CmdLine = FCommandLine::Get();
+	bAutoConnect = FParse::Param(CmdLine, TEXT("OUAutoConnect"));
+	FString NameParam;
+	if (FParse::Value(CmdLine, TEXT("OUName="), NameParam) && !NameParam.IsEmpty())
+	{
+		AutoConnectName = NameParam;
+	}
+	if (bAutoConnect)
+	{
+		Profile.Name = AutoConnectName.IsEmpty() ? TEXT("pilot") : AutoConnectName;
+		UE_LOG(LogOUMenu, Log, TEXT("Авто-подключение включено (пилот «%s»)"), *Profile.Name);
+	}
 
 	SetMenuCursor(true);
 	FetchHealth();
@@ -179,6 +194,17 @@ void AOUPlayerMenuController::Tick(float DeltaSeconds)
 	{
 		ResolveNet();
 	}
+
+	// --- Авто-подключение (для тестов и автоматики) ---
+	if (bAutoConnect && bMenuOpen)
+	{
+		if (!bAutoConnectStarted)
+		{
+			bAutoConnectStarted = true;
+			StartAutoConnect();
+		}
+		AutoConnectStep();
+	}
 }
 
 void AOUPlayerMenuController::SetMenuCursor(bool bShow)
@@ -204,6 +230,8 @@ void AOUPlayerMenuController::OnLeftClick()
 		return;
 	}
 	const FVector2D Mouse(MX, MY);
+	UE_LOG(LogOUMenu, Log, TEXT("Клик в меню: %.0f,%.0f (экран %d)"),
+		Mouse.X, Mouse.Y, static_cast<int32>(Screen));
 
 	for (const FButtonHit& B : Buttons)
 	{
@@ -368,13 +396,6 @@ TCHAR AOUPlayerMenuController::KeyToChar(const FKey& Key)
 
 void AOUPlayerMenuController::ConnectToSelected()
 {
-	ResolveNet();
-	if (!Net)
-	{
-		SetConnectStatus(TEXT("Корабль ещё не создан — подождите."));
-		return;
-	}
-
 	FString Address = ManualAddress.TrimStartAndEnd();
 	int32 Port = 7777;
 	if (Address.IsEmpty() && Servers.IsValidIndex(SelectedServer))
@@ -387,6 +408,28 @@ void AOUPlayerMenuController::ConnectToSelected()
 		SetConnectStatus(TEXT("Введите адрес сервера."));
 		return;
 	}
+	ConnectToAddress(Address, Port);
+}
+
+bool AOUPlayerMenuController::ConnectToAddress(const FString& Address, int32 Port)
+{
+	ResolveNet();
+	if (!Net)
+	{
+		SetConnectStatus(TEXT("Корабль ещё не создан — подождите."));
+		return false;
+	}
+	if (Address.IsEmpty())
+	{
+		return false;
+	}
+
+	// Смена адреса (например, перебор серверов): закрываем старый сокет, иначе
+	// Connect() решит, что уже подключён, и не обновит endpoint.
+	if (Net->ServerAddress != Address || Net->ServerPort != Port)
+	{
+		Net->Disconnect();
+	}
 
 	Net->ServerAddress = Address;
 	Net->ServerPort = Port;
@@ -394,17 +437,91 @@ void AOUPlayerMenuController::ConnectToSelected()
 	bConnecting = true;
 	SetConnectStatus(FString::Printf(TEXT("Подключаюсь к %s:%d…"), *Address, Port));
 
-	if (Net->Connect())
-	{
-		// Меню закрываем сразу: игра начнётся, как только придёт первый снимок.
-		bMenuOpen = false;
-		Screen = EOUMenuScreen::InGame;
-		SetMenuCursor(false);
-	}
-	else
+	if (!Net->Connect())
 	{
 		bConnecting = false;
-		SetConnectStatus(TEXT("Не удалось подключиться. Проверьте адрес и сервер."));
+		SetConnectStatus(FString::Printf(TEXT("Не удалось открыть сокет для %s:%d."), *Address, Port));
+		return false;
+	}
+	return true;
+}
+
+bool AOUPlayerMenuController::ConnectToServerIndex(int32 Index)
+{
+	if (!Servers.IsValidIndex(Index))
+	{
+		return false;
+	}
+	SelectedServer = Index;
+	return ConnectToAddress(Servers[Index].Address, Servers[Index].Port);
+}
+
+void AOUPlayerMenuController::StartAutoConnect()
+{
+	AutoConnectIndex = -1;
+	bAwaitingWelcome = false;
+	UE_LOG(LogOUMenu, Log, TEXT("Авто-подключение: перебираю %d серверов"), Servers.Num());
+}
+
+void AOUPlayerMenuController::AutoConnectStep()
+{
+	ResolveNet();
+	UWorld* World = GetWorld();
+	const float Now = World ? World->GetTimeSeconds() : 0.f;
+
+	// Опрашиваем сеть прямо из меню: корабль в это время стоит и не тикает
+	// сетью, поэтому ответ сервера (welcome/снимок) нужно забрать здесь.
+	if (Net)
+	{
+		Net->Poll();
+	}
+
+	// Если уже подключились (пришёл welcome) — закрываем меню и играем.
+	if (Net && Net->IsConnected())
+	{
+		bMenuOpen = false;
+		Screen = EOUMenuScreen::InGame;
+		bConnecting = false;
+		SetMenuCursor(false);
+		UE_LOG(LogOUMenu, Log, TEXT("Авто-подключение: подключено к %s:%d (сущность %d)"),
+			*Net->ServerAddress, Net->ServerPort, Net->OwnEntityId);
+		return;
+	}
+
+	// Ждём ответа от текущего сервера.
+	if (bAwaitingWelcome)
+	{
+		if (Now < AutoConnectDeadline)
+		{
+			return; // ещё ждём
+		}
+		// Тайм-аут: этот сервер не ответил, пробуем следующий.
+		UE_LOG(LogOUMenu, Warning, TEXT("Авто-подключение: сервер %d не ответил, пробую следующий"), AutoConnectIndex);
+		bAwaitingWelcome = false;
+	}
+
+	// Берём следующий сервер из списка.
+	AutoConnectIndex++;
+	if (AutoConnectIndex >= Servers.Num())
+	{
+		// Все серверы перебрали — начинаем заново (ждём появления сервера).
+		AutoConnectIndex = 0;
+	}
+	if (Servers.Num() == 0)
+	{
+		return;
+	}
+
+	if (!Servers.IsValidIndex(AutoConnectIndex))
+	{
+		AutoConnectIndex = 0;
+	}
+	const FOUServerInfo& S = Servers[AutoConnectIndex];
+	SetConnectStatus(FString::Printf(TEXT("Авто-подключение: %s:%d…"), *S.Address, S.Port));
+	if (ConnectToAddress(S.Address, S.Port))
+	{
+		bAwaitingWelcome = true;
+		AutoConnectDeadline = Now + AutoConnectTimeoutSec;
 	}
 }
 
@@ -413,6 +530,13 @@ void AOUPlayerMenuController::DrawMenu(UCanvas* InCanvas)
 	if (!bMenuOpen || !InCanvas)
 	{
 		return;
+	}
+	// Диагностика: печатаем один раз, чтобы в логе было видно, что меню рисуется.
+	if (!bLoggedFirstDraw)
+	{
+		bLoggedFirstDraw = true;
+		UE_LOG(LogOUMenu, Log, TEXT("Меню нарисовано: экран %d, canvas %dx%d"),
+			static_cast<int32>(Screen), static_cast<int32>(InCanvas->SizeX), static_cast<int32>(InCanvas->SizeY));
 	}
 	Buttons.Reset();
 

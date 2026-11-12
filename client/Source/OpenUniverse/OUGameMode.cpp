@@ -4,6 +4,7 @@
 #include "OUShipPawn.h"
 #include "OUOriginManager.h"
 #include "OUVoxelPlanet.h"
+#include "OUSurfaceBase.h"
 #include "OUPlayerMenuController.h"
 #include "OUPlayerMenuHUD.h"
 
@@ -174,6 +175,21 @@ void AOUGameMode::BuildWorld()
 		{
 			Planet->BuildPlanet();
 		}
+	}
+
+	// --- База на поверхности, в точке появления игрока ---
+	if (!Has(AOUSurfaceBase::StaticClass()))
+	{
+		// Точка появления — на суше; «верх» базы направляем от центра планеты,
+		// чтобы постройки стояли вертикально относительно поверхности.
+		const FVector SpawnUE = AOUVoxelPlanet::HomeSpawn(3.0f);
+		const FVector Up = SpawnUE.GetSafeNormal();
+		const FVector Fwd = FVector::CrossProduct(Up, FVector::RightVector).GetSafeNormal();
+		const FRotator Rot = FRotationMatrix::MakeFromXZ(Fwd, Up).Rotator();
+		World->SpawnActor<AOUSurfaceBase>(
+			AOUSurfaceBase::StaticClass(),
+			FTransform(Rot, SpawnUE));
+		UE_LOG(LogOUGameMode, Log, TEXT("База размещена в точке появления: %s"), *SpawnUE.ToString());
 	}
 
 	// --- Менеджер начала координат (floating origin) ---

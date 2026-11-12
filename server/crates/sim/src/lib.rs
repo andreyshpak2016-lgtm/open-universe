@@ -211,7 +211,7 @@ pub fn integrate(state: &mut EntityState, input: &InputFrame, p: &ShipParams, dt
 /// Радиус домашней планеты в игровых единицах.
 pub const HOME_PLANET_RADIUS: f64 = 1000.0;
 /// Размах рельефа домашней планеты.
-pub const HOME_PLANET_AMPLITUDE: f64 = 30.0;
+pub const HOME_PLANET_AMPLITUDE: f64 = 60.0;
 /// Семя рельефа (совпадает у сервера и клиента).
 pub const HOME_PLANET_SEED: u64 = 0xC0FFEE;
 

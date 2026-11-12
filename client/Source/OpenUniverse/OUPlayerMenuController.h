@@ -44,6 +44,10 @@ public:
 	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Menu")
 	bool bMenuOpen = true;
 
+	/** Открыто ли меню (для гейта ввода в корабле). */
+	UFUNCTION(BlueprintPure, Category = "Open Universe|Menu")
+	bool IsMenuOpen() const { return bMenuOpen; }
+
 	/** Текущий экран меню. */
 	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Menu")
 	EOUMenuScreen Screen = EOUMenuScreen::Character;
@@ -76,6 +80,25 @@ public:
 	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Menu")
 	FString ConnectStatus;
 
+	/** Диагностика: писали ли уже в лог о первом кадре меню. */
+	bool bLoggedFirstDraw = false;
+
+	/**
+	 * Авто-подключение (для тестов и автоматики).
+	 *
+	 * Включается ключом командной строки `-OUAutoConnect`. Тогда меню само
+	 * подставляет позывной, перебирает серверы из списка и подключается к
+	 * **первому доступному** — тестам не нужно кликать мышью.
+	 */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Menu")
+	bool bAutoConnect = false;
+
+	/** Позывной для авто-подключения (ключ `-OUName=Пилот`). */
+	FString AutoConnectName;
+
+	/** Сколько по времени ждать ответа от сервера при авто-подключении. */
+	float AutoConnectTimeoutSec = 1.5f;
+
 	/** Проверить доступность серверов (лёгкий handshake по UDP). */
 	UFUNCTION(BlueprintCallable, Category = "Open Universe|Menu")
 	void PingServers();
@@ -83,6 +106,17 @@ public:
 	/** Прочитать status.json с сайта (сервер+клиент) — асинхронно. */
 	UFUNCTION(BlueprintCallable, Category = "Open Universe|Menu")
 	void FetchHealth();
+
+	/**
+	 * Попробовать подключиться к серверу из списка по индексу.
+	 * Возвращает false, если адрес некорректен (не из-за сети).
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Open Universe|Menu")
+	bool ConnectToServerIndex(int32 Index);
+
+	/** Подключиться по конкретному адресу/порту (для ручного ввода и тестов). */
+	UFUNCTION(BlueprintCallable, Category = "Open Universe|Menu")
+	bool ConnectToAddress(const FString& Address, int32 Port);
 
 protected:
 	virtual void BeginPlay() override;
@@ -112,15 +146,33 @@ protected:
 	void OnBackspace();
 
 private:
-	/** Подключиться к выбранному серверу. */
+	/** Подключиться к выбранному серверу (из списка или вручную). */
 	void ConnectToSelected();
 
 	/** Установить статус (цвет подсказки задаётся знаком). */
 	void SetConnectStatus(const FString& Text);
 
+	/** Запустить авто-подключение (перебор серверов). */
+	void StartAutoConnect();
+
+	/** Один шаг авто-подключения: попробовать следующий сервер. */
+	void AutoConnectStep();
+
 	/** Сетевой компонент на корабле игрока. */
 	UPROPERTY(Transient)
 	TObjectPtr<UOUClientNet> Net = nullptr;
+
+	/** Индекс текущего пробуемого сервера при авто-подключении. */
+	int32 AutoConnectIndex = -1;
+
+	/** Авто-подключение: ждём ли ответа от сервера. */
+	bool bAwaitingWelcome = false;
+
+	/** Авто-подключение: дедлайн ожидания (мир, сек). */
+	float AutoConnectDeadline = 0.f;
+
+	/** Гарантирует, что авто-подключение запущено один раз. */
+	bool bAutoConnectStarted = false;
 
 	/** Найти сеть (после создания Pawn). */
 	void ResolveNet();

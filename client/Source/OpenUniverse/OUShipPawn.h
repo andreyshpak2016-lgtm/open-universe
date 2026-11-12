@@ -87,6 +87,9 @@ protected:
 	/** Применить State к актору (позиция + ориентация), с учётом floating origin. */
 	void ApplyStateToActor();
 
+	/** Контроллер игрока как меню (или nullptr), для гейта ввода. */
+	class AOUPlayerMenuController* GetMenuController() const;
+
 	/** Вектор «вперёд» в серверных осях по текущим углам. */
 	FVector ForwardVector() const;
 

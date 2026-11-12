@@ -28,3 +28,9 @@ Thumbs.db
 # Sobrannyj launcheer (peresobiraetsya build-launcher.ps1)
 launcher/OpenUniverseLauncher.exe
 launcher/AssemblyVersion.cs
+
+# Скриншоты проверки UE-клиента (см. AGENTS.md)   
+shots/
+
+client/testdata/test_wire.exe
+client/testdata/test_wire.obj

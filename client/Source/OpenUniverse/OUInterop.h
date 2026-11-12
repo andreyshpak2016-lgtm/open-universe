@@ -46,6 +46,12 @@ namespace OUInterop
 		return FVector(V.Z, V.X, V.Y);
 	}
 
+	/** Направление: UE → серверные оси (без масштаба). Обратна ServerDirToUE. */
+	inline FVector UEDirToServer(const FVector& V)
+	{
+		return FVector(V.Y, V.Z, V.X);
+	}
+
 	/** Вектор: UE → серверные оси (обратный перевод, с масштабом). */
 	inline FVector UEToServer(const FVector& V)
 	{

@@ -1,6 +1,7 @@
 // Copyright Open Universe. Все права защищены.
 
 #include "OUVoxelPlanet.h"
+#include "OUInterop.h"
 #include "ProceduralMeshComponent.h"
 #include "Materials/MaterialInterface.h"
 #include "UObject/ConstructorHelpers.h"
@@ -121,10 +122,11 @@ float AOUVoxelPlanet::Noise(float U, float V) const
 	return Coarse * 0.72f + Fine * 0.28f;
 }
 
-float AOUVoxelPlanet::HeightAt(const FVector& Direction) const
+float AOUVoxelPlanet::HeightAtServer(const FVector& DirServer) const
 {
-	const FVector D = Direction.GetSafeNormal();
-	// Octahedral mapping (сфера → квадрат), как в серверном terrain.rs.
+	// Октаэдральное отображение ровно как в серверном `terrain.rs`
+	// (в серверных осях: вверх = Y). Только оно даёт ту же высоту, что сервер.
+	const FVector D = DirServer.GetSafeNormal();
 	const float L = FMath::Abs(D.X) + FMath::Abs(D.Y) + FMath::Abs(D.Z);
 	if (L < 1e-6f)
 	{
@@ -143,54 +145,72 @@ float AOUVoxelPlanet::HeightAt(const FVector& Direction) const
 	return (Noise(U, V) - SeaLevel) * Amplitude * 2.f;
 }
 
+float AOUVoxelPlanet::HeightAt(const FVector& Direction) const
+{
+	// Направление приходит в UE-осях (вверх = Z). Серверный рельеф считаем в
+	// серверных осях — переводим, иначе высота не совпадёт с сервером.
+	return HeightAtServer(OUInterop::UEDirToServer(Direction));
+}
+
 float AOUVoxelPlanet::SurfaceRadiusAt(const FVector& Direction) const
 {
 	return Radius + HeightAt(Direction);
 }
 
-FVector AOUVoxelPlanet::HomeSpawnDirection()
+FVector AOUVoxelPlanet::HomeSpawnDirectionServer()
 {
 	// Совпадает с сервером (`ou_sim::home_spawn_direction`): фиксированный
-	// обход сферы, ищем первое «сухое» направление с заметной, но не пиковой
-	// высотой. Детерминированно — сервер и клиент выберут одну точку.
+	// обход сферы в СЕРВЕРНЫХ осях, ищем первое «сухое» направление с заметной,
+	// но не пиковой высотой. Результат — в серверных осях.
 	AOUVoxelPlanet* Probe = NewObject<AOUVoxelPlanet>();
-	Probe->Radius = 100000.f;
-	Probe->Amplitude = 3000.f;
+	Probe->Radius = 1000.f;
+	Probe->Amplitude = 60.f;
 	Probe->Seed = 0xC0FFEE;
 
 	const float Step = 0.15f;
-	const float SeaLevel = 0.30f;
 	for (float Phi = -1.2f; Phi <= 1.2f; Phi += Step)
 	{
 		for (float Theta = 0.f; Theta < 2.f * PI; Theta += Step)
 		{
+			// Серверные оси: вверх = Y. Формула ровно как в `home_spawn_direction`.
 			const FVector D(
 				FMath::Cos(Phi) * FMath::Cos(Theta),
 				FMath::Sin(Phi),
 				FMath::Cos(Phi) * FMath::Sin(Theta));
-			const float H = Probe->HeightAt(D);
-			// Та же полоса, что на сервере: заметная суша, не вершина горы.
+			const float H = Probe->HeightAtServer(D);
 			if (H > Probe->Amplitude * 0.15f && H < Probe->Amplitude * 0.9f)
 			{
 				return D.GetSafeNormal();
 			}
 		}
 	}
-	return FVector(0.f, 1.f, 0.f);
+	return FVector(0.f, 1.f, 0.f); // в серверных осях «вверх» = +Y
+}
+
+FVector AOUVoxelPlanet::HomeSpawnDirection()
+{
+	// Направление точки появления в UE-осях (для камеры и ориентации).
+	return OUInterop::ServerDirToUE(HomeSpawnDirectionServer()).GetSafeNormal();
+}
+
+FVector AOUVoxelPlanet::HomeSpawnServer(float Clearance)
+{
+	// Точка появления в СЕРВЕРНЫХ единицах (радиус 1000, амплитуда 30).
+	// Без перевода в UE — чтобы не путаться с масштабом: корабль хранит
+	// позицию именно в серверных единицах.
+	const FVector DirS = HomeSpawnDirectionServer();
+	AOUVoxelPlanet* Probe = NewObject<AOUVoxelPlanet>();
+	Probe->Radius = 1000.f;
+	Probe->Amplitude = 60.f;
+	Probe->Seed = 0xC0FFEE;
+	const float Surface = Probe->SurfaceRadiusAtServer(DirS);
+	return DirS * (Surface + Clearance);
 }
 
 FVector AOUVoxelPlanet::HomeSpawn(float Clearance)
 {
-	const FVector Dir = HomeSpawnDirection();
-	// Центр планеты — в начале координат (совпадает с сервером).
-	const float Radius = 100000.f;      // 1000 ед. сервера × масштаб UE
-	const float Amplitude = 3000.f;     // 30 ед. сервера × масштаб UE
-	AOUVoxelPlanet* Probe = NewObject<AOUVoxelPlanet>();
-	Probe->Radius = Radius;
-	Probe->Amplitude = Amplitude;
-	Probe->Seed = 0xC0FFEE;
-	const float Surface = Probe->SurfaceRadiusAt(Dir);
-	return Dir * (Surface + Clearance);
+	// Точка появления в UE-осях и UE-сантиметрах (для установки актора).
+	return OUInterop::ServerToUE(HomeSpawnServer(Clearance));
 }
 
 void AOUVoxelPlanet::BuildPlanet()

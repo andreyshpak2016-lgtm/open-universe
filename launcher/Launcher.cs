@@ -1519,7 +1519,16 @@ namespace OpenUniverseLauncher
             if (exe == null) { SetStatus(T("status.noGameFile"), true); return; }
             try
             {
-                Process.Start(new ProcessStartInfo { FileName = exe, WorkingDirectory = Path.GetDirectoryName(exe) });
+                // Передаём позывной из лаунчера в игру: на старте клиент сразу
+                // знает имя пилота (используется значением -OUName).
+                var psi = new ProcessStartInfo
+                {
+                    FileName = exe,
+                    WorkingDirectory = Path.GetDirectoryName(exe),
+                    Arguments = _profile != null && !string.IsNullOrEmpty(_profile.Login)
+                        ? "-OUName=" + _profile.Login : ""
+                };
+                Process.Start(psi);
                 SetStatus(T("status.launching"), false);
             }
             catch (Exception ex)
