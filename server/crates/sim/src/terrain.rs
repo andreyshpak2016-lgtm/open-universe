@@ -389,6 +389,18 @@ mod tests {
     }
 
     #[test]
+    fn home_planet_is_planet_sized() {
+        // Домашняя планета должна быть «планетного» масштаба, а не астероида:
+        // радиус в сотни раз больше рельефа, иначе горизонт читается как шар.
+        let t = crate::home_planet();
+        assert!(t.params.radius >= 50_000.0, "радиус слишком мал: {}", t.params.radius);
+        assert!(
+            t.params.amplitude * 10.0 < t.params.radius,
+            "рельеф слишком крупный для планеты"
+        );
+    }
+
+    #[test]
     fn deterministic_across_seeds() {
         let a = Terrain::new(Vec3::ZERO, TerrainParams { seed: 1, ..Default::default() });
         let b = Terrain::new(Vec3::ZERO, TerrainParams { seed: 1, ..Default::default() });

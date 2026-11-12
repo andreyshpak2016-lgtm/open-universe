@@ -219,8 +219,8 @@ void AOUGameMode::BuildWorld()
 	{
 		Home->PlanetType = EOUPlanetType::Terran;
 		Home->bHomePlanet = true;
-		Home->Radius = 800000.f;      // 8 км в UE-сантиметрах (как на сервере)
-		Home->Amplitude = 6000.f;
+		Home->Radius = 10000000.f;     // 100 км в UE-сантиметрах (как на сервере)
+		Home->Amplitude = 200000.f;    // 2 км рельефа
 		Home->BuildPlanet();
 	}
 
@@ -272,11 +272,11 @@ void AOUGameMode::BuildWorld()
 		{
 			AOUSolarBody* Star = World->SpawnActor<AOUSolarBody>(
 				AOUSolarBody::StaticClass(),
-				FTransform(FRotator::ZeroRotator, SkyAt(-25.f, 32.f, 6000000.f)));
+				FTransform(FRotator::ZeroRotator, SkyAt(-25.f, 32.f, 90000000.f)));   // 900 км от центра
 			if (Star)
 			{
 				Star->Kind = EOUSolarKind::Star;
-				Star->BodyRadiusCm = 200000.f;   // 2 км — крупное светило вдали
+				Star->BodyRadiusCm = 6000000.f;   // 60 км — крупное светило вдали
 				Star->BodyColor = FLinearColor(1.0f, 0.86f, 0.35f);
 				Star->BuildBody();
 			}
@@ -289,9 +289,9 @@ void AOUGameMode::BuildWorld()
 		// Дистанции — десятки километров: так планеты выглядят как диски в небе,
 		// а не как близкие шары перед камерой.
 		const FPlanetDef Defs[] = {
-			{ EOUPlanetType::Desert,   18.f, 20.f, 5000000.f, 120000.f },
-			{ EOUPlanetType::Ice,      52.f, 14.f, 6500000.f,  95000.f },
-			{ EOUPlanetType::GasGiant, -48.f, 24.f, 8000000.f, 260000.f },
+			{ EOUPlanetType::Desert,   18.f, 20.f, 50000000.f,  4000000.f },  // 500 км, R 40 км
+			{ EOUPlanetType::Ice,      52.f, 14.f, 80000000.f,  3000000.f },  // 800 км, R 30 км
+			{ EOUPlanetType::GasGiant, -48.f, 24.f, 150000000.f, 9000000.f }, // 1.5 Мкм, R 90 км
 		};
 		for (const FPlanetDef& D : Defs)
 		{

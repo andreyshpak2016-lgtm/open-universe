@@ -21,7 +21,7 @@ DEFINE_LOG_CATEGORY_STATIC(LogOUShip, Log, All);
 namespace
 {
 	/** Радиус домашней планеты в серверных единицах (совпадает с сервером). */
-	constexpr double OUPlanetRadius = 8000.0;
+	constexpr double OUPlanetRadius = 100000.0;
 	/** Ускорение свободного падения у поверхности, ед/с² (как на сервере). */
 	constexpr double OUSurfaceGravity = 18.0;
 	/** До какого расстояния (в радиусах) действует гравитация. */
@@ -309,9 +309,9 @@ void AOUShipPawn::StepPrediction(const FOUInputFrame& Input, float Dt)
 	// Без этого гравитация проваливает корабль сквозь планету, и он «не на
 	// планете». Корабль не может быть ниже поверхности.
 	//
-	// ВАЖНО: State.Position — в СЕРВЕРНЫХ единицах (радиус планеты = 1000),
+	// ВАЖНО: State.Position — в СЕРВЕРНЫХ единицах (радиус планеты = 100000),
 	// поэтому и поверхность считаем в тех же единицах: у актора Radius и
-	// Amplitude в сантиметрах UE (100000/3000), приводим их делением на масштаб.
+	// Amplitude в сантиметрах UE, приводим их делением на масштаб.
 	const FVector Rel = State.Position;                    // серверные оси
 	const double Dist = Rel.Size();
 	if (Dist > 1e-6)
@@ -322,7 +322,7 @@ void AOUShipPawn::StepPrediction(const FOUInputFrame& Input, float Dt)
 		const double ToWorld = 1.0 / OUInterop::ServerUnitToCm;
 		const double SurfaceR = Planet
 			? Planet->SurfaceRadiusAtServer(UpS) * ToWorld
-			: 1000.0;
+			: 100000.0;
 		if (Dist < SurfaceR)
 		{
 			// Прижимаем к поверхности и гасим радиальную (внутрь) скорость.

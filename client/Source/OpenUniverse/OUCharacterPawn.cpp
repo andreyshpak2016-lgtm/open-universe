@@ -256,7 +256,7 @@ float AOUCharacterPawn::SurfaceRadius(const FVector& DirUE) const
 		return Planet->SurfaceRadiusAt(DirUE);   // см UE
 	}
 	// Запасной вариант: радиус планеты в UE-сантиметрах.
-	return 100000.f;
+	return 10000000.f;
 }
 
 void AOUCharacterPawn::PlaceAt(const FVector& WorldLocation, float LookYawWorld)

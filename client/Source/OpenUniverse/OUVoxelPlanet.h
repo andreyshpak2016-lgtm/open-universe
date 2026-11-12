@@ -58,13 +58,13 @@ class OPENUNIVERSE_API AOUVoxelPlanet : public AActor
 public:
 	AOUVoxelPlanet();
 
-	/** Радиус планеты (уровень океана), см UE. 8 км — как на сервере (8000 ед. × 100). */
+	/** Радиус планеты (уровень океана), см UE. 100 км — как на сервере (100 000 ед. × 100). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Open Universe|Planet")
-	float Radius = 800000.f;
+	float Radius = 10000000.f;
 
-	/** Размах рельефа, см. */
+	/** Размах рельефа, см (2 км — горизонт и холмы видны в масштабе планеты). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Open Universe|Planet")
-	float Amplitude = 6000.f;
+	float Amplitude = 200000.f;
 
 	/** Семя генерации (совпадает с сервером). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Open Universe|Planet")
