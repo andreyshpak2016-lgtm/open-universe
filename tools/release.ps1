@@ -151,6 +151,18 @@ if (Test-Path (Join-Path $root 'client\Packaged\Windows\OpenUniverse.exe')) {
   }
 }
 
+# 3b3. Обязательная проверка УПАКОВАННОЙ (Shipping) сборки: именно её получает
+# игрок. Shipping вырезает логи/оффскрин-снимки, поэтому тест открывает
+# реальное окно и снимает кадр через GDI (см. tools/test-shipping.ps1).
+$shipPkgDir = Join-Path $root 'client\Packaged\Windows'
+if (Test-Path (Join-Path $shipPkgDir 'OpenUniverse\Binaries\Win64\OpenUniverse-Win64-Shipping.exe')) {
+  Write-Host "--> проверка Shipping-сборки (обязательно)" -ForegroundColor Yellow
+  & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'test-shipping.ps1') -GameDir $shipPkgDir
+  if ($LASTEXITCODE -ne 0) { throw "Shipping-сборка не прошла проверку" }
+} else {
+  throw "Нет упакованной Shipping-сборки: сначала tools/package-game.ps1"
+}
+
 # 3c. Самопроверка «сервер+клиент» → свежий status.json для сайта и лаунчера.
 Write-Host "--> самопроверка сервер+клиент" -ForegroundColor Yellow
 try {
