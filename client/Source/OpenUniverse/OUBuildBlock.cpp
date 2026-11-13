@@ -12,7 +12,11 @@ AOUBuildBlock::AOUBuildBlock()
 
 	BlockMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("BlockMesh"));
 	RootComponent = BlockMesh;
-	BlockMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	// Блок должен ловить луч прицела (удаление/покраска) — включаем запросы
+	// (без физики: сам блок не двигается).
+	BlockMesh->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+	BlockMesh->SetCollisionResponseToAllChannels(ECR_Ignore);
+	BlockMesh->SetCollisionResponseToChannel(ECC_Visibility, ECR_Block);
 
 	static ConstructorHelpers::FObjectFinder<UStaticMesh> Cube(
 		TEXT("/Engine/BasicShapes/Cube.Cube"));

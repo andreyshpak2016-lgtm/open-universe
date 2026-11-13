@@ -319,6 +319,9 @@ void AOUCharacterPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputCom
 	// Строительство: B открывает/закрывает меню, ЛКМ ставит выбранный блок.
 	PlayerInputComponent->BindAction(TEXT("BuildMode"), IE_Pressed, this, &AOUCharacterPawn::ToggleBuildMenu);
 	PlayerInputComponent->BindAction(TEXT("BuildPlace"), IE_Pressed, this, &AOUCharacterPawn::PlaceBuildBlock);
+	// Удаление и покраска блока под прицелом (правая и средняя кнопки мыши).
+	PlayerInputComponent->BindAction(TEXT("BuildRemove"), IE_Pressed, this, &AOUCharacterPawn::OnBuildRemove);
+	PlayerInputComponent->BindAction(TEXT("BuildPaint"), IE_Pressed, this, &AOUCharacterPawn::OnBuildPaint);
 	// Выбор блока в палитре: колесо мыши.
 	PlayerInputComponent->BindAction(TEXT("BuildNext"), IE_Pressed, this, &AOUCharacterPawn::OnBuildNext);
 	PlayerInputComponent->BindAction(TEXT("BuildPrev"), IE_Pressed, this, &AOUCharacterPawn::OnBuildPrev);
@@ -383,20 +386,33 @@ void AOUCharacterPawn::PlaceBuildBlock()
 		return;
 	}
 
+	const FLinearColor Col = BuildPartColor(BuildSelection);
+	const int32 R = FMath::RoundToInt(Col.R * 255.f);
+	const int32 G = FMath::RoundToInt(Col.G * 255.f);
+	const int32 B = FMath::RoundToInt(Col.B * 255.f);
+
 	// Онлайн: команду строительства отправляем на СЕРВЕР — он авторитетно
 	// проверяет (целостность, права, лимиты) и рассылает правку всем. Блок
 	// появится, когда придёт авторитетная правка (ApplyServerBuildEdits).
 	if (Net && Net->IsConnected() && Net->OwnEntityId != 0)
 	{
-		// Следующая ячейка в ряду (ядро конструкции — (0,0,0) на сервере).
-		const int32 X = BuiltCount + 1;
-		const FLinearColor Col = BuildPartColor(BuildSelection);
-		Net->SendBuild(Net->OwnEntityId, /*Place=*/0, X, 0, 0,
-			FMath::RoundToInt(Col.R * 255.f),
-			FMath::RoundToInt(Col.G * 255.f),
-			FMath::RoundToInt(Col.B * 255.f));
+		// Куда ставим: если перед нами уже есть блок — в соседнюю с ним грань
+		// (по нормали грани, куда попал луч), иначе — в ряд впереди.
+		FIntVector Target;
+		FVector Hit, Normal;
+		if (TraceBuildTarget(Target, Hit, Normal))
+		{
+			Target += WorldDirToVoxelShift(Normal);
+		}
+		else
+		{
+			// Пусто впереди — ставим в ряд перед персонажем.
+			Target = FIntVector(BuiltCount + 1, 0, 0);
+		}
+		Net->SendBuild(Net->OwnEntityId, /*Place=*/0, Target.X, Target.Y, Target.Z, R, G, B);
+		BuiltCoords.Add(Target);
 		++BuiltCount;
-		UE_LOG(LogOUChar, Log, TEXT("Строительство: отправлена команда на сервер (ячейка %d,0,0)"), X);
+		UE_LOG(LogOUChar, Log, TEXT("Строительство: поставить (%d,%d,%d)"), Target.X, Target.Y, Target.Z);
 		return;
 	}
 
@@ -428,6 +444,139 @@ void AOUCharacterPawn::PlaceBuildBlock()
 	}
 }
 
+FIntVector AOUCharacterPawn::WorldDirToVoxelShift(const FVector& WorldDir) const
+{
+	// Проецируем мировое направление на локальный базис сетки: получаем
+	// «насколько вперёд/вверх/вправо» смотрит луч в координатах вокселей.
+	const FVector BaseUE = AOUVoxelPlanet::HomeSpawn(2.0f);
+	const FVector UpUE = BaseUE.GetSafeNormal();
+	FVector FwdUE = FVector::VectorPlaneProject(FVector(1.f, 0.f, 0.f), UpUE).GetSafeNormal();
+	if (FwdUE.IsNearlyZero())
+	{
+		FwdUE = FVector::VectorPlaneProject(FVector::ForwardVector, UpUE).GetSafeNormal();
+	}
+	const FVector RightUE = FVector::CrossProduct(UpUE, FwdUE).GetSafeNormal();
+	const FVector D = WorldDir.GetSafeNormal();
+	const double FX = FVector::DotProduct(D, FwdUE);
+	const double FY = FVector::DotProduct(D, UpUE);
+	const double FZ = FVector::DotProduct(D, RightUE);
+
+	// Сдвиг по оси с наибольшим вкладом — ставим блок в грань, куда смотрит луч.
+	FIntVector Shift = FIntVector::ZeroValue;
+	const double AX = FMath::Abs(FX), AY = FMath::Abs(FY), AZ = FMath::Abs(FZ);
+	if (AX >= AY && AX >= AZ)      { Shift.X = FX >= 0.0 ? 1 : -1; }
+	else if (AY >= AZ)             { Shift.Y = FY >= 0.0 ? 1 : -1; }
+	else                           { Shift.Z = FZ >= 0.0 ? 1 : -1; }
+	return Shift;
+}
+
+bool AOUCharacterPawn::TraceBuildTarget(FIntVector& OutCoord, FVector& OutHit, FVector& OutNormal) const
+{
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return false;
+	}
+	// Трассируем взгляд: ищем ближайший блок постройки в пределах 15 м
+	// (блоки могут стоять и в ряду впереди, и рядом).
+	const FVector Start = Camera ? Camera->GetComponentLocation() : GetActorLocation();
+	const FVector Dir = Camera ? Camera->GetForwardVector() : GetActorForwardVector();
+	const FVector End = Start + Dir.GetSafeNormal() * 1500.f;
+	FHitResult Hit;
+	FCollisionQueryParams Params;
+	Params.AddIgnoredActor(this);
+	if (!World->LineTraceSingleByChannel(Hit, Start, End, ECC_Visibility, Params))
+	{
+		return false;
+	}
+	AActor* HitActor = Hit.GetActor();
+	if (!HitActor || !HitActor->IsA(AOUBuildBlock::StaticClass()))
+	{
+		return false;
+	}
+	// Координату берём из таблицы (запомнена при создании блока) — это точно,
+	// в отличие от пересчёта по мировой точке (на границе ячеек округление
+	// уводит на соседнюю ячейку, и сервер отвечает «нет связи с ядром»).
+	OutHit = Hit.ImpactPoint;
+	OutNormal = Hit.ImpactNormal;
+	if (const FIntVector* Found = BlockCoords.Find(HitActor))
+	{
+		OutCoord = *Found;
+		return true;
+	}
+	// Запасной путь: пересчёт по точке чуть внутри блока.
+	const FVector Inside = Hit.ImpactPoint - Hit.ImpactNormal * 10.f;
+	OutCoord = WorldToVoxel(Inside);
+	return true;
+}
+
+FIntVector AOUCharacterPawn::WorldToVoxel(const FVector& WorldPos) const
+{
+	// Обратное к VoxelWorld: мировая точка → координата сетки.
+	const double VoxelCm = 150.0;
+	const FVector BaseUE = AOUVoxelPlanet::HomeSpawn(2.0f);
+	const FVector UpUE = BaseUE.GetSafeNormal();
+	FVector FwdUE = FVector::VectorPlaneProject(FVector(1.f, 0.f, 0.f), UpUE).GetSafeNormal();
+	if (FwdUE.IsNearlyZero())
+	{
+		FwdUE = FVector::VectorPlaneProject(FVector::ForwardVector, UpUE).GetSafeNormal();
+	}
+	const FVector RightUE = FVector::CrossProduct(UpUE, FwdUE).GetSafeNormal();
+	const FVector CharUE = BaseUE + FwdUE * 2200.f;
+	const FVector AnchorUE = CharUE + FwdUE * (2.0 * VoxelCm);
+
+	const FVector Rel = WorldPos - AnchorUE;
+	const double FX = FVector::DotProduct(Rel, FwdUE) / VoxelCm;
+	const double FY = (FVector::DotProduct(Rel, UpUE) - VoxelCm * 0.5) / VoxelCm;
+	const double FZ = FVector::DotProduct(Rel, RightUE) / VoxelCm;
+	// Округляем к ближайшей ячейке (допуск — половина шага).
+	return FIntVector(
+		FMath::RoundToInt(FX),
+		FMath::RoundToInt(FY),
+		FMath::RoundToInt(FZ));
+}
+
+void AOUCharacterPawn::RemoveBuildBlock()
+{
+	if (!bBuildMenuOpen) { return; }
+	FIntVector Coord;
+	FVector Hit, Normal;
+	if (!TraceBuildTarget(Coord, Hit, Normal))
+	{
+		UE_LOG(LogOUChar, Log, TEXT("Удаление: впереди нет блока"));
+		return;
+	}
+	if (Net && Net->IsConnected() && Net->OwnEntityId != 0)
+	{
+		Net->SendBuild(Net->OwnEntityId, /*Remove=*/1, Coord.X, Coord.Y, Coord.Z, 0, 0, 0);
+		UE_LOG(LogOUChar, Log, TEXT("Строительство: удалить (%d,%d,%d)"), Coord.X, Coord.Y, Coord.Z);
+	}
+}
+
+void AOUCharacterPawn::PaintBuildBlock()
+{
+	if (!bBuildMenuOpen) { return; }
+	FIntVector Coord;
+	FVector Hit, Normal;
+	if (!TraceBuildTarget(Coord, Hit, Normal))
+	{
+		UE_LOG(LogOUChar, Log, TEXT("Покраска: впереди нет блока"));
+		return;
+	}
+	if (Net && Net->IsConnected() && Net->OwnEntityId != 0)
+	{
+		const FLinearColor Col = BuildPartColor(BuildSelection);
+		Net->SendBuild(Net->OwnEntityId, /*Paint=*/2, Coord.X, Coord.Y, Coord.Z,
+			FMath::RoundToInt(Col.R * 255.f),
+			FMath::RoundToInt(Col.G * 255.f),
+			FMath::RoundToInt(Col.B * 255.f));
+		UE_LOG(LogOUChar, Log, TEXT("Строительство: покрасить (%d,%d,%d)"), Coord.X, Coord.Y, Coord.Z);
+	}
+}
+
+void AOUCharacterPawn::OnBuildRemove() { RemoveBuildBlock(); }
+void AOUCharacterPawn::OnBuildPaint() { PaintBuildBlock(); }
+
 FVector AOUCharacterPawn::VoxelWorld(const FVector& ServerCoord) const
 {
 	// ВАЖНО: базис считаем в ОСЯХ UE (как и «вперёд» персонажа), иначе сетка
@@ -443,8 +592,9 @@ FVector AOUCharacterPawn::VoxelWorld(const FVector& ServerCoord) const
 	}
 	const FVector RightUE = FVector::CrossProduct(UpUE, FwdUE).GetSafeNormal();
 	// Якорь — сразу перед персонажем (он в 2200 см от базы, смотрит по FwdUE).
+	// Держим его БЛИЗКО (2 вокселя), чтобы поставить блок прямо перед собой.
 	const FVector CharUE = BaseUE + FwdUE * 2200.f;
-	const FVector AnchorUE = CharUE + FwdUE * (6.0 * VoxelCm);
+	const FVector AnchorUE = CharUE + FwdUE * (2.0 * VoxelCm);
 	return AnchorUE
 		+ FwdUE * (ServerCoord.X * VoxelCm)
 		+ UpUE * (ServerCoord.Y * VoxelCm + VoxelCm * 0.5)
@@ -481,6 +631,7 @@ void AOUCharacterPawn::ApplyServerBuildEdits()
 					Block->BlockColor = FLinearColor(E.R / 255.f, E.G / 255.f, E.B / 255.f);
 					Block->ApplyLook();
 					ServerBlocks.Add(Key, Block);
+					BlockCoords.Add(Block, Key);
 					UE_LOG(LogOUChar, Log, TEXT("Авторитетный блок (%d,%d,%d) от сервера"), E.X, E.Y, E.Z);
 				}
 			}
@@ -489,7 +640,11 @@ void AOUCharacterPawn::ApplyServerBuildEdits()
 		{
 			if (TObjectPtr<AOUBuildBlock>* Found = ServerBlocks.Find(Key))
 			{
-				if (*Found) { (*Found)->Destroy(); }
+				if (*Found)
+				{
+					BlockCoords.Remove(*Found);
+					(*Found)->Destroy();
+				}
 				ServerBlocks.Remove(Key);
 			}
 		}
@@ -743,7 +898,8 @@ void AOUCharacterPawn::Tick(float DeltaSeconds)
 		FireWeapon();
 	}
 
-	// Тестовое строительство: открыть меню и поставить пару блоков.
+	// Тестовое строительство: открыть меню, поставить блоки и проверить
+	// удаление/покраску (всё через сервер — правки авторитетные).
 	if (bAutoBuild)
 	{
 		if (!bBuildMenuOpen)
@@ -751,11 +907,38 @@ void AOUCharacterPawn::Tick(float DeltaSeconds)
 			ToggleBuildMenu();
 		}
 		BuildTimer += DeltaSeconds;
-		if (BuildTimer >= 1.0f && BuiltCount < 3)
+		if (BuildTimer >= 1.0f)
 		{
 			BuildTimer = 0.f;
-			SelectBuildPart(BuiltCount);
-			PlaceBuildBlock();
+			// Первые три шага — ставим блоки разного типа.
+			if (BuiltCount < 3)
+			{
+				SelectBuildPart(BuiltCount);
+				PlaceBuildBlock();
+			}
+			// Дальше — разово: покрасить и удалить ОДИН из поставленных блоков
+			// по его координате (прицелом это ненадёжно: камера авто-хода
+			// крутится и попадает в ядро конструкции).
+			else if (!bAutoTestedPaint && BuiltCoords.Num() > 0)
+			{
+				bAutoTestedPaint = true;
+				const FIntVector C = BuiltCoords.Last();
+				if (Net && Net->IsConnected() && Net->OwnEntityId != 0)
+				{
+					Net->SendBuild(Net->OwnEntityId, /*Paint=*/2, C.X, C.Y, C.Z, 255, 220, 80);
+					UE_LOG(LogOUChar, Log, TEXT("Автотест: покрасить (%d,%d,%d)"), C.X, C.Y, C.Z);
+				}
+			}
+			else if (!bAutoTestedRemove && BuiltCoords.Num() > 0)
+			{
+				bAutoTestedRemove = true;
+				const FIntVector C = BuiltCoords.Last();
+				if (Net && Net->IsConnected() && Net->OwnEntityId != 0)
+				{
+					Net->SendBuild(Net->OwnEntityId, /*Remove=*/1, C.X, C.Y, C.Z, 0, 0, 0);
+					UE_LOG(LogOUChar, Log, TEXT("Автотест: удалить (%d,%d,%d)"), C.X, C.Y, C.Z);
+				}
+			}
 		}
 	}
 }

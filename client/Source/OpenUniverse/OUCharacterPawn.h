@@ -129,6 +129,14 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Open Universe|Build")
 	void PlaceBuildBlock();
 
+	/** Удалить блок, на который смотрит персонаж (сервер-авторитетно). */
+	UFUNCTION(BlueprintCallable, Category = "Open Universe|Build")
+	void RemoveBuildBlock();
+
+	/** Перекрасить блок, на который смотрит персонаж, в выбранный цвет. */
+	UFUNCTION(BlueprintCallable, Category = "Open Universe|Build")
+	void PaintBuildBlock();
+
 	/** Применить авторитетные правки конструкций, пришедшие от сервера. */
 	UFUNCTION(BlueprintCallable, Category = "Open Universe|Build")
 	void ApplyServerBuildEdits();
@@ -175,6 +183,25 @@ protected:
 	/** Выбор следующего/предыдущего блока в палитре. */
 	void OnBuildNext();
 	void OnBuildPrev();
+
+	/** Удаление/покраска по клавишам (правый клик / средний клик). */
+	void OnBuildRemove();
+	void OnBuildPaint();
+
+	/**
+	 * Куда смотрит персонаж в сетке конструкции: координата вокселя под прицелом
+	 * и точка попадания. Возвращает false, если впереди нет блока.
+	 */
+	bool TraceBuildTarget(FIntVector& OutCoord, FVector& OutHit, FVector& OutNormal) const;
+
+	/** Мировая точка → координата вокселя сетки (обратное к `VoxelWorld`). */
+	FIntVector WorldToVoxel(const FVector& WorldPos) const;
+
+	/**
+	 * Мировое направление → сдвиг на соседнюю ячейку сетки по доминирующей оси.
+	 * Нужно, чтобы ставить блок в грань, на которую смотрит игрок.
+	 */
+	FIntVector WorldDirToVoxelShift(const FVector& WorldDir) const;
 
 	/** Найти сетевой компонент (на корабле) для отправки команд строительства. */
 	void ResolveNet();
@@ -272,11 +299,23 @@ private:
 	/** Тестовое строительство (ключ `-OUAutoBuild`): поставить блок сами. */
 	bool bAutoBuild = false;
 
+	/** Автотест уже покрасил и удалил блок (делаем по одному разу). */
+	bool bAutoTestedPaint = false;
+	bool bAutoTestedRemove = false;
+
+	/** Координаты блоков, поставленных в этом сеансе (для автотеста). */
+	TArray<FIntVector> BuiltCoords;
+
 	/** Таймер авто-строительства, с. */
 	float BuildTimer = 0.f;
 
 	/** Воксели, уже применённые с сервера: ключ «(x,y,z)» → актор блока. */
 	TMap<FIntVector, TObjectPtr<AOUBuildBlock>> ServerBlocks;
+
+	/** Обратный указатель: актор блока → его координата в сетке. Нужен, чтобы
+	 *  точно адресовать удаление/покраску по блоку, на который смотрит игрок
+	 *  (пересчёт по мировой точке даёт ошибку на границе ячеек). */
+	TMap<TWeakObjectPtr<AActor>, FIntVector> BlockCoords;
 
 	/** Начало отсчёта сетки конструкции (в серверных единицах). */
 	FVector BuildOriginServer = FVector::ZeroVector;

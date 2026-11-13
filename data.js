@@ -93,7 +93,7 @@ window.PLAN = {
         { "title": "Сетка деталей и «ядра» конструкций", "title_en": "Part and construction core grid", "status": "done" },
         { "title": "Валидация физической целостности", "title_en": "Physical integrity validation", "status": "done" },
         { "title": "Совместное строительство: репликация правок, права, подтверждения", "title_en": "Co-op building: edit replication, permissions, confirmations", "status": "done" },
-        { "title": "Воксельный редактор: ставить/удалять/красить (в игре пока только постановка)", "title_en": "Voxel editor: place/remove/paint (in-game only placement so far)", "status": "in_progress" },
+        { "title": "Редактор в игре: ставить / удалять / красить (прицел, Е/R)", "title_en": "In-game editor: place / remove / paint (crosshair, E/R)", "status": "done" },
         { "title": "Дублирование и шаблоны (blueprints) — в игру не подключено", "title_en": "Duplication and blueprints — not wired into the game", "status": "in_progress" }
       ]
     },

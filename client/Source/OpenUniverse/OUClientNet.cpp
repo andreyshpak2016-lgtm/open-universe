@@ -337,6 +337,13 @@ void UOUClientNet::Poll()
 			if (OUWire::DecodeBuildResult(Body.GetData(), static_cast<size_t>(Body.Num()), R))
 			{
 				bLastBuildAccepted = R.Accepted;
+				// Пишем причину: без этого отказ сервера выглядит как «ничего
+				// не произошло» и непонятно, что чинить.
+				static const TCHAR* ReasonText[] = {
+					TEXT("ok"), TEXT("недопустимо"), TEXT("нет связи с ядром"), TEXT("лимит")
+				};
+				const int32 Ri = FMath::Clamp(static_cast<int32>(R.Reason), 0, 3);
+				UE_LOG(LogTemp, Log, TEXT("Строительство: сервер ответил '%s'"), ReasonText[Ri]);
 			}
 		}
 		else if (Body[0] == OUWire::TagShot) // событие выстрела

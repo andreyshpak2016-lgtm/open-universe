@@ -692,6 +692,14 @@ void AOUPlayerMenuController::DrawBuildMenu(UCanvas* InCanvas)
 	UFont* Font = GEngine->GetLargeFont();
 	UFont* Small = GEngine->GetMediumFont();
 
+	// Прицел в центре экрана: показывает, что ЛКМ/Е/R работают «по направлению
+	// взгляда». Рисуем маленький крест.
+	{
+		const float CX = W * 0.5f, CY = H * 0.5f, S = 7.f;
+		FillBox(InCanvas, FVector2D(CX - S, CY - 1.f), FVector2D(S * 2.f, 2.f), ColAccent2);
+		FillBox(InCanvas, FVector2D(CX - 1.f, CY - S), FVector2D(2.f, S * 2.f), ColAccent2);
+	}
+
 	// Панель палитры внизу экрана.
 	const int32 Count = (int32)EOUBuildPart::Count;
 	const float SlotW = 150.f, SlotH = 90.f, Gap = 12.f;
@@ -720,7 +728,7 @@ void AOUPlayerMenuController::DrawBuildMenu(UCanvas* InCanvas)
 		X += SlotW + Gap;
 	}
 
-	DrawText(InCanvas, Small, TEXT("B — закрыть   ·   ЛКМ — поставить   ·   колесо — выбор блока"),
+	DrawText(InCanvas, Small, TEXT("B — закрыть   ·   ЛКМ — поставить   ·   E — удалить   ·   R — покрасить   ·   колесо — выбор блока"),
 		FVector2D(PanelPos.X + 24, PanelPos.Y + PanelSize.Y + 8), ColMuted);
 
 	DrawText(InCanvas, Small, FString::Printf(TEXT("Блоков поставлено: %d"), Char->BuiltCount),
