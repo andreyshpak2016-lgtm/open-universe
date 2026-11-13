@@ -16,18 +16,6 @@ namespace
 {
 	/** Радиус домашней планеты в серверных единицах (как на сервере). */
 	constexpr double OUBigRadiusServer = 500000.0;
-	/** Амплитуда рельефа в серверных единицах. */
-	constexpr double OUBigAmpServer = 10000.0;
-	constexpr double OUBigSeaLevel = 0.545;
-	constexpr uint64 OUBigSeed = 0xC0FFEE;
-
-	/** Высота рельефа (в см UE) в UE-направлении, общая формула планеты. */
-	double AnalyticHeightCm(const FVector& DirUE)
-	{
-		const FVector S = OUInterop::UEDirToServer(DirUE);
-		const double H = OULT::HeightDir(S.X, S.Y, S.Z, OUBigAmpServer, OUBigSeaLevel, OUBigSeed, 1);
-		return H * OUInterop::ServerUnitToCm;
-	}
 }
 
 AOUSurfaceBase::AOUSurfaceBase()
@@ -73,9 +61,10 @@ void AOUSurfaceBase::OnConstruction(const FTransform& Transform)
 
 float AOUSurfaceBase::FloorHeightAt(float LocalX, float LocalY) const
 {
-	// Смещение пола здания относительно «нуля» актора: актор стоит на
-	// поверхности в центре площадки, поэтому высота под точкой (X,Y) — это
-	// разница высот рельефа между этой точкой и центром.
+	// Смещение земли (см) относительно центра комплекса в его плоскости (X,Y).
+	// Берём ПОЛНУЮ поверхность планеты: обычный рельеф плюс выравнивание
+	// площадки (`PadFlattenCm`) — ту самую, по которой ходит персонаж. Поэтому
+	// постройки встают на землю (в том числе на пандус у края) без «парения».
 	const FVector Up = GetActorUpVector();
 	const FVector Fwd = GetActorForwardVector();
 	const FVector Right = GetActorRightVector();
@@ -85,67 +74,11 @@ float AOUSurfaceBase::FloorHeightAt(float LocalX, float LocalY) const
 	{
 		return 0.f;
 	}
-	const double Center = GetActorLocation().Size();
+	// Абсолютная земля (см над центром планеты) минус радиус в этой точке.
 	const double Here = OUBigRadiusServer * OUInterop::ServerUnitToCm
-		+ AnalyticHeightCm(Dir);
-	return static_cast<float>(Here - Center);
-}
-
-float AOUSurfaceBase::DeckOffsetCm(const FVector& CenterUE, float InPadRadius)
-{
-	// Прогоняем ту же сетку замеров, что и `BuildBase`, и берём максимум земли
-	// относительно центра. Поле поднимается до самой высокой точки площадки.
-	const FVector Up = CenterUE.GetSafeNormal();
-	FVector Ref = FVector::CrossProduct(Up, FVector::UpVector);
-	if (Ref.SizeSquared() < 1e-4f)
-	{
-		Ref = FVector::CrossProduct(Up, FVector::RightVector);
-	}
-	Ref = Ref.GetSafeNormal();
-	const FVector Fwd = FVector::CrossProduct(Ref, Up).GetSafeNormal();
-	const FVector Right = FVector::CrossProduct(Up, Fwd).GetSafeNormal();
-	const double Center = CenterUE.Size();
-	const int32 NS = 12;
-	double GMax = -1e18;
-	for (int32 I = 0; I <= NS; ++I)
-	{
-		for (int32 J = 0; J <= NS; ++J)
-		{
-			const float sx = -InPadRadius + (2.f * InPadRadius) * I / NS;
-			const float sy = -InPadRadius + (2.f * InPadRadius) * J / NS;
-			const FVector World = CenterUE + Fwd * sx + Right * sy;
-			const FVector Dir = World.GetSafeNormal();
-			if (Dir.IsNearlyZero())
-			{
-				continue;
-			}
-			const double Here = OUBigRadiusServer * OUInterop::ServerUnitToCm + AnalyticHeightCm(Dir);
-			GMax = FMath::Max(GMax, Here - Center);
-		}
-	}
-	return static_cast<float>(GMax) + 40.f;   // верх плиты = макс. земля + 40 см
-}
-
-double AOUSurfaceBase::DeckSurfaceRadiusAt(const FVector& DirUE, float InPadRadius)
-{
-	// Центр базы — в точке появления (её ставит GameMode тем же HomeSpawn).
-	const FVector BaseCenter = AOUVoxelPlanet::HomeSpawn(3.0f);
-	const FVector UpB = BaseCenter.GetSafeNormal();
-	const FVector D = DirUE.GetSafeNormal();
-	if (UpB.IsNearlyZero() || D.IsNearlyZero())
-	{
-		return 0.0;
-	}
-	// Внутри площадки? Сравниваем угол с угловым радиусом поля.
-	const double R = 500000.0 * OUInterop::ServerUnitToCm;   // радиус планеты, см
-	const double CosPad = 1.0 - (static_cast<double>(InPadRadius) * InPadRadius) / (2.0 * R * R);
-	if (FVector::DotProduct(D, UpB) < CosPad)
-	{
-		return 0.0;
-	}
-	// Верх поля — плоскость на высоте центра базы плюс подъём площадки.
-	const double DeckUp = DeckOffsetCm(BaseCenter, InPadRadius);
-	return static_cast<double>(BaseCenter.Size()) + DeckUp;
+		+ AOUVoxelPlanet::AnalyticHeightCm(Dir)
+		+ AOUVoxelPlanet::PadFlattenCm(Dir);
+	return static_cast<float>(Here - static_cast<double>(GetActorLocation().Size()));
 }
 
 void AOUSurfaceBase::AddBlock(const FVector& Offset, const FVector& Size, const FLinearColor& Color, const FString& Name, bool bSolid)
@@ -212,38 +145,32 @@ void AOUSurfaceBase::BuildBase()
 	const FLinearColor Cyan(0.10f, 0.92f, 0.86f);
 	const FLinearColor Strip(0.30f, 0.88f, 1.00f);
 
-	// --- Посадочное поле: плиты ЛОЖАТСЯ НА ЗЕМЛЮ (без высоких бортов) ---
-	// Раньше поле было поднято до самой высокой точки и обнесено сплошным бортом
-	// до земли — снаружи это была непроходимая стена, а если игрок появлялся
-	// внутри, он «проходил» сквозь неё. Теперь плиты повторяют рельеф (место и
-	// так самое ровное): пройти по комплексу можно свободно, а здания остаются
-	// твёрдыми препятствиями.
+	// --- Посадочное поле: РОВНЫЙ пол ---
+	// Землю под площадкой выравнивает сама планета (`AOUVoxelPlanet::PadFlattenCm`):
+	// и в визуальном меше, и в «земле» персонажа. Поэтому пол базы ровный и
+	// проходимый, а по краю идёт плавный пандус к рельефу.
 	const float PadR = PadRadius;
-	const int32 N = 16;                    // сетка плит поля (2*PadR / N на плиту)
-	const float Cell = (2.f * PadR) / N;
-	const float Lift = 25.f;               // подъём плиты над землёй, см
-	const float TileThick = 60.f;
-	for (int32 I = 0; I < N; ++I)
-	{
-		for (int32 J = 0; J < N; ++J)
-		{
-			const float CX = -PadR + (I + 0.5f) * Cell;
-			const float CY = -PadR + (J + 0.5f) * Cell;
-			const float Gz = FloorHeightAt(CX, CY);
-			const bool bAlt = ((I + J) & 1) == 0;
-			const FLinearColor C = bAlt ? Deck : FLinearColor(0.40f, 0.43f, 0.48f);
-			AddBlock(FVector(CX, CY, Gz + Lift - TileThick * 0.5f),
-				FVector(Cell + 2.f, Cell + 2.f, TileThick), C,
-				FString::Printf(TEXT("Pad_%d_%d"), I, J), /*bSolid=*/false);
-		}
-	}
+
+	// Уровень пола (см над «нулём» актора). В центре площадки земля планарована
+	// именно на этот уровень.
+	const float DeckZ = FloorHeightAt(0.f, 0.f);
+	// Верх ровной плиты пола — чуть выше земли, чтобы её было видно, но не
+	// «парить»: персонаж всё равно идёт по планарованной земле.
+	const float DeckTop = DeckZ + 6.f;
+	AddBlock(FVector(0, 0, DeckTop - 20.f), FVector(2.f * PadR, 2.f * PadR, 40.f),
+		Deck, TEXT("PadDeck"), /*bSolid=*/false);
+
+	// Уровень земли в произвольной точке комплекса (относительно «нуля» актора)
+	// с учётом выравнивания пола и пандуса. По нему ставим постройки, в том
+	// числе ВНЕ ровной плиты (на пандусе/рельефе) — чтобы ничего не парило.
+	auto GroundZ = [&](float CX, float CY) { return FloorHeightAt(CX, CY); };
 
 	// --- Разметка поля: светящаяся рамка по периметру и «Н»-полоса ---
 	const float Lw = 220.f;   // ширина полосы разметки
+	const float MarkZ = DeckTop + 20.f;
 	auto EdgeStrip = [&](float CX, float CY, float SX, float SY, const FString& Nm)
 	{
-		const float Gz = FloorHeightAt(CX, CY);
-		AddBlock(FVector(CX, CY, Gz + Lift + 30.f), FVector(SX, SY, 40.f), Strip, Nm, /*bSolid=*/false);
+		AddBlock(FVector(CX, CY, MarkZ), FVector(SX, SY, 40.f), Strip, Nm, /*bSolid=*/false);
 	};
 	EdgeStrip(0.f, PadR - Lw * 0.5f, 2.f * PadR, Lw, TEXT("MarkN"));
 	EdgeStrip(0.f, -PadR + Lw * 0.5f, 2.f * PadR, Lw, TEXT("MarkS"));
@@ -254,12 +181,12 @@ void AOUSurfaceBase::BuildBase()
 	EdgeStrip(PadR * 0.35f, 0.f, 260.f, PadR * 0.7f, TEXT("H2"));
 	EdgeStrip(0.f, 0.f, PadR * 0.7f, 260.f, TEXT("H3"));
 
-	// Здания ставим на ЗЕМЛЮ в их точке (плиты повторяют рельеф), с фундаментом
-	// вниз. Так ничего не парит и не образует стену поперёк пути.
+	// Здания стоят на ЗЕМЛЕ в своей точке (ровный пол или пандус у края), с
+	// фундаментом вниз — так ничего не парит и не образует стену поперёк пути.
 	auto AddOnDeck = [&](float CX, float CY, const FVector& Size, const FLinearColor& Color, const FString& Nm)
 	{
-		const float G = FloorHeightAt(CX, CY) + Lift;   // уровень площадки тут
-		const float FoundBottom = G - 400.f;
+		const float G = GroundZ(CX, CY);
+		const float FoundBottom = G - 600.f;
 		const float FH = G - FoundBottom;
 		AddBlock(FVector(CX, CY, FoundBottom + FH * 0.5f),
 			FVector(Size.X * 1.05f, Size.Y * 1.05f, FH), Dark, Nm + TEXT("Found"));

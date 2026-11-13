@@ -249,7 +249,98 @@ float AOUVoxelPlanet::HeightAtDetail(const FVector& Direction, int32 Detail) con
 
 float AOUVoxelPlanet::HeightAt(const FVector& Direction) const
 {
-	return HeightAtDetail(Direction, 1);
+	// Пол базы: клиентское выравнивание площадки. Применяем только к «земле»
+	// (визуальный меш и ходьба), а не к серверной формуле рельефа — поэтому
+	// кросс-проверка сервер↔клиент остаётся бит-в-бит.
+	const float Base = HeightAtDetail(Direction, 1);
+	if (!bHomePlanet)
+	{
+		return Base;
+	}
+	return Base + static_cast<float>(PadFlattenCm(Direction) / OUInterop::ServerUnitToCm);
+}
+
+double AOUVoxelPlanet::PadFlattenCm(const FVector& DirUE)
+{
+	// Выравнивание площадки базы: внутри — плоский пол на уровне самой высокой
+	// земли площадки + подъём, у края — плавный пандус к рельефу, дальше — ноль.
+	//
+	// ВАЖНО: центр базы и уровень пола ПОСТОЯННЫ, а функция вызывается на каждой
+	// вершине меша и при каждом шаге персонажа. `HomeSpawn` внутри создаёт
+	// объект планеты, поэтому всё это считаем ОДИН раз (static).
+	static const FVector BaseCenter = AOUVoxelPlanet::HomeSpawn(3.0f);
+	static const FVector UpB = BaseCenter.GetSafeNormal();
+	static const double R = static_cast<double>(BaseCenter.Size());
+	const FVector D = DirUE.GetSafeNormal();
+	if (UpB.IsNearlyZero() || D.IsNearlyZero())
+	{
+		return 0.0;
+	}
+	const double PadR = static_cast<double>(PadFlatRadius);
+	const double RampW = PadR * 0.35;
+	const double CosA = FMath::Clamp(FVector::DotProduct(D, UpB), -1.0, 1.0);
+	const double DistCm = FMath::Acos(CosA) * R;       // дуга по поверхности, см
+	if (DistCm > PadR + RampW)
+	{
+		return 0.0;
+	}
+	// Уровень пола: максимум земли под площадкой + подъём (в см над центром).
+	static const double DeckAbs = R + static_cast<double>(DeckLevelAboveCenterCm());
+	// Аналитическая земля в этой точке (в см над центром планеты).
+	const double Here = R + AnalyticHeightCm(D);
+	const double Delta = DeckAbs - Here;
+	if (DistCm <= PadR)
+	{
+		return Delta;                                  // ровный пол
+	}
+	const double T0 = (DistCm - PadR) / RampW;
+	const double T = T0 * T0 * (3.0 - 2.0 * T0);       // smoothstep
+	return Delta * (1.0 - T);                          // пандус к рельефу
+}
+
+double AOUVoxelPlanet::DeckLevelAboveCenterCm()
+{
+	// Совпадает с базой (`AOUSurfaceBase::DeckOffsetCm`): максимум земли по сетке
+	// площадки плюс подъём. Считаем по той же формуле рельефа (detail=1).
+	const FVector BaseCenter = AOUVoxelPlanet::HomeSpawn(3.0f);
+	const FVector Up = BaseCenter.GetSafeNormal();
+	FVector Ref = FVector::CrossProduct(Up, FVector::UpVector);
+	if (Ref.SizeSquared() < 1e-4f)
+	{
+		Ref = FVector::CrossProduct(Up, FVector::RightVector);
+	}
+	Ref = Ref.GetSafeNormal();
+	const FVector Fwd = FVector::CrossProduct(Ref, Up).GetSafeNormal();
+	const FVector Right = FVector::CrossProduct(Up, Fwd).GetSafeNormal();
+	const double Center = BaseCenter.Size();
+	const int32 NS = 12;
+	double GMax = -1e18;
+	for (int32 I = 0; I <= NS; ++I)
+	{
+		for (int32 J = 0; J <= NS; ++J)
+		{
+			const float sx = -PadFlatRadius + (2.f * PadFlatRadius) * I / NS;
+			const float sy = -PadFlatRadius + (2.f * PadFlatRadius) * J / NS;
+			const FVector World = BaseCenter + Fwd * sx + Right * sy;
+			const FVector DirN = World.GetSafeNormal();
+			if (DirN.IsNearlyZero())
+			{
+				continue;
+			}
+			const double Here = static_cast<double>(Center)
+				+ static_cast<double>(AnalyticHeightCm(DirN));
+			GMax = FMath::Max(GMax, Here - Center);
+		}
+	}
+	return GMax + static_cast<double>(PadLift);
+}
+
+double AOUVoxelPlanet::AnalyticHeightCm(const FVector& DirUE)
+{
+	// Аналитическая высота рельефа планеты (см) в UE-направлении — общая формула.
+	const FVector S = OUInterop::UEDirToServer(DirUE);
+	return OULT::HeightDir(S.X, S.Y, S.Z, 10000.0, 0.545, 0xC0FFEEull, 1)
+		* OUInterop::ServerUnitToCm;
 }
 
 float AOUVoxelPlanet::SurfaceRadiusAt(const FVector& Direction) const
@@ -266,9 +357,10 @@ float AOUVoxelPlanet::VisualHeightDetail(const FVector& DirUE, int32 Detail) con
 {
 	const float Base = HeightAtDetail(DirUE, Detail);
 	// Домашняя планета: физика и картинка совпадают (по ней ходит игрок).
+	// Плюс выравнивание площадки базы — ровный пол (и в меше, и при ходьбе).
 	if (bHomePlanet)
 	{
-		return Base;
+		return Base + static_cast<float>(PadFlattenCm(DirUE) / OUInterop::ServerUnitToCm);
 	}
 	const FVector D = DirUE.GetSafeNormal();
 	const float T = FMath::Clamp(Base / (Amplitude * 2.f) + 0.5f, 0.f, 1.f);
