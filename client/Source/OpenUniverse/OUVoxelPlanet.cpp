@@ -257,7 +257,8 @@ float AOUVoxelPlanet::HeightAt(const FVector& Direction) const
 	{
 		return Base;
 	}
-	return Base + static_cast<float>(PadFlattenCm(Direction) / OUInterop::ServerUnitToCm);
+	// `HeightAtDetail` и `PadFlattenCm` — оба в сантиметрах UE, складываем как есть.
+	return Base + static_cast<float>(PadFlattenCm(Direction));
 }
 
 double AOUVoxelPlanet::PadFlattenCm(const FVector& DirUE)
@@ -360,7 +361,8 @@ float AOUVoxelPlanet::VisualHeightDetail(const FVector& DirUE, int32 Detail) con
 	// Плюс выравнивание площадки базы — ровный пол (и в меше, и при ходьбе).
 	if (bHomePlanet)
 	{
-		return Base + static_cast<float>(PadFlattenCm(DirUE) / OUInterop::ServerUnitToCm);
+		// `Base` и `PadFlattenCm` — в сантиметрах UE, складываем как есть.
+		return Base + static_cast<float>(PadFlattenCm(DirUE));
 	}
 	const FVector D = DirUE.GetSafeNormal();
 	const float T = FMath::Clamp(Base / (Amplitude * 2.f) + 0.5f, 0.f, 1.f);
