@@ -77,7 +77,7 @@ protected:
 
 private:
 	/** Добавить блок (позиция и размер — в локальных осях базы, см). */
-	void AddBlock(const FVector& Offset, const FVector& Size, const FLinearColor& Color, const FString& Name);
+	void AddBlock(const FVector& Offset, const FVector& Size, const FLinearColor& Color, const FString& Name, bool bSolid = true);
 
 	/**
 	 * Высота пола базы над «нулём» актора в локальной точке (X,Y), см.

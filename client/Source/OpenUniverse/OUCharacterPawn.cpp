@@ -244,11 +244,10 @@ void AOUCharacterPawn::BeginPlay()
 	FVector ShipPos = CharPos + Fwd * 900.f + Side * 700.f;
 	if (AOUVoxelPlanet* Planet = AOUVoxelPlanet::FindHomePlanet(World))
 	{
-		// Встаём НА посадочное поле базы, а не на аналитическую землю: поле
-		// выровнено до самой высокой точки площадки.
-		const float DeckUp = AOUSurfaceBase::DeckOffsetCm(BaseSpawn, 9000.f);
-		CharPos = CharPos.GetSafeNormal() * (Planet->SurfaceRadiusAt(CharPos.GetSafeNormal()) + DeckUp + 95.f);
-		ShipPos = ShipPos.GetSafeNormal() * (Planet->SurfaceRadiusAt(ShipPos.GetSafeNormal()) + DeckUp + 140.f);
+		// Плиты площадки лежат на земле (только визуал), поэтому стоим на
+		// аналитической поверхности планеты.
+		CharPos = CharPos.GetSafeNormal() * (Planet->SurfaceRadiusAt(CharPos.GetSafeNormal()) + 95.f);
+		ShipPos = ShipPos.GetSafeNormal() * (Planet->SurfaceRadiusAt(ShipPos.GetSafeNormal()) + 140.f);
 	}
 
 	// Курс персонажа — «наружу» от базы (по Fwd).
@@ -406,6 +405,8 @@ void AOUCharacterPawn::AxisLookPitchMouse(float Value)
 {
 	if (bCursorCaptured)
 	{
+		// Мышь ВВЕРХ должна смотреть ВВЕРХ. UE даёт MouseY > 0 при движении вверх,
+		// поэтому прибавляем без инверсии (в ini ось теперь тоже Scale=+1).
 		ViewPitch = FMath::Clamp(ViewPitch + Value * MouseSensitivity, -1.4f, 1.4f);
 	}
 }
@@ -1038,17 +1039,10 @@ void AOUCharacterPawn::Tick(float DeltaSeconds)
 		}
 	}
 
-	// Привязка к рельефу: не проваливаемся под поверхность. Если игрок — на
-	// площадке базы, стоим на её ВЕРХУ, а не на аналитической земле под ней.
+	// Привязка к рельефу: не проваливаемся под поверхность. Плиты площадки —
+	// только визуал, поэтому землёй остаётся аналитический рельеф планеты.
 	const FVector Dir = NewPos.GetSafeNormal();
-	double Surface = static_cast<double>(SurfaceRadius(Dir)) + CapsuleHalfHeight;
-	{
-		const double Deck = AOUSurfaceBase::DeckSurfaceRadiusAt(Dir, 9000.f);
-		if (Deck > 0.0)
-		{
-			Surface = FMath::Max(Surface, Deck + CapsuleHalfHeight);
-		}
-	}
+	const double Surface = static_cast<double>(SurfaceRadius(Dir)) + CapsuleHalfHeight;
 
 	// Диагностика `-OUBaseOverview`: держим камеру над базой (обзор сверху),
 	// иначе гравитация прижимает её к земле.

@@ -148,7 +148,7 @@ double AOUSurfaceBase::DeckSurfaceRadiusAt(const FVector& DirUE, float InPadRadi
 	return static_cast<double>(BaseCenter.Size()) + DeckUp;
 }
 
-void AOUSurfaceBase::AddBlock(const FVector& Offset, const FVector& Size, const FLinearColor& Color, const FString& Name)
+void AOUSurfaceBase::AddBlock(const FVector& Offset, const FVector& Size, const FLinearColor& Color, const FString& Name, bool bSolid)
 {
 	if (!CubeMesh)
 	{
@@ -161,13 +161,20 @@ void AOUSurfaceBase::AddBlock(const FVector& Offset, const FVector& Size, const 
 	Comp->SetRelativeLocation(Offset);
 	// Базовый куб движка — 100 см; масштаб задаём относительно него.
 	Comp->SetRelativeScale3D(Size / 100.f);
-	// Блок — твёрдый: персонаж не должен «проваливаться» сквозь него. Блокируем
-	// и мир (капсула персонажа — Pawn), и луч прицела (Visibility).
-	Comp->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
-	Comp->SetCollisionObjectType(ECC_WorldStatic);
-	Comp->SetCollisionResponseToAllChannels(ECR_Block);
 	Comp->SetMobility(EComponentMobility::Movable);
 	Comp->SetGenerateOverlapEvents(false);
+	if (bSolid)
+	{
+		// Твёрдый блок (здания, фундаменты): персонаж не проходит сквозь.
+		Comp->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+		Comp->SetCollisionObjectType(ECC_WorldStatic);
+		Comp->SetCollisionResponseToAllChannels(ECR_Block);
+	}
+	else
+	{
+		// Плиты поля/разметка — только визуал (не мешают ходить по земле).
+		Comp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	}
 	if (BaseMaterial)
 	{
 		Comp->SetMaterial(0, BaseMaterial);
@@ -205,49 +212,38 @@ void AOUSurfaceBase::BuildBase()
 	const FLinearColor Cyan(0.10f, 0.92f, 0.86f);
 	const FLinearColor Strip(0.30f, 0.88f, 1.00f);
 
-	// --- Посадочное поле: РОВНАЯ плита-платформа с бортом вниз к земле ---
-	// Место появления — самое ровное на планете, но перепад в десятки метров
-	// всё равно есть. Поэтому поле делаем единой ГОРИЗОНТАЛЬНОЙ плитой на
-	// высоте самой высокой точки площадки, а под ней — тёмный борт до земли.
-	// Так площадка действительно плоская (как настоящий космодром), а не
-	// ступеньками повторяет рельеф.
+	// --- Посадочное поле: плиты ЛОЖАТСЯ НА ЗЕМЛЮ (без высоких бортов) ---
+	// Раньше поле было поднято до самой высокой точки и обнесено сплошным бортом
+	// до земли — снаружи это была непроходимая стена, а если игрок появлялся
+	// внутри, он «проходил» сквозь неё. Теперь плиты повторяют рельеф (место и
+	// так самое ровное): пройти по комплексу можно свободно, а здания остаются
+	// твёрдыми препятствиями.
 	const float PadR = PadRadius;
-	const int32 NS = 12;   // сетка замеров земли под полем
-	float GMin = 1e9f, GMax = -1e9f;
-	for (int32 I = 0; I <= NS; ++I)
+	const int32 N = 16;                    // сетка плит поля (2*PadR / N на плиту)
+	const float Cell = (2.f * PadR) / N;
+	const float Lift = 25.f;               // подъём плиты над землёй, см
+	const float TileThick = 60.f;
+	for (int32 I = 0; I < N; ++I)
 	{
-		for (int32 J = 0; J <= NS; ++J)
+		for (int32 J = 0; J < N; ++J)
 		{
-			const float sx = -PadR + (2.f * PadR) * I / NS;
-			const float sy = -PadR + (2.f * PadR) * J / NS;
-			const float g = FloorHeightAt(sx, sy);
-			GMin = FMath::Min(GMin, g);
-			GMax = FMath::Max(GMax, g);
+			const float CX = -PadR + (I + 0.5f) * Cell;
+			const float CY = -PadR + (J + 0.5f) * Cell;
+			const float Gz = FloorHeightAt(CX, CY);
+			const bool bAlt = ((I + J) & 1) == 0;
+			const FLinearColor C = bAlt ? Deck : FLinearColor(0.40f, 0.43f, 0.48f);
+			AddBlock(FVector(CX, CY, Gz + Lift - TileThick * 0.5f),
+				FVector(Cell + 2.f, Cell + 2.f, TileThick), C,
+				FString::Printf(TEXT("Pad_%d_%d"), I, J), /*bSolid=*/false);
 		}
 	}
-	const float DeckTop = GMax + 40.f;                     // верх плиты
-	const float DeckThick = 150.f;
-	const float DeckCenterZ = DeckTop - DeckThick * 0.5f;
-	// Сама плита (одним блоком) + тёмный борт по периметру до земли.
-	AddBlock(FVector(0, 0, DeckCenterZ), FVector(2.f * PadR, 2.f * PadR, DeckThick), Deck, TEXT("PadDeck"));
-	const float SkirtBottom = GMin - 300.f;
-	const float SkirtH = DeckTop - SkirtBottom;
-	const float SkirtT = 260.f;
-	auto Skirt = [&](float CX, float CY, float SX, float SY, const FString& Nm)
-	{
-		AddBlock(FVector(CX, CY, SkirtBottom + SkirtH * 0.5f), FVector(SX, SY, SkirtH), Dark, Nm);
-	};
-	Skirt(0.f, PadR, 2.f * PadR + SkirtT, SkirtT, TEXT("SkirtN"));
-	Skirt(0.f, -PadR, 2.f * PadR + SkirtT, SkirtT, TEXT("SkirtS"));
-	Skirt(PadR, 0.f, SkirtT, 2.f * PadR, TEXT("SkirtE"));
-	Skirt(-PadR, 0.f, SkirtT, 2.f * PadR, TEXT("SkirtW"));
 
 	// --- Разметка поля: светящаяся рамка по периметру и «Н»-полоса ---
-	const float MarkZ = DeckTop + 20.f;
 	const float Lw = 220.f;   // ширина полосы разметки
 	auto EdgeStrip = [&](float CX, float CY, float SX, float SY, const FString& Nm)
 	{
-		AddBlock(FVector(CX, CY, MarkZ), FVector(SX, SY, 40.f), Strip, Nm);
+		const float Gz = FloorHeightAt(CX, CY);
+		AddBlock(FVector(CX, CY, Gz + Lift + 30.f), FVector(SX, SY, 40.f), Strip, Nm, /*bSolid=*/false);
 	};
 	EdgeStrip(0.f, PadR - Lw * 0.5f, 2.f * PadR, Lw, TEXT("MarkN"));
 	EdgeStrip(0.f, -PadR + Lw * 0.5f, 2.f * PadR, Lw, TEXT("MarkS"));
@@ -258,23 +254,16 @@ void AOUSurfaceBase::BuildBase()
 	EdgeStrip(PadR * 0.35f, 0.f, 260.f, PadR * 0.7f, TEXT("H2"));
 	EdgeStrip(0.f, 0.f, PadR * 0.7f, 260.f, TEXT("H3"));
 
-	// Все здания ставим на ЕДИНЫЙ уровень поля (верх плиты): так комплекс
-	// читается как один объект. Под каждым — фундамент до земли, чтобы ничего
-	// не парило на склоне.
+	// Здания ставим на ЗЕМЛЮ в их точке (плиты повторяют рельеф), с фундаментом
+	// вниз. Так ничего не парит и не образует стену поперёк пути.
 	auto AddOnDeck = [&](float CX, float CY, const FVector& Size, const FLinearColor& Color, const FString& Nm)
 	{
-		const float G = FloorHeightAt(CX, CY);
-		const float Base = DeckTop;                    // низ здания на уровне поля
-		// Фундамент от земли до уровня поля (если земля ниже).
-		const float FoundTop = Base;
-		const float FoundBottom = FMath::Min(G, Base) - 200.f;
-		if (FoundTop > FoundBottom)
-		{
-			const float FH = FoundTop - FoundBottom;
-			AddBlock(FVector(CX, CY, FoundBottom + FH * 0.5f),
-				FVector(Size.X * 1.05f, Size.Y * 1.05f, FH), Dark, Nm + TEXT("Found"));
-		}
-		AddBlock(FVector(CX, CY, Base + Size.Z * 0.5f), Size, Color, Nm);
+		const float G = FloorHeightAt(CX, CY) + Lift;   // уровень площадки тут
+		const float FoundBottom = G - 400.f;
+		const float FH = G - FoundBottom;
+		AddBlock(FVector(CX, CY, FoundBottom + FH * 0.5f),
+			FVector(Size.X * 1.05f, Size.Y * 1.05f, FH), Dark, Nm + TEXT("Found"));
+		AddBlock(FVector(CX, CY, G + Size.Z * 0.5f), Size, Color, Nm);
 	};
 
 	// --- Командно-диспетчерская вышка (север поля) ---
