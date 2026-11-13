@@ -310,6 +310,10 @@ void AOUCharacterPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputCom
 	PlayerInputComponent->BindAxis(TEXT("Yaw"), this, &AOUCharacterPawn::AxisRight);
 	PlayerInputComponent->BindAxis(TEXT("LookYaw"), this, &AOUCharacterPawn::AxisLookYaw);
 	PlayerInputComponent->BindAxis(TEXT("LookPitch"), this, &AOUCharacterPawn::AxisLookPitch);
+	// Мышь: значение уже является дельтой за кадр, поэтому обрабатываем отдельно
+	// (умножать его на время кадра нельзя — иначе обзор «плывёт» при просадке FPS).
+	PlayerInputComponent->BindAxis(TEXT("LookYawMouse"), this, &AOUCharacterPawn::AxisLookYawMouse);
+	PlayerInputComponent->BindAxis(TEXT("LookPitchMouse"), this, &AOUCharacterPawn::AxisLookPitchMouse);
 	PlayerInputComponent->BindAction(TEXT("Jump"), IE_Pressed, this, &AOUCharacterPawn::OnJumpPressed);
 	PlayerInputComponent->BindAction(TEXT("Jump"), IE_Released, this, &AOUCharacterPawn::OnJumpReleased);
 	PlayerInputComponent->BindAction(TEXT("ExitShip"), IE_Pressed, this, &AOUCharacterPawn::OnExitPressed);
@@ -325,12 +329,53 @@ void AOUCharacterPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputCom
 	// Выбор блока в палитре: колесо мыши.
 	PlayerInputComponent->BindAction(TEXT("BuildNext"), IE_Pressed, this, &AOUCharacterPawn::OnBuildNext);
 	PlayerInputComponent->BindAction(TEXT("BuildPrev"), IE_Pressed, this, &AOUCharacterPawn::OnBuildPrev);
+	// Alt — отпустить/вернуть курсор (обзор мышью / работа с интерфейсом).
+	PlayerInputComponent->BindAction(TEXT("CursorToggle"), IE_Pressed, this, &AOUCharacterPawn::OnCursorToggle);
 }
 
 void AOUCharacterPawn::AxisForward(float Value) { InputForward = FMath::Clamp(Value, -1.f, 1.f); }
 void AOUCharacterPawn::AxisRight(float Value) { InputRight = FMath::Clamp(Value, -1.f, 1.f); }
 void AOUCharacterPawn::AxisLookYaw(float Value) { InputLookYaw = FMath::Clamp(Value, -1.f, 1.f); }
 void AOUCharacterPawn::AxisLookPitch(float Value) { InputLookPitch = FMath::Clamp(Value, -1.f, 1.f); }
+
+void AOUCharacterPawn::AxisLookYawMouse(float Value)
+{
+	// Значение мыши в UE — это уже дельта в «пикселях» за кадр. Применяем сразу
+	// (без умножения на DeltaSeconds), иначе чувствительность зависит от FPS.
+	if (bCursorCaptured)
+	{
+		ViewYaw += Value * MouseSensitivity;
+	}
+}
+
+void AOUCharacterPawn::AxisLookPitchMouse(float Value)
+{
+	if (bCursorCaptured)
+	{
+		ViewPitch = FMath::Clamp(ViewPitch + Value * MouseSensitivity, -1.4f, 1.4f);
+	}
+}
+
+void AOUCharacterPawn::OnCursorToggle()
+{
+	// Alt — как в Dual Universe: отпустить курсор для интерфейса и вернуть
+	// обратно. Пока курсор свободен, обзор мышью не работает.
+	bCursorCaptured = !bCursorCaptured;
+	if (APlayerController* PC = Cast<APlayerController>(GetController()))
+	{
+		PC->bShowMouseCursor = !bCursorCaptured;
+		if (bCursorCaptured)
+		{
+			PC->SetInputMode(FInputModeGameOnly());
+		}
+		else
+		{
+			FInputModeGameAndUI Mode;
+			Mode.SetHideCursorDuringCapture(false);
+			PC->SetInputMode(Mode);
+		}
+	}
+}
 void AOUCharacterPawn::OnJumpPressed() { bJumpQueued = true; }
 void AOUCharacterPawn::OnJumpReleased() { }
 void AOUCharacterPawn::OnExitPressed() { bExitHeld = true; ExitHoldTime = 0.f; }
@@ -523,7 +568,7 @@ FIntVector AOUCharacterPawn::WorldToVoxel(const FVector& WorldPos) const
 	}
 	const FVector RightUE = FVector::CrossProduct(UpUE, FwdUE).GetSafeNormal();
 	const FVector CharUE = BaseUE + FwdUE * 2200.f;
-	const FVector AnchorUE = CharUE + FwdUE * (2.0 * VoxelCm);
+	const FVector AnchorUE = CharUE + FwdUE * (6.0 * VoxelCm);
 
 	const FVector Rel = WorldPos - AnchorUE;
 	const double FX = FVector::DotProduct(Rel, FwdUE) / VoxelCm;
@@ -591,10 +636,10 @@ FVector AOUCharacterPawn::VoxelWorld(const FVector& ServerCoord) const
 		FwdUE = FVector::VectorPlaneProject(FVector::ForwardVector, UpUE).GetSafeNormal();
 	}
 	const FVector RightUE = FVector::CrossProduct(UpUE, FwdUE).GetSafeNormal();
-	// Якорь — сразу перед персонажем (он в 2200 см от базы, смотрит по FwdUE).
-	// Держим его БЛИЗКО (2 вокселя), чтобы поставить блок прямо перед собой.
+	// Якорь — на несколько метров перед персонажем: блоки ставим «перед собой»,
+	// а не в лицо (иначе первый блок закрывает обзор).
 	const FVector CharUE = BaseUE + FwdUE * 2200.f;
-	const FVector AnchorUE = CharUE + FwdUE * (2.0 * VoxelCm);
+	const FVector AnchorUE = CharUE + FwdUE * (6.0 * VoxelCm);
 	return AnchorUE
 		+ FwdUE * (ServerCoord.X * VoxelCm)
 		+ UpUE * (ServerCoord.Y * VoxelCm + VoxelCm * 0.5)
@@ -836,6 +881,19 @@ void AOUCharacterPawn::Tick(float DeltaSeconds)
 
 	SetActorLocation(NewPos);
 
+	// Локальный детальный участок поверхности: перестраиваем, когда игрок ушёл
+	// от центра прошлого участка (иначе мелкий рельеф не виден — глобальный
+	// меш планеты слишком грубый).
+	if (AOUVoxelPlanet* Planet = AOUVoxelPlanet::FindHomePlanet(World))
+	{
+		if (FVector::DistSquared(NewPos, LocalTerrainCenter) >
+			FMath::Square(Planet->LocalExtentCm * 0.5f))
+		{
+			LocalTerrainCenter = NewPos;
+			Planet->RebuildLocal(NewPos);
+		}
+	}
+
 	// Зажатие F — возврат в корабль, если он рядом.
 	if (bExitHeld)
 	{
@@ -857,8 +915,7 @@ void AOUCharacterPawn::Tick(float DeltaSeconds)
 	}
 
 	// Ориентация тела: «верх» — радиус, «вперёд» — по курсу.
-	SetActorRotation(FRotationMatrix::MakeFromXZ(Forward, Up).Rotator());
-	// Камера: в ЛОКАЛЬНЫХ осях пешки (локальный X = курс, Z = вверх) достаточно
+	SetActorRotation(FRotationMatrix::MakeFromXZ(Forward, Up).Rotator());	// Камера: в ЛОКАЛЬНЫХ осях пешки (локальный X = курс, Z = вверх) достаточно
 	// относительного поворота по тангажу — без мировой математики, которая
 	// конфликтует с родительским трансформом.
 	if (Camera)

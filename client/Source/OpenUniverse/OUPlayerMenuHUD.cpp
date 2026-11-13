@@ -16,6 +16,9 @@ void AOUPlayerMenuHUD::DrawHUD()
 	if (Menu)
 	{
 		Menu->DrawMenu(Canvas);
+		// Сначала палитра строительства, затем игровой HUD: так статусы и прицел
+		// всегда сверху, а хотбар не перекрывает палитру (см. DrawGameHud).
 		Menu->DrawBuildMenu(Canvas);
+		Menu->DrawGameHud(Canvas);
 	}
 }

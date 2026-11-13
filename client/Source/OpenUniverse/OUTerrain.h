@@ -35,7 +35,7 @@
 namespace OULT
 {
 	/** Версия формулы рельефа. Должна совпадать с `ou_sim::TERRAIN_VERSION`. */
-	constexpr int32_t TerrainVersion = 3;
+	constexpr int32_t TerrainVersion = 4;
 
 	/** Ограничение значения в диапазон (аналог clamp без зависимостей). */
 	inline double Clamp(double V, double Lo, double Hi)
@@ -150,17 +150,27 @@ namespace OULT
 
 		// Форма континентов (крупный шум).
 		const double Cont = Fbm(X, Y, Z, 4, 0.9, Seed ^ 0xC2B2ull);
-		// Пологие детали поверхности.
-		const double Flat = Fbm(X, Y, Z, 4, 3.0, Seed ^ 0xA11CEull);
+		// Холмы: длина волны заметно больше шага меша планеты (~3 км),
+		// иначе меш не может их отобразить и «алиасит» большими плитами.
+		const double Mid = Fbm(X, Y, Z, 4, 20.0, Seed ^ 0xA11CEull);
+		// Мелкий рельеф: холмы в единицы километров.
+		const double Fine = Fbm(X, Y, Z, 4, 150.0, Seed ^ 0xD37ull);
 		// Горы: острые хребты.
-		const double Mtn = Ridged(X, Y, Z, 4, 4.5, Seed ^ 0x5EEDull);
+		const double Mtn = Ridged(X, Y, Z, 3, 4.5, Seed ^ 0x5EEDull);
 
 		// Отклонение от уровня океана.
 		const double Base = Cont - SeaLevel;
 		// Горы «включаются» только в глубине материка (не у берега).
 		const double Land = Clamp(Base / 0.09, 0.0, 1.0);
 
-		const double H01 = Base + Flat * 0.05 + Mtn * Land * 0.30;
+		// Двусторонний рельеф: холмы вверх и вниз, плюс горы на материках.
+		// Амплитуда подобрана так, чтобы линейная интерполяция меша (шаг ~1.5 км)
+		// не «вспучивалась» выше роста камеры (1.66 м): иначе игрок оказывается
+		// под гранью и видит изнанку поверхности.
+		const double H01 = Base
+			+ (Mid - 0.5) * 0.16 * (0.3 + 0.7 * Land)
+			+ (Fine - 0.5) * 0.020 * (0.2 + 0.8 * Land)
+			+ Mtn * Land * 0.34;
 		return H01 * Amplitude * 2.0;
 	}
 

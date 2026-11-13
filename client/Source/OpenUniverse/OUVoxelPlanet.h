@@ -150,6 +150,25 @@ public:
 	UFUNCTION(BlueprintCallable, CallInEditor, Category = "Open Universe|Planet")
 	void BuildAtmosphere();
 
+	/**
+	 * Перестроить локальный детальный участок поверхности вокруг точки.
+	 *
+	 * Зачем: у всей планеты ячейка меша — километры, поэтому мелкий рельеф
+	 * (холмы в сотни метров) у ног игрока не виден. Локальный участок — плотная
+	 * сетка в касательной плоскости вокруг игрока, высоты берутся из ТОЙ ЖЕ
+	 * формулы, что и глобальный меш/сервер.
+	 *
+	 * @param AroundUE  точка на поверхности (мировые см), вокруг которой строим
+	 */
+	void RebuildLocal(const FVector& AroundUE);
+
+	/** Размер локального участка (полусторона, см) и число ячеек на сторону. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Open Universe|Planet")
+	float LocalExtentCm = 400000.f;   // 4 км в каждую сторону
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Open Universe|Planet")
+	int32 LocalCells = 128;           // 256×256 вершин, ячейка ~60 м
+
 	/** Максимум облачных «клубов» на планету (пул создаётся в конструкторе). */
 	static constexpr int32 MaxCloudPuffs = 160;
 
@@ -161,6 +180,10 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Open Universe|Planet")
 	UProceduralMeshComponent* Mesh = nullptr;
+
+	/** Локальный детальный участок поверхности вокруг игрока (отдельный меш). */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Open Universe|Planet")
+	UProceduralMeshComponent* LocalMesh = nullptr;
 
 	/** Слой атмосферы: чуть больше планеты, полупрозрачный ореол. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Open Universe|Planet")

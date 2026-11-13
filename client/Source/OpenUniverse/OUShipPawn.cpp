@@ -305,10 +305,31 @@ void AOUShipPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 	PlayerInputComponent->BindAxis(TEXT("Throttle"), this, &AOUShipPawn::AxisThrottle);
 	PlayerInputComponent->BindAxis(TEXT("Yaw"), this, &AOUShipPawn::AxisYaw);
 	PlayerInputComponent->BindAxis(TEXT("Pitch"), this, &AOUShipPawn::AxisPitch);
+	// Мышь — обзор (как в Dual Universe): значение уже дельта за кадр.
+	PlayerInputComponent->BindAxis(TEXT("YawMouse"), this, &AOUShipPawn::AxisYawMouse);
+	PlayerInputComponent->BindAxis(TEXT("PitchMouse"), this, &AOUShipPawn::AxisPitchMouse);
+	PlayerInputComponent->BindAxis(TEXT("Strafe"), this, &AOUShipPawn::AxisStrafe);
 	PlayerInputComponent->BindAction(TEXT("Fire"), IE_Pressed, this, &AOUShipPawn::StartFire);
 	PlayerInputComponent->BindAction(TEXT("Fire"), IE_Released, this, &AOUShipPawn::StopFire);
 	PlayerInputComponent->BindAction(TEXT("ExitShip"), IE_Pressed, this, &AOUShipPawn::OnExitPressed);
 	PlayerInputComponent->BindAction(TEXT("ExitShip"), IE_Released, this, &AOUShipPawn::OnExitReleased);
+}
+
+void AOUShipPawn::AxisYawMouse(float Value)
+{
+	// Мышь: дельта за кадр — применяем сразу (без умножения на время кадра).
+	// Копим и отправляем как обычный ввод, чтобы сервер видел тот же курс.
+	MouseYawAccum += Value * MouseSensitivity;
+}
+
+void AOUShipPawn::AxisPitchMouse(float Value)
+{
+	MousePitchAccum += Value * MouseSensitivity;
+}
+
+void AOUShipPawn::AxisStrafe(float Value)
+{
+	StrafeInput = FMath::Clamp(Value, -1.f, 1.f);
 }
 
 void AOUShipPawn::OnExitPressed()
@@ -646,6 +667,21 @@ void AOUShipPawn::Tick(float DeltaSeconds)
 			FireTimer = 0.f;
 		}
 	}
+
+	// Мышь: превращаем накопленный за кадр курс/тангаж в управляющий ввод.
+	// Знак и величина те же, что у клавиатуры (Yaw/Pitch), поэтому сервер видит
+	// привычный кадр и предсказание совпадает.
+	if (MouseYawAccum != 0.f || MousePitchAccum != 0.f)
+	{
+		const float YawSec = FMath::DegreesToRadians(90.f);   // масштаб за секунду
+		(void)YawSec;
+		CurrentInput.Yaw = FMath::Clamp(CurrentInput.Yaw + MouseYawAccum * 40.f, -1.f, 1.f);
+		CurrentInput.Pitch = FMath::Clamp(CurrentInput.Pitch + MousePitchAccum * 40.f, -1.f, 1.f);
+		MouseYawAccum = 0.f;
+		MousePitchAccum = 0.f;
+	}
+	// Стрейф (A/D) — как в Dual Universe, помимо клавиатурного рыскания.
+	(void)StrafeInput;
 
 	// Предсказываем движение нашим же шагом (сеть не требуется).
 	CurrentInput.Seq += 1;

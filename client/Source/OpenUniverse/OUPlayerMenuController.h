@@ -153,6 +153,12 @@ public:
 	 */
 	void DrawBuildMenu(class UCanvas* InCanvas);
 
+	/**
+	 * Постоянный игровой HUD в духе Dual Universe: прицел, статусы в углах,
+	 * хотбар внизу. Рисуется всегда, когда открыт игровой мир (меню закрыто).
+	 */
+	void DrawGameHud(class UCanvas* InCanvas);
+
 	/** Курсор мыши показывать в меню, прятать в игре. */
 	void SetMenuCursor(bool bShow);
 

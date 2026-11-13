@@ -70,6 +70,15 @@ AOUVoxelPlanet::AOUVoxelPlanet()
 	Mesh = CreateDefaultSubobject<UProceduralMeshComponent>(TEXT("VoxelMesh"));
 	RootComponent = Mesh;
 	Mesh->bUseAsyncCooking = true;
+	Mesh->bUseComplexAsSimpleCollision = false;
+
+	// Локальный детальный участок поверхности: отдельный меш, который
+	// пристраивается вокруг игрока (глобальный меш слишком грубый для
+	// мелкого рельефа). Коллизию ему не даём — физику ведёт сервер.
+	LocalMesh = CreateDefaultSubobject<UProceduralMeshComponent>(TEXT("LocalTerrainMesh"));
+	LocalMesh->SetupAttachment(Mesh);
+	LocalMesh->bUseAsyncCooking = true;
+	LocalMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 
 	// Материал обязателен: без него процедурный меш в UE не виден.
 	// Берём материал, который рисует **цвет вершин** — иначе планета была бы
@@ -165,11 +174,11 @@ int32 AOUVoxelPlanet::Segments() const
 {
 	switch (Lod)
 	{
-	case EOUVoxelLod::Far:   return 8;
-	case EOUVoxelLod::Mid:   return 32;
-	case EOUVoxelLod::Near:  return 96;
-	case EOUVoxelLod::Close: return 256;   // крупная планета: мелкая ячейка у поверхности
-	default:                 return 32;
+	case EOUVoxelLod::Far:   return 16;
+	case EOUVoxelLod::Mid:   return 64;
+	case EOUVoxelLod::Near:  return 256;
+	case EOUVoxelLod::Close: return 512;   // крупная планета: ячейка ~1.5 км
+	default:                 return 64;
 	}
 }
 
@@ -504,6 +513,100 @@ void AOUVoxelPlanet::BuildPlanet()
 	BuildAtmosphere();
 }
 
+void AOUVoxelPlanet::RebuildLocal(const FVector& AroundUE)
+{
+	if (!LocalMesh)
+	{
+		return;
+	}
+	LocalMesh->ClearAllMeshSections();
+
+	// Точка на поверхности и её нормаль (в UE-осях).
+	const FVector DirUE = AroundUE.GetSafeNormal();
+	if (DirUE.IsNearlyZero())
+	{
+		return;
+	}
+	// У мелкого рельефа смысл есть только у планеты, по которой ходят.
+	if (!bHomePlanet || Radius <= 0.f)
+	{
+		return;
+	}
+	// Диагностика: `-OUNoLocal` отключает локальный участок (сравнение кадров).
+	if (FParse::Param(FCommandLine::Get(), TEXT("OUNoLocal")))
+	{
+		return;
+	}
+
+	// Касательный базис в точке.
+	FVector T1 = FVector::CrossProduct(DirUE, FVector::UpVector);
+	if (T1.SizeSquared() < 1e-4f)
+	{
+		T1 = FVector::CrossProduct(DirUE, FVector::RightVector);
+	}
+	T1 = T1.GetSafeNormal();
+	const FVector T2 = FVector::CrossProduct(DirUE, T1).GetSafeNormal();
+
+	// Сетка в касательной плоскости; каждую вершину проецируем на сферу и
+	// берём высоту из ТОЙ ЖЕ формулы, что глобальный меш и сервер.
+	const int32 N = FMath::Clamp(LocalCells, 8, 256);
+	const float Step = (2.f * LocalExtentCm) / N;
+
+	TArray<FVector> Verts;
+	TArray<int32> Tris;
+	TArray<FVector> Normals;
+	TArray<FVector2D> UVs;
+	TArray<FLinearColor> Colors;
+	TArray<struct FProcMeshTangent> Tangents;
+	Verts.Reserve((N + 1) * (N + 1));
+
+	for (int32 J = 0; J <= N; ++J)
+	{
+		for (int32 I = 0; I <= N; ++I)
+		{
+			const float A = -LocalExtentCm + I * Step;   // вдоль T1
+			const float B = -LocalExtentCm + J * Step;   // вдоль T2
+			// Точка в касательной плоскости, затем — на сферу планеты.
+			const FVector Tangent = DirUE * Radius + T1 * A + T2 * B;
+			const FVector Dir = Tangent.GetSafeNormal();
+			const float Height = VisualHeight(Dir);
+			Verts.Add(Dir * (Radius + Height));
+			Normals.Add(Dir);
+			UVs.Add(FVector2D(static_cast<float>(I) / N, static_cast<float>(J) / N));
+			Colors.Add(SurfaceColor(Height));
+			Tangents.Add(FProcMeshTangent(T1.X, T1.Y, T1.Z));
+		}
+	}
+
+	for (int32 J = 0; J < N; ++J)
+	{
+		for (int32 I = 0; I < N; ++I)
+		{
+			const int32 A = J * (N + 1) + I;
+			const int32 B = A + 1;
+			const int32 C = A + (N + 1);
+			const int32 D = C + 1;
+			Tris.Add(A); Tris.Add(C); Tris.Add(B);
+			Tris.Add(B); Tris.Add(C); Tris.Add(D);
+		}
+	}
+	// Двусторонняя намотка (как у глобального меша): участок виден с любой
+	// стороны и не мерцает на стыке с глобальной сферой.
+	TArray<int32> Back;
+	Back.Reserve(Tris.Num());
+	for (int32 T = 0; T + 2 < Tris.Num(); T += 3)
+	{
+		Back.Add(Tris[T + 0]);
+		Back.Add(Tris[T + 2]);
+		Back.Add(Tris[T + 1]);
+	}
+	Tris.Append(Back);
+
+	LocalMesh->CreateMeshSection_LinearColor(0, Verts, Tris, Normals, UVs, Colors, Tangents, false);
+	LocalMesh->SetMaterial(0, PlanetMaterial);
+	UE_LOG(LogOUPlanet, Log, TEXT("Локальный участок вокруг игрока: ячеек %d, шаг %.0f см"), N, Step);
+}
+
 bool AOUVoxelPlanet::TypeHasAtmosphere(EOUPlanetType Type)
 {
 	// Воздух есть у всех типов, КРОМЕ безвоздушной луны.
@@ -553,6 +656,17 @@ void AOUVoxelPlanet::BuildAtmosphere()
 {
 	const bool bAtmo = TypeHasAtmosphere(PlanetType) && AtmosphereMesh != nullptr;
 	const bool bClouds = TypeHasClouds(PlanetType);
+
+	// Диагностика: `-OUNoClouds` полностью выключает атмосферу и облака.
+	if (FParse::Param(FCommandLine::Get(), TEXT("OUNoClouds")))
+	{
+		for (UStaticMeshComponent* Puff : CloudPuffs)
+		{
+			if (Puff) { Puff->SetVisibility(false); }
+		}
+		if (AtmosphereMesh) { AtmosphereMesh->SetVisibility(false); }
+		return;
+	}
 
 	UE_LOG(LogOUPlanet, Log, TEXT("Атмосфера: %s, облака: %s, тип %d"),
 		bAtmo ? TEXT("да") : TEXT("нет"), bClouds ? TEXT("да") : TEXT("нет"),

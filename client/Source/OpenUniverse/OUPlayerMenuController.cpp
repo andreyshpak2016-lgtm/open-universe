@@ -735,3 +735,94 @@ void AOUPlayerMenuController::DrawBuildMenu(UCanvas* InCanvas)
 		FVector2D(PanelPos.X + PanelSize.X - 220, PanelPos.Y + 16), ColOk);
 }
 
+void AOUPlayerMenuController::DrawGameHud(UCanvas* InCanvas)
+{
+	// Постоянный HUD в духе Dual Universe: минимум элементов, тонкие линии,
+	// тёмные полупрозрачные плашки, статусы по углам. Рисуется всегда, когда
+	// игровое меню закрыто (то есть игрок в мире).
+	if (bMenuOpen || !InCanvas)
+	{
+		return;
+	}
+
+	const float W = InCanvas->SizeX;
+	const float H = InCanvas->SizeY;
+	UFont* Small = GEngine->GetMediumFont();
+	UFont* Tiny = GEngine->GetSmallFont();
+
+	// Мягкая тёмная плашка под текстом углов (чтобы читалось на любом фоне).
+	const FLinearColor Plate(0.03f, 0.05f, 0.10f, 0.55f);
+	const FLinearColor Line(0.42f, 0.55f, 1.0f, 0.85f);   // акцентная линия
+	const FLinearColor Dim(0.62f, 0.68f, 0.82f, 1.f);
+
+	// --- Прицел: три коротких штриха (стиль DU, «не перекрывает обзор») ---
+	{
+		const float CX = W * 0.5f, CY = H * 0.5f, G = 6.f, L = 7.f;
+		const FLinearColor A(0.85f, 0.92f, 1.0f, 0.85f);
+		FillBox(InCanvas, FVector2D(CX - G - L, CY - 1.f), FVector2D(L, 2.f), A);
+		FillBox(InCanvas, FVector2D(CX + G, CY - 1.f), FVector2D(L, 2.f), A);
+		FillBox(InCanvas, FVector2D(CX - 1.f, CY - G - L), FVector2D(2.f, L), A);
+		FillBox(InCanvas, FVector2D(CX - 1.f, CY + G), FVector2D(2.f, L), A);
+		FillBox(InCanvas, FVector2D(CX - 2.f, CY - 2.f), FVector2D(4.f, 4.f), ColAccent2);
+	}
+
+	// --- Слева сверху: место, координаты (как «широта/долгота» в DU) ---
+	if (APawn* P = GetPawn())
+	{
+		const FVector Pos = P->GetActorLocation();
+		const float Alt = Pos.Size() / 100.f - 500000.f;   // над уровнем океана, м
+		const FString Head = (GetName().IsEmpty() ? FString(TEXT("Пилот")) : GetName());
+		const FString L1 = FString::Printf(TEXT("ПЛАНЕТА  ·  HOME"));
+		const FString L2 = FString::Printf(TEXT("высота %+6.0f м"), Alt);
+		const FString L3 = FString::Printf(TEXT("коорд  %.0f, %.0f"), Pos.X / 100.f, Pos.Y / 100.f);
+		FillBox(InCanvas, FVector2D(16, 16), FVector2D(210, 74), Plate);
+		FillBox(InCanvas, FVector2D(16, 16), FVector2D(3, 74), Line);   // акцентная кромка
+		DrawText(InCanvas, Small, L1, FVector2D(28, 22), ColText);
+		DrawText(InCanvas, Tiny, L2, FVector2D(28, 46), Dim);
+		DrawText(InCanvas, Tiny, L3, FVector2D(28, 64), Dim);
+	}
+
+	// --- Справа сверху: состояние сети (аналог статуса связи в DU) ---
+	ResolveNet();
+	if (Net)
+	{
+		const bool bConnected = Net->IsConnected() || Net->bSystemReceived;
+		const FString St = bConnected ? TEXT("СВЯЗЬ  OK") : TEXT("СВЯЗЬ  НЕТ");
+		const FLinearColor C = bConnected ? ColOk : FLinearColor(1.f, 0.55f, 0.5f, 1.f);
+		const float BoxW = 170.f;
+		FillBox(InCanvas, FVector2D(W - BoxW - 16, 16), FVector2D(BoxW, 30), Plate);
+		FillBox(InCanvas, FVector2D(W - 19, 16), FVector2D(3, 30), C);
+		DrawText(InCanvas, Small, St, FVector2D(W - BoxW - 2, 22), C);
+	}
+
+	// --- Снизу по центру: хотбар (быстрые слоты) ---
+	// При открытом строительстве хотбар скрыт: там палитра блоков (как в DU).
+	const AOUCharacterPawn* Char = Cast<AOUCharacterPawn>(GetPawn());
+	const bool bBuilding = Char && Char->bBuildMenuOpen;
+	if (!bBuilding)
+	{
+		const int32 Slots = 5;
+		const float SW = 52.f, SH = 40.f, Gap = 8.f;
+		const float TotalW = Slots * SW + (Slots - 1) * Gap;
+		const float X0 = (W - TotalW) * 0.5f;
+		const float Y0 = H - SH - 26.f;
+		for (int32 i = 0; i < Slots; ++i)
+		{
+			const FVector2D P(X0 + i * (SW + Gap), Y0);
+			const bool bFirst = (i == 0);
+			FillBox(InCanvas, P, FVector2D(SW, SH), FLinearColor(0.04f, 0.06f, 0.12f, 0.6f));
+			StrokeBox(InCanvas, P, FVector2D(SW, SH), bFirst ? ColAccent2 : FLinearColor(0.24f, 0.30f, 0.52f, 0.8f), bFirst ? 2.f : 1.f);
+			DrawText(InCanvas, Tiny, FString::Printf(TEXT("%d"), i + 1), P + FVector2D(6, 4), Dim);
+		}
+	}
+
+	// --- Снизу слева: подсказка управления (компактно, в духе DU) ---
+	// При строительстве её заменяет подсказка палитры.
+	if (!bBuilding)
+	{
+		FillBox(InCanvas, FVector2D(16, H - 30), FVector2D(470, 20), Plate);
+		DrawText(InCanvas, Tiny, TEXT("Мышь — обзор   ·   W/A/S/D — ходьба   ·   Пробел — прыжок   ·   B — строительство   ·   Alt — курсор"),
+			FVector2D(24, H - 28), Dim);
+	}
+}
+

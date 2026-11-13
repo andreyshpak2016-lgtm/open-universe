@@ -77,6 +77,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Open Universe|Character")
 	float StrideAmplitude = 45.f;
 
+	/** Чувствительность мыши (рад на единицу дельты). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Open Universe|Input")
+	float MouseSensitivity = 0.0025f;
+
 	/** Частота шагов на полной скорости, шагов/с. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Open Universe|Character")
 	float StrideFrequency = 1.5f;
@@ -175,6 +179,19 @@ protected:
 	void AxisLookPitch(float Value);
 	void OnJumpPressed();
 	void OnJumpReleased();
+
+	/** Обзор мышью: значение — уже дельта за кадр (без умножения на время). */
+	void AxisLookYawMouse(float Value);
+	void AxisLookPitchMouse(float Value);
+
+	/** Alt: отпустить/вернуть курсор для интерфейса. */
+	void OnCursorToggle();
+
+	/** Мышь сейчас управляет обзором (курсор захвачен). */
+	bool bCursorCaptured = true;
+
+	/** Центр последнего построенного локального участка поверхности. */
+	FVector LocalTerrainCenter = FVector(FLT_MAX, FLT_MAX, FLT_MAX);
 
 	/** Зажатие F: копим время и возвращаемся в корабль по порогу. */
 	void OnExitPressed();

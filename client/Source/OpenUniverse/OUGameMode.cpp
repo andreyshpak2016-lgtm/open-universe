@@ -186,6 +186,11 @@ void AOUGameMode::BuildWorld()
 		}
 		ConfigureSky(Sky);
 	}
+	else
+	{
+		// Диагностика: убираем небо целиком (в т.ч. то, что пришло с карты).
+		for (TActorIterator<ASkyAtmosphere> It(World); It; ++It) { It->Destroy(); }
+	}
 
 	// --- Экспозиция (пост-обработка) ---
 	// Без фиксации экспозиции яркое небо «пересвечивает» кадр: автоподбор
