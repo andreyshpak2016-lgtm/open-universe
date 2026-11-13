@@ -3,6 +3,7 @@
 #include "OUVoxelPlanet.h"
 #include "OUInterop.h"
 #include "OUTerrain.h"
+#include "OUDeterministic.h"
 #include "ProceduralMeshComponent.h"
 #include "EngineUtils.h"
 #include "Materials/MaterialInterface.h"
@@ -415,32 +416,19 @@ FLinearColor AOUVoxelPlanet::ShadedVertexColor(float Height, const FVector& Smoo
 
 FVector AOUVoxelPlanet::HomeSpawnDirectionServer()
 {
-	// Совпадает с сервером (`ou_sim::home_spawn_direction`): фиксированный
-	// обход сферы в СЕРВЕРНЫХ осях, ищем первое «сухое» направление с заметной,
-	// но не пиковой высотой. Результат — в серверных осях.
-	AOUVoxelPlanet* Probe = NewObject<AOUVoxelPlanet>();
-	Probe->Radius = 500000.f;   // серверные единицы (совпадает с ou_sim::HOME_PLANET_RADIUS)
-	Probe->Amplitude = 10000.f;
-	Probe->Seed = 0xC0FFEE;
+	// Общая формула (OUTerrain.h) — ОДИН источник истины с сервером: ищем самое
+	// ровное место на суше. Возвращаем в серверных осях; сервер выберет то же
+	// самое (сверено кросс-проверкой рельефа).
+	double X = 0.0, Y = 1.0, Z = 0.0;
+	OULT::HomeSpawnDirectionServer(10000.0, 0.545, 0xC0FFEEull, X, Y, Z);
+	return FVector(X, Y, Z);
+}
 
-	const float Step = 0.15f;
-	for (float Phi = -1.2f; Phi <= 1.2f; Phi += Step)
-	{
-		for (float Theta = 0.f; Theta < 2.f * PI; Theta += Step)
-		{
-			// Серверные оси: вверх = Y. Формула ровно как в `home_spawn_direction`.
-			const FVector D(
-				FMath::Cos(Phi) * FMath::Cos(Theta),
-				FMath::Sin(Phi),
-				FMath::Cos(Phi) * FMath::Sin(Theta));
-			const float H = Probe->HeightAtServer(D);
-			if (H > Probe->Amplitude * 0.15f && H < Probe->Amplitude * 0.9f)
-			{
-				return D.GetSafeNormal();
-			}
-		}
-	}
-	return FVector(0.f, 1.f, 0.f); // в серверных осях «вверх» = +Y
+double AOUVoxelPlanet::SpawnRoughnessServer(const FVector& DirServer, double RadiusM) const
+{
+	return OULT::SpawnRoughness(
+		DirServer.X, DirServer.Y, DirServer.Z,
+		RadiusM, 10000.0, 0.545, 0xC0FFEEull);
 }
 
 FVector AOUVoxelPlanet::HomeSpawnDirection()

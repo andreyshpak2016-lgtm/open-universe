@@ -129,6 +129,12 @@ public:
 	/** Направление точки появления в СЕРВЕРНЫХ осях (как сервер). */
 	static FVector HomeSpawnDirectionServer();
 
+	/**
+	 * Насколько неровная земля вокруг направления в радиусе `RadiusM` (метры):
+	 * перепад высот по кольцу проб. Зеркало серверной `spawn_roughness`.
+	 */
+	double SpawnRoughnessServer(const FVector& DirServer, double RadiusM) const;
+
 	/** Точка появления в СЕРВЕРНЫХ единицах (как хранит корабль). */
 	static FVector HomeSpawnServer(float Clearance);
 

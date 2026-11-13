@@ -36,6 +36,7 @@ namespace
 	const FLinearColor ColMuted(0.58f, 0.63f, 0.77f, 1.f);
 	const FLinearColor ColOk(0.35f, 0.86f, 0.63f, 1.f);
 	const FLinearColor ColErr(1.0f, 0.45f, 0.48f, 1.f);
+	const FLinearColor WarmDot(1.0f, 0.72f, 0.30f, 1.f);
 
 	/** Заливка прямоугольника (не путать с DrawBox из SceneManagement). */
 	void FillBox(UCanvas* InCanvas, const FVector2D& Pos, const FVector2D& Size, const FLinearColor& Color)
@@ -58,6 +59,36 @@ namespace
 		FCanvasTextItem Item(Pos, FText::FromString(Text), Font, Color);
 		Item.EnableShadow(FLinearColor(0, 0, 0, 0.6f));
 		InCanvas->DrawItem(Item);
+	}
+
+	/** Вертикальный градиент (сверху → снизу) — «стекло» панелей. */
+	void FillGradientV(UCanvas* InCanvas, const FVector2D& Pos, const FVector2D& Size, const FLinearColor& Top, const FLinearColor& Bottom, int32 Steps = 12)
+	{
+		for (int32 i = 0; i < Steps; ++i)
+		{
+			const float T0 = static_cast<float>(i) / Steps;
+			const float T1 = static_cast<float>(i + 1) / Steps;
+			const FLinearColor C = FLinearColor::LerpUsingHSV(Top, Bottom, T0);
+			FillBox(InCanvas, Pos + FVector2D(0, Size.Y * T0), FVector2D(Size.X, Size.Y * (T1 - T0) + 1.f), C);
+		}
+	}
+
+	/** «Стеклянная» панель: градиент, рамка и акцентная верхняя кромка. */
+	void GlassPanel(UCanvas* InCanvas, const FVector2D& Pos, const FVector2D& Size, const FLinearColor& Border, const FLinearColor& Accent)
+	{
+		FillGradientV(InCanvas, Pos, Size, FLinearColor(0.08f, 0.10f, 0.20f, 0.94f), FLinearColor(0.03f, 0.04f, 0.09f, 0.94f));
+		StrokeBox(InCanvas, Pos, Size, Border, 1.5f);
+		FillBox(InCanvas, Pos, FVector2D(Size.X, 3.f), Accent);            // верхняя акцентная кромка
+		FillBox(InCanvas, Pos, FVector2D(4.f, Size.Y), Accent * 0.6f);    // левая кромка
+	}
+
+	/** Горизонтальная шкала со значением (для HUD). */
+	void Bar(UCanvas* InCanvas, const FVector2D& Pos, const FVector2D& Size, float Fraction, const FLinearColor& Fill, const FLinearColor& Back)
+	{
+		FillBox(InCanvas, Pos, Size, Back);
+		const float F = FMath::Clamp(Fraction, 0.f, 1.f);
+		FillBox(InCanvas, Pos, FVector2D(Size.X * F, Size.Y), Fill);
+		StrokeBox(InCanvas, Pos, Size, FLinearColor(0.5f, 0.6f, 0.9f, 0.5f), 1.f);
 	}
 }
 
@@ -583,8 +614,8 @@ void AOUPlayerMenuController::DrawMenu(UCanvas* InCanvas)
 	const float PanelW = FMath::Min(760.f, W - 80.f);
 	const float PanelH = FMath::Min(520.f, H - 120.f);
 	const FVector2D PanelPos((W - PanelW) * 0.5f, (H - PanelH) * 0.5f);
-	FillBox(InCanvas, PanelPos, FVector2D(PanelW, PanelH), ColPanel);
-	StrokeBox(InCanvas, PanelPos, FVector2D(PanelW, PanelH), ColPanelBorder, 2.f);
+	// Все панели — «стеклянные», с акцентной кромкой.
+	GlassPanel(InCanvas, PanelPos, FVector2D(PanelW, PanelH), ColPanelBorder, ColAccent);
 
 	DrawText(InCanvas, Font, TEXT("OPEN UNIVERSE"), FVector2D(PanelPos.X + 32, PanelPos.Y + 24), ColAccent);
 
@@ -706,8 +737,7 @@ void AOUPlayerMenuController::DrawBuildMenu(UCanvas* InCanvas)
 	const float TotalW = Count * SlotW + (Count - 1) * Gap;
 	const FVector2D PanelPos((W - (TotalW + 48.f)) * 0.5f, H - SlotH - 84.f);
 	const FVector2D PanelSize(TotalW + 48.f, SlotH + 70.f);
-	FillBox(InCanvas, PanelPos, PanelSize, ColPanel);
-	StrokeBox(InCanvas, PanelPos, PanelSize, ColPanelBorder, 2.f);
+	GlassPanel(InCanvas, PanelPos, PanelSize, ColPanelBorder, ColAccent);
 
 	DrawText(InCanvas, Font, TEXT("Строительство"), PanelPos + FVector2D(24, 14), ColAccent);
 
@@ -737,9 +767,9 @@ void AOUPlayerMenuController::DrawBuildMenu(UCanvas* InCanvas)
 
 void AOUPlayerMenuController::DrawGameHud(UCanvas* InCanvas)
 {
-	// Постоянный HUD в духе Dual Universe: минимум элементов, тонкие линии,
-	// тёмные полупрозрачные плашки, статусы по углам. Рисуется всегда, когда
-	// игровое меню закрыто (то есть игрок в мире).
+	// Постоянный HUD в духе Dual Universe: тонкие линии, «стеклянные» панели,
+	// статусы по углам, компас, мини-карта, прицел и хотбар. Рисуется всегда,
+	// когда игровое меню закрыто.
 	if (bMenuOpen || !InCanvas)
 	{
 		return;
@@ -750,15 +780,19 @@ void AOUPlayerMenuController::DrawGameHud(UCanvas* InCanvas)
 	UFont* Small = GEngine->GetMediumFont();
 	UFont* Tiny = GEngine->GetSmallFont();
 
-	// Мягкая тёмная плашка под текстом углов (чтобы читалось на любом фоне).
-	const FLinearColor Plate(0.03f, 0.05f, 0.10f, 0.55f);
-	const FLinearColor Line(0.42f, 0.55f, 1.0f, 0.85f);   // акцентная линия
-	const FLinearColor Dim(0.62f, 0.68f, 0.82f, 1.f);
+	const FLinearColor Line(0.42f, 0.55f, 1.0f, 0.9f);   // акцентная линия
+	const FLinearColor Dim(0.66f, 0.72f, 0.86f, 1.f);
+	const FLinearColor PanelB(0.34f, 0.44f, 0.85f, 0.9f);
 
-	// --- Прицел: три коротких штриха (стиль DU, «не перекрывает обзор») ---
+	APawn* MyPawn = GetPawn();
+	const FVector Pos = MyPawn ? MyPawn->GetActorLocation() : FVector::ZeroVector;
+	const FVector Up = Pos.IsNearlyZero() ? FVector::UpVector : Pos.GetSafeNormal();
+	const float Alt = Pos.Size() / 100.f - 500000.f;   // над уровнем океана, м
+
+	// --- Прицел: четыре штриха + центральная точка (не перекрывает обзор) ---
 	{
-		const float CX = W * 0.5f, CY = H * 0.5f, G = 6.f, L = 7.f;
-		const FLinearColor A(0.85f, 0.92f, 1.0f, 0.85f);
+		const float CX = W * 0.5f, CY = H * 0.5f, G = 7.f, L = 9.f;
+		const FLinearColor A(0.88f, 0.94f, 1.0f, 0.9f);
 		FillBox(InCanvas, FVector2D(CX - G - L, CY - 1.f), FVector2D(L, 2.f), A);
 		FillBox(InCanvas, FVector2D(CX + G, CY - 1.f), FVector2D(L, 2.f), A);
 		FillBox(InCanvas, FVector2D(CX - 1.f, CY - G - L), FVector2D(2.f, L), A);
@@ -766,66 +800,147 @@ void AOUPlayerMenuController::DrawGameHud(UCanvas* InCanvas)
 		FillBox(InCanvas, FVector2D(CX - 2.f, CY - 2.f), FVector2D(4.f, 4.f), ColAccent2);
 	}
 
-	// --- Слева сверху: место, координаты (как «широта/долгота» в DU) ---
-	if (APawn* P = GetPawn())
+	// --- Верх по центру: компас (стороны света по курсу) ---
 	{
-		const FVector Pos = P->GetActorLocation();
-		const float Alt = Pos.Size() / 100.f - 500000.f;   // над уровнем океана, м
-		const FString Head = (GetName().IsEmpty() ? FString(TEXT("Пилот")) : GetName());
-		const FString L1 = FString::Printf(TEXT("ПЛАНЕТА  ·  HOME"));
-		const FString L2 = FString::Printf(TEXT("высота %+6.0f м"), Alt);
-		const FString L3 = FString::Printf(TEXT("коорд  %.0f, %.0f"), Pos.X / 100.f, Pos.Y / 100.f);
-		FillBox(InCanvas, FVector2D(16, 16), FVector2D(210, 74), Plate);
-		FillBox(InCanvas, FVector2D(16, 16), FVector2D(3, 74), Line);   // акцентная кромка
-		DrawText(InCanvas, Small, L1, FVector2D(28, 22), ColText);
-		DrawText(InCanvas, Tiny, L2, FVector2D(28, 46), Dim);
-		DrawText(InCanvas, Tiny, L3, FVector2D(28, 64), Dim);
+		const float CW = 320.f, CH = 30.f;
+		const FVector2D CP((W - CW) * 0.5f, 14.f);
+		FillBox(InCanvas, CP, FVector2D(CW, CH), FLinearColor(0.03f, 0.05f, 0.10f, 0.55f));
+		StrokeBox(InCanvas, CP, FVector2D(CW, CH), PanelB, 1.f);
+		// Курс: проекция «вперёд» на касательную плоскость.
+		FVector Fwd = MyPawn ? MyPawn->GetActorForwardVector() : FVector::ForwardVector;
+		Fwd = FVector::VectorPlaneProject(Fwd, Up).GetSafeNormal();
+		FVector Ref = FVector::CrossProduct(Up, FVector::UpVector);
+		if (Ref.SizeSquared() < 1e-4f) { Ref = FVector::CrossProduct(Up, FVector::RightVector); }
+		Ref = Ref.GetSafeNormal();
+		const FVector Tang = FVector::CrossProduct(Ref, Up).GetSafeNormal();
+		const float Heading = FMath::Atan2(FVector::DotProduct(Fwd, FVector::CrossProduct(Up, Tang)), FVector::DotProduct(Fwd, Tang));
+		const float Deg = FMath::RadiansToDegrees(Heading);
+		// Метки каждые 45° вокруг текущего курса.
+		const TCHAR* Marks[8] = { TEXT("С"), TEXT("СВ"), TEXT("В"), TEXT("ЮВ"), TEXT("Ю"), TEXT("ЮЗ"), TEXT("З"), TEXT("СЗ") };
+		for (int32 i = 0; i < 8; ++i)
+		{
+			float Rel = i * 45.f - Deg;
+			while (Rel > 180.f) Rel -= 360.f;
+			while (Rel < -180.f) Rel += 360.f;
+			if (FMath::Abs(Rel) <= 45.f)
+			{
+				const float MX = CP.X + CW * 0.5f + (Rel / 45.f) * (CW * 0.42f);
+				const FLinearColor C = (i % 2 == 0) ? ColText : Dim;
+				DrawText(InCanvas, Tiny, Marks[i], FVector2D(MX - 8.f, CP.Y + 7.f), C);
+			}
+		}
+		// Центральный указатель курса.
+		FillBox(InCanvas, FVector2D(CP.X + CW * 0.5f - 1.f, CP.Y), FVector2D(2.f, 7.f), ColAccent2);
+		DrawText(InCanvas, Tiny, FString::Printf(TEXT("%03.0f°"), Deg < 0.f ? Deg + 360.f : Deg),
+			FVector2D(CP.X + CW * 0.5f - 16.f, CP.Y + CH - 4.f), ColOk);
 	}
 
-	// --- Справа сверху: состояние сети (аналог статуса связи в DU) ---
+	// --- Слева сверху: место, высота, координаты ---
+	if (MyPawn)
+	{
+		const FVector2D P(16, 16);
+		GlassPanel(InCanvas, P, FVector2D(230, 92), PanelB, Line);
+		DrawText(InCanvas, Small, TEXT("ПЛАНЕТА  ·  HOME"), P + FVector2D(12, 8), ColText);
+		DrawText(InCanvas, Tiny, FString::Printf(TEXT("высота  %+6.0f м"), Alt), P + FVector2D(12, 38), Dim);
+		DrawText(InCanvas, Tiny, FString::Printf(TEXT("коорд  %.0f, %.0f"), Pos.X / 100.f, Pos.Y / 100.f), P + FVector2D(12, 56), Dim);
+		DrawText(InCanvas, Tiny, FString::Printf(TEXT("позывной  %s"), *Profile.Name), P + FVector2D(12, 74), ColAccent);
+	}
+
+	// --- Справа сверху: состояние сети ---
 	ResolveNet();
-	if (Net)
 	{
-		const bool bConnected = Net->IsConnected() || Net->bSystemReceived;
+		const bool bConnected = Net && (Net->IsConnected() || Net->bSystemReceived);
 		const FString St = bConnected ? TEXT("СВЯЗЬ  OK") : TEXT("СВЯЗЬ  НЕТ");
-		const FLinearColor C = bConnected ? ColOk : FLinearColor(1.f, 0.55f, 0.5f, 1.f);
-		const float BoxW = 170.f;
-		FillBox(InCanvas, FVector2D(W - BoxW - 16, 16), FVector2D(BoxW, 30), Plate);
-		FillBox(InCanvas, FVector2D(W - 19, 16), FVector2D(3, 30), C);
-		DrawText(InCanvas, Small, St, FVector2D(W - BoxW - 2, 22), C);
+		const FLinearColor C = bConnected ? ColOk : ColErr;
+		const FVector2D P(W - 210, 16);
+		GlassPanel(InCanvas, P, FVector2D(194, 34), PanelB, C);
+		DrawText(InCanvas, Small, St, P + FVector2D(12, 8), C);
+		int32 Ping = 0;
+		if (bConnected && Net) { Ping = FMath::RoundToInt(Health.LatencyMs); }
+		DrawText(InCanvas, Tiny, FString::Printf(TEXT("задержка %d мс"), Ping), P + FVector2D(112, 12), Dim);
 	}
 
-	// --- Снизу по центру: хотбар (быстрые слоты) ---
-	// При открытом строительстве хотбар скрыт: там палитра блоков (как в DU).
-	const AOUCharacterPawn* Char = Cast<AOUCharacterPawn>(GetPawn());
+	// --- Справа снизу: мини-карта (планета, игрок, база, другие) ---
+	{
+		const float MR = 78.f;
+		const FVector2D MC(W - MR - 24.f, H - MR - 24.f);
+		// Диск: горизонтальные полосы, обрезанные по кругу (канвас не умеет clip).
+		for (int32 i = 0; i < 40; ++i)
+		{
+			const float T = -1.f + 2.f * (i + 0.5f) / 40.f;
+			const float HalfW = MR * FMath::Sqrt(FMath::Max(0.f, 1.f - T * T));
+			FillBox(InCanvas, FVector2D(MC.X - HalfW, MC.Y + T * MR), FVector2D(HalfW * 2.f, (2.f * MR) / 40.f + 1.f),
+				FLinearColor(0.02f, 0.04f, 0.09f, 0.55f));
+		}
+		// Кольцо-рамка.
+		for (int32 i = 0; i < 56; ++i)
+		{
+			const float A0 = 6.2831853f * i / 56.f;
+			FillBox(InCanvas, MC + FVector2D(FMath::Cos(A0) * MR - 1.f, FMath::Sin(A0) * MR - 1.f), FVector2D(2, 2), PanelB);
+		}
+		// Точки: игрок (центр, зелёный), база (акцент, «север» карты), другие.
+		FillBox(InCanvas, MC - FVector2D(3, 3), FVector2D(6, 6), ColOk);
+		FillBox(InCanvas, MC + FVector2D(-4, -44), FVector2D(8, 8), ColAccent2);
+		if (Net)
+		{
+			for (const FOUEntityState& E : Net->LatestSnapshot.Entities)
+			{
+				if (E.Id == Net->OwnEntityId) { continue; }
+				const float RX = FMath::Clamp(E.Position.X / 20000.f, -1.f, 1.f) * (MR - 10.f);
+				const float RY = FMath::Clamp(E.Position.Y / 20000.f, -1.f, 1.f) * (MR - 10.f);
+				FillBox(InCanvas, MC + FVector2D(RX - 2, RY - 2), FVector2D(4, 4), WarmDot);
+			}
+		}
+		DrawText(InCanvas, Tiny, TEXT("КАРТА"), MC + FVector2D(-18, MR + 4.f), Dim);
+	}
+
+	// --- Корабль: приборы (скорость, тяга, стрейф/верх, целостность) ---
+	AOUShipPawn* ShipPawn = Cast<AOUShipPawn>(MyPawn);
+	if (ShipPawn)
+	{
+		const FVector2D P(16, H - 132);
+		GlassPanel(InCanvas, P, FVector2D(260, 100), PanelB, Line);
+		const float Speed = ShipPawn->State.Velocity.Size();
+		DrawText(InCanvas, Small, FString::Printf(TEXT("СКОРОСТЬ  %.0f м/с"), Speed), P + FVector2D(12, 8), ColText);
+		Bar(InCanvas, P + FVector2D(12, 34), FVector2D(236, 10), Speed / 400.f, ColAccent2, FLinearColor(0.1f, 0.12f, 0.2f, 0.9f));
+		if (Net)
+		{
+			const int32 Sh = Net->OwnHull.Shield, Ar = Net->OwnHull.Armor;
+			DrawText(InCanvas, Tiny, TEXT("ЩИТ"), P + FVector2D(12, 52), Dim);
+			Bar(InCanvas, P + FVector2D(52, 54), FVector2D(196, 8), Sh / 100.f, FLinearColor(0.3f, 0.7f, 1.f), FLinearColor(0.1f, 0.12f, 0.2f, 0.9f));
+			DrawText(InCanvas, Tiny, TEXT("БРОНЯ"), P + FVector2D(12, 68), Dim);
+			Bar(InCanvas, P + FVector2D(52, 70), FVector2D(196, 8), Ar / 100.f, FLinearColor(1.f, 0.7f, 0.3f), FLinearColor(0.1f, 0.12f, 0.2f, 0.9f));
+		}
+	}
+
+	// --- Снизу по центру: хотбар (скрыт при палитре строительства) ---
+	const AOUCharacterPawn* Char = Cast<AOUCharacterPawn>(MyPawn);
 	const bool bBuilding = Char && Char->bBuildMenuOpen;
 	if (!bBuilding)
 	{
 		const int32 Slots = 5;
-		const float SW = 52.f, SH = 40.f, Gap = 8.f;
+		const float SW = 56.f, SH = 44.f, Gap = 8.f;
 		const float TotalW = Slots * SW + (Slots - 1) * Gap;
 		const float X0 = (W - TotalW) * 0.5f;
-		const float Y0 = H - SH - 26.f;
+		const float Y0 = H - SH - 30.f;
 		for (int32 i = 0; i < Slots; ++i)
 		{
 			const FVector2D P(X0 + i * (SW + Gap), Y0);
 			const bool bFirst = (i == 0);
-			FillBox(InCanvas, P, FVector2D(SW, SH), FLinearColor(0.04f, 0.06f, 0.12f, 0.6f));
-			StrokeBox(InCanvas, P, FVector2D(SW, SH), bFirst ? ColAccent2 : FLinearColor(0.24f, 0.30f, 0.52f, 0.8f), bFirst ? 2.f : 1.f);
-			DrawText(InCanvas, Tiny, FString::Printf(TEXT("%d"), i + 1), P + FVector2D(6, 4), Dim);
+			FillBox(InCanvas, P, FVector2D(SW, SH), FLinearColor(0.05f, 0.07f, 0.14f, 0.72f));
+			StrokeBox(InCanvas, P, FVector2D(SW, SH), bFirst ? ColAccent2 : PanelB, bFirst ? 2.f : 1.f);
+			DrawText(InCanvas, Tiny, FString::Printf(TEXT("%d"), i + 1), P + FVector2D(7, 5), bFirst ? ColAccent2 : Dim);
 		}
 	}
 
-	// --- Снизу слева: подсказка управления (своя для пешего и для корабля) ---
-	// При строительстве её заменяет подсказка палитры.
+	// --- Снизу слева: подсказка управления (своя для пешего и корабля) ---
 	if (!bBuilding)
 	{
-		const bool bInShip = GetPawn() && GetPawn()->IsA(AOUShipPawn::StaticClass());
+		const bool bInShip = ShipPawn != nullptr;
 		const FString Hint = bInShip
 			? TEXT("Мышь — обзор   ·   W/S — тяга   ·   A/D — стрейф   ·   Пробел/Ctrl — вверх/вниз   ·   ЛКМ — огонь   ·   F — выход")
 			: TEXT("Мышь — обзор   ·   W/A/S/D — ходьба   ·   Пробел — прыжок   ·   B — строительство   ·   Alt — курсор");
-		FillBox(InCanvas, FVector2D(16, H - 30), FVector2D(700, 20), Plate);
-		DrawText(InCanvas, Tiny, Hint, FVector2D(24, H - 28), Dim);
+		DrawText(InCanvas, Tiny, Hint, FVector2D(18, H - 22), Dim);
 	}
 }
 

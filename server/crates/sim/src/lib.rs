@@ -246,15 +246,52 @@ pub fn home_planet() -> Terrain {
     )
 }
 
-/// Направление точки появления: первое «сухое» направление на поверхности.
+/// Насколько неровная земля вокруг направления `d` в радиусе `radius_m` метров.
 ///
-/// Ищем детерминированно (фиксированный обход), чтобы сервер и клиент
-/// поставили корабль в **одну и ту же точку**. Точка выбирается на суше
-/// (высота выше уровня моря), чтобы игрок видел ландшафт, а не океан.
+/// Метрика — перепад высот по кольцу проб вокруг точки. Чем меньше, тем ровнее
+/// площадка. Нужна, чтобы поставить базу и игрока на ровном месте, а не на
+/// склоне (иначе постройки «висят» или тонут).
+fn spawn_roughness(t: &Terrain, d: Vec3, radius_m: f64) -> f64 {
+    let e = radius_m / t.params.radius;
+    let mut hi = t.height(d);
+    let mut lo = hi;
+    const N: usize = 8;
+    for k in 0..N {
+        let ang = 2.0 * PI * (k as f64) / (N as f64);
+        let c = det_cos(ang);
+        let s = det_sin(ang);
+        // Три плоскости смещений в серверных осях: (x,y), (x,z), (y,z).
+        for off in [(c, s, 0.0), (c, 0.0, s), (0.0, c, s)] {
+            let p = Vec3::new(d.x + off.0 * e, d.y + off.1 * e, d.z + off.2 * e);
+            let h = t.height(normalize(p));
+            if h > hi {
+                hi = h;
+            }
+            if h < lo {
+                lo = h;
+            }
+        }
+    }
+    hi - lo
+}
+
+/// Радиус ровной площадки, которую ищем для базы и точки появления, метры.
+pub const SPAWN_FLAT_RADIUS_M: f64 = 150.0;
+
+/// Направление точки появления: **самое ровное** место на суше.
+///
+/// Ищем детерминированно (фиксированный обход) по всей суше и выбираем
+/// направление с наименьшим перепадом высот в радиусе [`SPAWN_FLAT_RADIUS_M`].
+/// Так база и игрок встают на ровное плато, а не на склон. Обход и сравнение
+/// одинаковы на сервере и клиенте, поэтому точка совпадает бит-в-бит.
 pub fn home_spawn_direction() -> Vec3 {
     let t = home_planet();
-    // Обход по сфере фиксированным шагом; результат не зависит от платформы.
-    const STEP: f64 = 0.15;
+    // Шаг обхода: достаточно мелкий, чтобы найти ровное плато, и фиксированный,
+    // чтобы сервер и клиент перебрали одни и те же направления.
+    const STEP: f64 = 0.05;
+    let mut best_dir = Vec3::new(0.0, 1.0, 0.0);
+    let mut best_rough = f64::MAX;
+    let mut found = false;
     let mut phi = -1.2_f64;
     while phi <= 1.2 {
         let mut theta = 0.0_f64;
@@ -264,17 +301,25 @@ pub fn home_spawn_direction() -> Vec3 {
                 det_sin(phi),
                 det_cos(phi) * det_sin(theta),
             );
-            // Хотим заметную сушу, но не самую вершину горы.
+            // Только суша, не самая вершина горы.
             let h = t.height(d);
             if h > t.params.amplitude * 0.15 && h < t.params.amplitude * 0.9 {
-                return normalize(d);
+                let r = spawn_roughness(&t, normalize(d), SPAWN_FLAT_RADIUS_M);
+                if !found || r < best_rough {
+                    best_rough = r;
+                    best_dir = normalize(d);
+                    found = true;
+                }
             }
             theta += STEP;
         }
         phi += STEP;
     }
-    // Запасной вариант: «вверх».
-    Vec3::new(0.0, 1.0, 0.0)
+    if found {
+        best_dir
+    } else {
+        Vec3::new(0.0, 1.0, 0.0)
+    }
 }
 
 /// Точка появления над поверхностью домашней планеты (на `clearance` над землёй).
@@ -782,6 +827,20 @@ mod tests {
         let dist = p.length();
         assert!(dist > t.params.radius, "точка появления над поверхностью");
         assert!(dist < t.params.radius + t.params.amplitude * 2.0 + 100.0);
+    }
+
+    #[test]
+    fn home_spawn_is_on_flat_ground() {
+        // База и игрок должны стоять на ровном плато: перепад высот вокруг точки
+        // появления в радиусе базы (150 м) должен быть небольшим (десятки метров
+        // на планету с рельефом 10 км — это очень ровно).
+        let t = home_planet();
+        let d = home_spawn_direction();
+        let rough = spawn_roughness(&t, d, SPAWN_FLAT_RADIUS_M);
+        assert!(
+            rough < 40.0,
+            "площадка под базу недостаточно ровная: перепад {rough:.1} м на 150 м"
+        );
     }
 
     #[test]

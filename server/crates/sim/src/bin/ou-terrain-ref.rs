@@ -44,6 +44,9 @@ fn main() {
     out.push_str(&format!("amplitude {:.1}\n", t.params.amplitude));
     out.push_str(&format!("sea_level {:.6}\n", t.params.sea_level));
     out.push_str(&format!("seed {}\n", t.params.seed));
+    // Точка появления (самое ровное место): клиент обязан выбрать ту же.
+    let sp = ou_sim::home_spawn_direction();
+    out.push_str(&format!("spawn {:.17} {:.17} {:.17}\n", sp.x, sp.y, sp.z));
     for d in &dirs {
         // Оба уровня детализации: `0` — глобальный меш, `1` — физика/локальный
         // участок. Клиент обязан совпасть с каждым бит-в-бит.

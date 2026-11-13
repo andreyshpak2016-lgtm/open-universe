@@ -4,6 +4,7 @@
 #include "OUShipPawn.h"
 #include "OUClientNet.h"
 #include "OUVoxelPlanet.h"
+#include "OUSurfaceBase.h"
 #include "OUInterop.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/StaticMeshComponent.h"
@@ -227,19 +228,31 @@ void AOUCharacterPawn::BeginPlay()
 	}
 	FVector Side = FVector::CrossProduct(Up, Fwd).GetSafeNormal();
 
-	// Персонаж — впереди базы (наружу), корабль — впереди-справа, в кадре.
-	// База остаётся ЗА камерой, поэтому в кадре: персонаж, корабль, горизонт.
-	FVector CharPos = BaseSpawn + Fwd * 2200.f;
-	// Корабль — рядом (5–7 м вперёд-вправо), виден в кадре как отдельный объект.
-	FVector ShipPos = CharPos + Fwd * 420.f + Side * 320.f;
+	// Персонаж — на посадочном поле, левее центральной разметки; корабль рядом.
+	// Комплекс крупный (поле ~180 м), поэтому ставим игрока к его центру, а не
+	// «наружу» — так он стоит на ровных плитах поля, а не на склоне.
+	FVector CharPos = BaseSpawn - Fwd * 1800.f;
+	// Корабль — рядом, на плите поля.
+	FVector ShipPos = CharPos + Fwd * 900.f + Side * 700.f;
 	if (AOUVoxelPlanet* Planet = AOUVoxelPlanet::FindHomePlanet(World))
 	{
-		CharPos = CharPos.GetSafeNormal() * (Planet->SurfaceRadiusAt(CharPos.GetSafeNormal()) + 95.f);
-		ShipPos = ShipPos.GetSafeNormal() * (Planet->SurfaceRadiusAt(ShipPos.GetSafeNormal()) + 120.f);
+		// Встаём НА посадочное поле базы, а не на аналитическую землю: поле
+		// выровнено до самой высокой точки площадки.
+		const float DeckUp = AOUSurfaceBase::DeckOffsetCm(BaseSpawn, 9000.f);
+		CharPos = CharPos.GetSafeNormal() * (Planet->SurfaceRadiusAt(CharPos.GetSafeNormal()) + DeckUp + 95.f);
+		ShipPos = ShipPos.GetSafeNormal() * (Planet->SurfaceRadiusAt(ShipPos.GetSafeNormal()) + DeckUp + 140.f);
 	}
 
 	// Курс персонажа — «наружу» от базы (по Fwd).
 	const float LookYaw = FMath::Atan2(Fwd.Y, Fwd.X);
+	// Диагностика: `-OUBaseOverview` — обзор комплекса сверху.
+	const bool bOverview = FParse::Param(FCommandLine::Get(), TEXT("OUBaseOverview"));
+	if (bOverview)
+	{
+		// Ставим ровно над центром базы и поднимаем камеру.
+		const FVector Center = AOUVoxelPlanet::HomeSpawn(2.0f);
+		CharPos = Center.GetSafeNormal() * (Center.Size() + 14000.f);
+	}
 	PlaceAt(CharPos, LookYaw);
 	// Смотрим чуть вверх: в кадр попадают и земля, и небо с облаками.
 	ViewPitch = 0.10f;
@@ -247,6 +260,10 @@ void AOUCharacterPawn::BeginPlay()
 	if (FParse::Param(FCommandLine::Get(), TEXT("OULookDown")))
 	{
 		ViewPitch = -0.55f;
+	}
+	if (bOverview)
+	{
+		ViewPitch = -1.15f;
 	}
 
 	// Корабль стоит рядом (между базой и персонажем).
@@ -886,6 +903,23 @@ void AOUCharacterPawn::Tick(float DeltaSeconds)
 	// Привязка к рельефу: не проваливаемся под поверхность.
 	const FVector Dir = NewPos.GetSafeNormal();
 	const double Surface = SurfaceRadius(Dir) + CapsuleHalfHeight;
+
+	// Диагностика `-OUBaseOverview`: держим камеру над базой (обзор сверху),
+	// иначе гравитация прижимает её к земле.
+	if (FParse::Param(FCommandLine::Get(), TEXT("OUBaseOverview")))
+	{
+		const FVector Center = AOUVoxelPlanet::HomeSpawn(2.0f);
+		const FVector Up2 = Center.GetSafeNormal();
+		SetActorLocation(Up2 * (Center.Size() + 14000.f));
+		SetActorRotation(FRotationMatrix::MakeFromXZ(FVector::CrossProduct(Up2, FVector::RightVector).GetSafeNormal(), Up2).Rotator());
+		Velocity = FVector::ZeroVector;
+		if (Camera)
+		{
+			Camera->SetRelativeRotation(FRotator(FMath::RadiansToDegrees(ViewPitch), 0.f, 0.f));
+		}
+		return;
+	}
+
 	const double Dist = NewPos.Size();
 	if (Dist <= Surface)
 	{

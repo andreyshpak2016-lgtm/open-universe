@@ -226,4 +226,121 @@ namespace OULT
 		if (Height < Amplitude * 0.55) return BiomeHills;
 		return BiomeMountains;
 	}
+
+	// -----------------------------------------------------------------------
+	// Детерминированная тригонометрия (зеркало серверных `det_sin`/`det_cos`).
+	// Нужна, чтобы выбор точки появления совпал с сервером бит-в-бит.
+	// -----------------------------------------------------------------------
+
+	/** Приведение угла к [−π, π] только арифметикой (как `wrap_pi`). */
+	inline double WrapPi(double X)
+	{
+		const double TwoPi = 6.283185307179586;
+		X -= TwoPi * std::round(X / TwoPi);
+		if (X > 3.141592653589793) X -= TwoPi;
+		else if (X < -3.141592653589793) X += TwoPi;
+		return X;
+	}
+
+	/** Детерминированный синус — полином Тейлора (как серверный `det_sin`). */
+	inline double DetSin(double X)
+	{
+		const double A = WrapPi(X);
+		const double A2 = A * A;
+		double Term = A, Sum = A;
+		Term = -Term * A2 / 6.0;   Sum += Term;
+		Term = -Term * A2 / 20.0;  Sum += Term;
+		Term = -Term * A2 / 42.0;  Sum += Term;
+		Term = -Term * A2 / 72.0;  Sum += Term;
+		Term = -Term * A2 / 110.0; Sum += Term;
+		Term = -Term * A2 / 156.0; Sum += Term;
+		Term = -Term * A2 / 210.0; Sum += Term;
+		Term = -Term * A2 / 272.0; Sum += Term;
+		return Sum;
+	}
+
+	/** Детерминированный косинус (как серверный `det_cos`). */
+	inline double DetCos(double X)
+	{
+		return DetSin(X + 3.141592653589793 / 2.0);
+	}
+
+	/** Радиус ровной площадки, которую ищем под базу и точку появления, метры. */
+	constexpr double SpawnFlatRadiusM = 150.0;
+
+	/**
+	 * Перепад высот вокруг направления `D` в радиусе `RadiusM` метров.
+	 * Зеркало серверной `spawn_roughness`. Направление `D` — серверные оси.
+	 */
+	inline double SpawnRoughness(
+		double Dx, double Dy, double Dz,
+		double RadiusM, double Amplitude, double SeaLevel, uint64_t Seed)
+	{
+		const double Len = std::sqrt(Dx * Dx + Dy * Dy + Dz * Dz);
+		if (Len > 1e-12) { Dx /= Len; Dy /= Len; Dz /= Len; }
+		// Радиус планеты в «единицах высоты»: амплитуда рельефа задана так, что
+		// высота = h01 · Amplitude · 2. Радиус берём из константы планеты.
+		const double PlanetRadius = 500000.0;
+		const double E = RadiusM / PlanetRadius;
+		double Hi = HeightDir(Dx, Dy, Dz, Amplitude, SeaLevel, Seed, 1);
+		double Lo = Hi;
+		const int32_t N = 8;
+		for (int32_t K = 0; K < N; ++K)
+		{
+			const double Ang = 6.283185307179586 * static_cast<double>(K) / static_cast<double>(N);
+			const double C = DetCos(Ang);
+			const double S = DetSin(Ang);
+			const double Offs[3][3] = {
+				{ C, S, 0.0 }, { C, 0.0, S }, { 0.0, C, S }
+			};
+			for (int32_t O = 0; O < 3; ++O)
+			{
+				const double H = HeightDir(
+					Dx + Offs[O][0] * E, Dy + Offs[O][1] * E, Dz + Offs[O][2] * E,
+					Amplitude, SeaLevel, Seed, 1);
+				if (H > Hi) Hi = H;
+				if (H < Lo) Lo = H;
+			}
+		}
+		return Hi - Lo;
+	}
+
+	/**
+	 * Направление точки появления: **самое ровное** место на суше.
+	 * Зеркало серверной `home_spawn_direction` (серверные оси).
+	 *
+	 * Возвращает единичный вектор (серверные оси). Детерминировано: тот же обход
+	 * и та же функция ровности, что на сервере.
+	 */
+	inline void HomeSpawnDirectionServer(
+		double Amplitude, double SeaLevel, uint64_t Seed,
+		double& OutX, double& OutY, double& OutZ)
+	{
+		const double Step = 0.05;
+		double BestRough = 1e300;
+		double Bx = 0.0, By = 1.0, Bz = 0.0;
+		bool bFound = false;
+		for (double Phi = -1.2; Phi <= 1.2; Phi += Step)
+		{
+			for (double Theta = 0.0; Theta < 6.283185307179586; Theta += Step)
+			{
+				const double Dx = DetCos(Phi) * DetCos(Theta);
+				const double Dy = DetSin(Phi);
+				const double Dz = DetCos(Phi) * DetSin(Theta);
+				const double H = HeightDir(Dx, Dy, Dz, Amplitude, SeaLevel, Seed, 1);
+				if (H > Amplitude * 0.15 && H < Amplitude * 0.9)
+				{
+					const double R = SpawnRoughness(Dx, Dy, Dz, SpawnFlatRadiusM, Amplitude, SeaLevel, Seed);
+					if (!bFound || R < BestRough)
+					{
+						BestRough = R;
+						const double L = std::sqrt(Dx * Dx + Dy * Dy + Dz * Dz);
+						Bx = Dx / L; By = Dy / L; Bz = Dz / L;
+						bFound = true;
+					}
+				}
+			}
+		}
+		OutX = Bx; OutY = By; OutZ = Bz;
+	}
 }

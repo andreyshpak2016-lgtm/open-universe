@@ -54,6 +54,8 @@ int main(int argc, char** argv)
     int version = 0;
     double radius = 0.0, amplitude = 0.0, seaLevel = 0.0;
     uint64_t seed = 0;
+    double spawnX = 0.0, spawnY = 0.0, spawnZ = 0.0;
+    bool haveSpawn = false;
 
     struct Row { double x, y, z, h0, h1; int biome; };
     std::vector<Row> rows;
@@ -68,6 +70,7 @@ int main(int argc, char** argv)
         if (std::sscanf(line, "amplitude %lf", &amplitude) == 1) continue;
         if (std::sscanf(line, "sea_level %lf", &seaLevel) == 1) continue;
         if (std::sscanf(line, "seed %llu", reinterpret_cast<unsigned long long*>(&seed)) == 1) continue;
+        if (std::sscanf(line, "spawn %lf %lf %lf", &spawnX, &spawnY, &spawnZ) == 3) { haveSpawn = true; continue; }
         if (std::sscanf(line, "height %lf %lf %lf %lf %lf %d", &x, &y, &z, &h0, &h1, &biome) == 6)
         {
             rows.push_back({ x, y, z, h0, h1, biome });
@@ -123,6 +126,21 @@ int main(int argc, char** argv)
     Check(maxErr1 < 1e-6, buf);
     std::snprintf(buf, sizeof(buf), "биомы совпали (расхождений %d)", biomeMismatch);
     Check(biomeMismatch == 0, buf);
+
+    std::printf("\n=== 3. Точка появления (самое ровное место) ===\n");
+    {
+        double sx = 0.0, sy = 1.0, sz = 0.0;
+        OULT::HomeSpawnDirectionServer(amplitude, seaLevel, seed, sx, sy, sz);
+        const double dx = sx - spawnX, dy = sy - spawnY, dz = sz - spawnZ;
+        const double err = std::sqrt(dx * dx + dy * dy + dz * dz);
+        std::snprintf(buf, sizeof(buf), "точка появления совпала (макс. разница %.2e)", err);
+        Check(haveSpawn && err < 1e-9, buf);
+        // Площадка под базу должна быть ровной.
+        const double rough = OULT::SpawnRoughness(sx, sy, sz, OULT::SpawnFlatRadiusM, amplitude, seaLevel, seed);
+        std::snprintf(buf, sizeof(buf), "площадка под базу ровная (перепад %.1f м на %.0f м)",
+            rough, OULT::SpawnFlatRadiusM);
+        Check(rough < 40.0, buf);
+    }
 
     std::printf("\n=== Итог ===\n");
     if (g_failures == 0)
