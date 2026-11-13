@@ -243,10 +243,10 @@ $ cargo run -p ou-script --bin ou-script-demo
     <table class="m">
       <thead><tr><th data-i18n="rep.tbl.metric">Metric</th><th data-i18n="rep.tbl.value">Value</th></tr></thead>
       <tbody>
-        <tr><td data-i18n="rep.metric1">Core tests</td><td data-i18n="rep.metric1v">223 passed</td></tr>
+        <tr><td data-i18n="rep.metric1">Core tests</td><td data-i18n="rep.metric1v">245 passed</td></tr>
         <tr><td data-i18n="rep.metric2">Modules (crates)</td><td>13</td></tr>
         <tr><td data-i18n="rep.metric3">Simulation tick rate</td><td data-i18n="rep.metric3v">30 Hz (149 ticks per 5 s)</td></tr>
-        <tr><td data-i18n="rep.metric4">Wire position precision</td><td data-i18n="rep.metric4v">0.1 mm (i32, ±214 km)</td></tr>
+        <tr><td data-i18n="rep.metric4">Wire position precision</td><td data-i18n="rep.metric4v">1 mm (i32, ±2147 km)</td></tr>
         <tr><td data-i18n="rep.metric5">Empty delta + ack</td><td data-i18n="rep.metric5v">29 bytes</td></tr>
         <tr><td data-i18n="rep.metric6">Traffic per player (UDP)</td><td data-i18n="rep.metric6v">≈ 202 bytes/tick</td></tr>
         <tr><td data-i18n="rep.metric7">Zone distribution across 4 nodes</td><td>21.8–28.2%</td></tr>
@@ -260,10 +260,10 @@ $ cargo run -p ou-script --bin ou-script-demo
 
     <!-- ================= 4. Test results ================= -->
     <h2 data-i18n="rep.s4">4. Test results</h2>
-    <pre class="codeblock"><code data-i18n="rep.code.tests">$ cargo test --workspace   →  223 passed (13 crates)
+    <pre class="codeblock"><code data-i18n="rep.code.tests">$ cargo test --workspace   →  245 passed (13 crates)
 
-protocol 16 · sim 23 · spatial 6 · net 5 · shard 9 · persist 14
-economy 27 · combat 17 · render 37 · script 32 · build 15 · server 17 · client 9
+protocol 20 · sim 29 · spatial 6 · net 5 · shard 9 · persist 14
+economy 27 · combat 17 · render 37 · script 32 · build 15 · server 28 · client 6
 
 $ cargo run -p ou-combat --bin ou-combat-demo
 === Hit chance (1000 shots) ===
