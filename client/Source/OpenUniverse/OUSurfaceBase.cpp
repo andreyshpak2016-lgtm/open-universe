@@ -3,6 +3,7 @@
 #include "OUSurfaceBase.h"
 #include "OUInterop.h"
 #include "OUTerrain.h"
+#include "OUVoxelPlanet.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/StaticMesh.h"
 #include "Materials/MaterialInterface.h"
@@ -123,6 +124,28 @@ float AOUSurfaceBase::DeckOffsetCm(const FVector& CenterUE, float InPadRadius)
 		}
 	}
 	return static_cast<float>(GMax) + 40.f;   // верх плиты = макс. земля + 40 см
+}
+
+double AOUSurfaceBase::DeckSurfaceRadiusAt(const FVector& DirUE, float InPadRadius)
+{
+	// Центр базы — в точке появления (её ставит GameMode тем же HomeSpawn).
+	const FVector BaseCenter = AOUVoxelPlanet::HomeSpawn(3.0f);
+	const FVector UpB = BaseCenter.GetSafeNormal();
+	const FVector D = DirUE.GetSafeNormal();
+	if (UpB.IsNearlyZero() || D.IsNearlyZero())
+	{
+		return 0.0;
+	}
+	// Внутри площадки? Сравниваем угол с угловым радиусом поля.
+	const double R = 500000.0 * OUInterop::ServerUnitToCm;   // радиус планеты, см
+	const double CosPad = 1.0 - (static_cast<double>(InPadRadius) * InPadRadius) / (2.0 * R * R);
+	if (FVector::DotProduct(D, UpB) < CosPad)
+	{
+		return 0.0;
+	}
+	// Верх поля — плоскость на высоте центра базы плюс подъём площадки.
+	const double DeckUp = DeckOffsetCm(BaseCenter, InPadRadius);
+	return static_cast<double>(BaseCenter.Size()) + DeckUp;
 }
 
 void AOUSurfaceBase::AddBlock(const FVector& Offset, const FVector& Size, const FLinearColor& Color, const FString& Name)

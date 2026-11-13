@@ -1013,10 +1013,14 @@ void AOUCharacterPawn::Tick(float DeltaSeconds)
 	{
 		FHitResult Hit;
 		FCollisionQueryParams Params(SCENE_QUERY_STAT(OUCharMove), false, this);
+		// ВАЖНО: не считаем «начальные перекрытия» стеной. Если капсула стоит на
+		// площадке, свип каждый кадр видел бы перекрытие в момент 0 и обнулял бы
+		// движение — персонаж «залипал». Нам нужны только реальные столкновения.
+		Params.bFindInitialOverlaps = false;
 		const bool bHit = World->SweepSingleByChannel(
 			Hit, Pos, NewPos, FQuat::Identity, ECC_Pawn,
 			FCollisionShape::MakeCapsule(CapsuleRadius, CapsuleHalfHeight), Params);
-		if (bHit)
+		if (bHit && Hit.Time > KINDA_SMALL_NUMBER)
 		{
 			NewPos = Pos + (NewPos - Pos) * Hit.Time;
 			// Гасим скорость в направлении нормали стены (скользим вдоль неё).
@@ -1034,9 +1038,17 @@ void AOUCharacterPawn::Tick(float DeltaSeconds)
 		}
 	}
 
-	// Привязка к рельефу: не проваливаемся под поверхность.
+	// Привязка к рельефу: не проваливаемся под поверхность. Если игрок — на
+	// площадке базы, стоим на её ВЕРХУ, а не на аналитической земле под ней.
 	const FVector Dir = NewPos.GetSafeNormal();
-	const double Surface = SurfaceRadius(Dir) + CapsuleHalfHeight;
+	double Surface = static_cast<double>(SurfaceRadius(Dir)) + CapsuleHalfHeight;
+	{
+		const double Deck = AOUSurfaceBase::DeckSurfaceRadiusAt(Dir, 9000.f);
+		if (Deck > 0.0)
+		{
+			Surface = FMath::Max(Surface, Deck + CapsuleHalfHeight);
+		}
+	}
 
 	// Диагностика `-OUBaseOverview`: держим камеру над базой (обзор сверху),
 	// иначе гравитация прижимает её к земле.
