@@ -45,11 +45,14 @@ fn main() {
     out.push_str(&format!("sea_level {:.6}\n", t.params.sea_level));
     out.push_str(&format!("seed {}\n", t.params.seed));
     for d in &dirs {
-        let h = t.height(*d);
+        // Оба уровня детализации: `0` — глобальный меш, `1` — физика/локальный
+        // участок. Клиент обязан совпасть с каждым бит-в-бит.
+        let h0 = t.height_detail(*d, 0);
+        let h1 = t.height_detail(*d, 1);
         let b = t.biome(*d).code();
         out.push_str(&format!(
-            "height {:.17} {:.17} {:.17} {:.17} {b}\n",
-            d.x, d.y, d.z, h
+            "height {:.17} {:.17} {:.17} {:.17} {:.17} {b}\n",
+            d.x, d.y, d.z, h0, h1
         ));
     }
 

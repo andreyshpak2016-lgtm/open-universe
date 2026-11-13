@@ -55,22 +55,22 @@ int main(int argc, char** argv)
     double radius = 0.0, amplitude = 0.0, seaLevel = 0.0;
     uint64_t seed = 0;
 
-    struct Row { double x, y, z, h; int biome; };
+    struct Row { double x, y, z, h0, h1; int biome; };
     std::vector<Row> rows;
 
     char line[512];
     while (std::fgets(line, sizeof(line), f))
     {
-        double x, y, z, h;
+        double x, y, z, h0, h1;
         int biome;
         if (std::sscanf(line, "version %d", &version) == 1) continue;
         if (std::sscanf(line, "radius %lf", &radius) == 1) continue;
         if (std::sscanf(line, "amplitude %lf", &amplitude) == 1) continue;
         if (std::sscanf(line, "sea_level %lf", &seaLevel) == 1) continue;
         if (std::sscanf(line, "seed %llu", reinterpret_cast<unsigned long long*>(&seed)) == 1) continue;
-        if (std::sscanf(line, "height %lf %lf %lf %lf %d", &x, &y, &z, &h, &biome) == 5)
+        if (std::sscanf(line, "height %lf %lf %lf %lf %lf %d", &x, &y, &z, &h0, &h1, &biome) == 6)
         {
-            rows.push_back({ x, y, z, h, biome });
+            rows.push_back({ x, y, z, h0, h1, biome });
         }
     }
     std::fclose(f);
@@ -88,30 +88,39 @@ int main(int argc, char** argv)
     std::printf("\n=== 2. Высоты (общая формула) ===\n");
     std::printf("  направлений: %zu\n", rows.size());
 
-    double maxErr = 0.0;
+    double maxErr0 = 0.0;
+    double maxErr1 = 0.0;
     int mismatches = 0;
     int biomeMismatch = 0;
 
     for (const Row& r : rows)
     {
-        const double h = OULT::HeightDir(r.x, r.y, r.z, amplitude, seaLevel, seed);
-        const double err = std::fabs(h - r.h);
-        if (err > maxErr) maxErr = err;
-        if (err > 1e-6)
+        // Крупный уровень (глобальный меш) и полный (физика/локальный участок).
+        const double c0 = OULT::HeightDir(r.x, r.y, r.z, amplitude, seaLevel, seed, 0);
+        const double c1 = OULT::HeightDir(r.x, r.y, r.z, amplitude, seaLevel, seed, 1);
+        const double err0 = std::fabs(c0 - r.h0);
+        const double err1 = std::fabs(c1 - r.h1);
+        if (err0 > maxErr0) maxErr0 = err0;
+        if (err1 > maxErr1) maxErr1 = err1;
+        if (err0 > 1e-6 || err1 > 1e-6)
         {
             ++mismatches;
             if (mismatches <= 3)
             {
-                std::printf("  [!] dir (%.3f,%.3f,%.3f): клиент %.10f, сервер %.10f, разница %.3e\n",
-                    r.x, r.y, r.z, h, r.h, err);
+                std::printf("  [!] dir (%.3f,%.3f,%.3f): detail0 клиент %.10f сервер %.10f (%.3e);"
+                    " detail1 клиент %.10f сервер %.10f (%.3e)\n",
+                    r.x, r.y, r.z, c0, r.h0, err0, c1, r.h1, err1);
             }
         }
-        const int b = static_cast<int>(OULT::BiomeFromHeight(h, amplitude));
+        // Биом считается по ПОЛНОМУ рельефу (как на сервере).
+        const int b = static_cast<int>(OULT::BiomeFromHeight(c1, amplitude));
         if (b != r.biome) ++biomeMismatch;
     }
 
-    std::snprintf(buf, sizeof(buf), "высоты совпали бит-в-бит (макс. разница %.2e)", maxErr);
-    Check(mismatches == 0, buf);
+    std::snprintf(buf, sizeof(buf), "крупный рельеф совпал бит-в-бит (макс. разница %.2e)", maxErr0);
+    Check(maxErr0 < 1e-6, buf);
+    std::snprintf(buf, sizeof(buf), "полный рельеф совпал бит-в-бит (макс. разница %.2e)", maxErr1);
+    Check(maxErr1 < 1e-6, buf);
     std::snprintf(buf, sizeof(buf), "биомы совпали (расхождений %d)", biomeMismatch);
     Check(biomeMismatch == 0, buf);
 

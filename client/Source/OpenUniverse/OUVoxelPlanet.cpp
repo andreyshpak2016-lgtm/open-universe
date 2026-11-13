@@ -182,7 +182,7 @@ int32 AOUVoxelPlanet::Segments() const
 	}
 }
 
-float AOUVoxelPlanet::HeightAtServer(const FVector& DirServer) const
+float AOUVoxelPlanet::HeightAtServerDetail(const FVector& DirServer, int32 Detail) const
 {
 	// Одна общая формула с сервером (см. OUTerrain.h): бит-в-бит тот же рельеф,
 	// что считает физика. Все вычисления — в double, как в Rust.
@@ -192,15 +192,28 @@ float AOUVoxelPlanet::HeightAtServer(const FVector& DirServer) const
 		static_cast<double>(DirServer.Z),
 		static_cast<double>(Amplitude),
 		0.545,                      // уровень океана (как на сервере)
-		static_cast<uint64>(Seed));
+		static_cast<uint64>(Seed),
+		Detail);
 	return static_cast<float>(H);
+}
+
+float AOUVoxelPlanet::HeightAtServer(const FVector& DirServer) const
+{
+	// По умолчанию — ПОЛНЫЙ рельеф (detail=1): он совпадает с физикой сервера
+	// (посадка, столкновения) и с плотным локальным участком у игрока.
+	return HeightAtServerDetail(DirServer, 1);
+}
+
+float AOUVoxelPlanet::HeightAtDetail(const FVector& Direction, int32 Detail) const
+{
+	// Направление приходит в UE-осях (вверх = Z). Серверный рельеф считаем в
+	// серверных осях — переводим, иначе высота не совпадёт с сервером.
+	return HeightAtServerDetail(OUInterop::UEDirToServer(Direction), Detail);
 }
 
 float AOUVoxelPlanet::HeightAt(const FVector& Direction) const
 {
-	// Направление приходит в UE-осях (вверх = Z). Серверный рельеф считаем в
-	// серверных осях — переводим, иначе высота не совпадёт с сервером.
-	return HeightAtServer(OUInterop::UEDirToServer(Direction));
+	return HeightAtDetail(Direction, 1);
 }
 
 float AOUVoxelPlanet::SurfaceRadiusAt(const FVector& Direction) const
@@ -210,7 +223,12 @@ float AOUVoxelPlanet::SurfaceRadiusAt(const FVector& Direction) const
 
 float AOUVoxelPlanet::VisualHeight(const FVector& DirUE) const
 {
-	const float Base = HeightAt(DirUE);
+	return VisualHeightDetail(DirUE, 1);
+}
+
+float AOUVoxelPlanet::VisualHeightDetail(const FVector& DirUE, int32 Detail) const
+{
+	const float Base = HeightAtDetail(DirUE, Detail);
 	// Домашняя планета: физика и картинка совпадают (по ней ходит игрок).
 	if (bHomePlanet)
 	{
@@ -322,6 +340,77 @@ FLinearColor AOUVoxelPlanet::SurfaceColor(float Height) const
 		return FLinearColor::LerpUsingHSV(Grass, Snow, (T - 0.35f) / 0.65f);
 	}
 	}
+}
+
+float AOUVoxelPlanet::LocalDetailFade(float DistCm) const
+{
+	// Полное сохранение мелкого рельефа в глубине участка, плавное гашение к
+	// его краю (последние ~15%). Там глобальный меш показывает только крупный
+	// рельеф, поэтому у границы мелочь должна сойти на нет — иначе виден обрыв.
+	const float Edge = LocalExtentCm * 0.85f;
+	if (DistCm <= Edge)
+	{
+		return 1.f;
+	}
+	const float T = FMath::Clamp((DistCm - Edge) / FMath::Max(1.f, LocalExtentCm - Edge), 0.f, 1.f);
+	return 1.f - T * T * (3.f - 2.f * T);   // smoothstep вниз к 0
+}
+
+FVector AOUVoxelPlanet::SmoothSurfaceNormal(const FVector& DirUE, int32 Detail) const
+{
+	// Касательный базис в точке.
+	const FVector Up = DirUE.GetSafeNormal();
+	if (Up.IsNearlyZero())
+	{
+		return FVector::UpVector;
+	}
+	FVector T = FVector::CrossProduct(Up, FVector::UpVector);
+	if (T.SizeSquared() < 1e-4f)
+	{
+		T = FVector::CrossProduct(Up, FVector::RightVector);
+	}
+	T = T.GetSafeNormal();
+	const FVector B = FVector::CrossProduct(Up, T).GetSafeNormal();
+
+	// Шаг конечных разностей: ~половина ячейки меша. Для полного рельефа
+	// (локальный участок) шаг меньше — там видна мелочь.
+	const float H = (Detail >= 1) ? (LocalExtentCm / FMath::Max(1, LocalCells) * 0.5f)
+		: 150000.f;   // ~1.5 км для глобального меша
+	auto At = [this, &DirUE, &T, &B, H, Detail](float SA, float SB)
+	{
+		// Смещаем вдоль касательных по сфере и берём высоту.
+		const FVector N = (DirUE + T * (SA / Radius) + B * (SB / Radius)).GetSafeNormal();
+		return VisualHeightDetail(N, Detail);
+	};
+	const float HL = At(-H, 0.f), HR = At(H, 0.f);
+	const float HD = At(0.f, -H), HU = At(0.f, H);
+
+	// Градиент высоты вдоль T и B.
+	const float GT = (HR - HL) / (2.f * H);
+	const float GB = (HU - HD) / (2.f * H);
+	const FVector Normal = (Up - T * GT - B * GB).GetSafeNormal();
+	return Normal.IsNearlyZero() ? Up : Normal;
+}
+
+FLinearColor AOUVoxelPlanet::ShadedVertexColor(float Height, const FVector& SmoothNormal) const
+{
+	FLinearColor Base = SurfaceColor(Height);
+	// Вода — гладкая и блестящая: ровный цвет без резких теней рельефа.
+	if (Height <= 0.f)
+	{
+		return Base;
+	}
+	// Направление «солнца» (совпадает с DirectionalLight в GameMode:
+	// FRotator(-38, -30, 0) → вектор НА солнце).
+	const FVector Sun = FVector(-0.682f, 0.394f, 0.616f).GetSafeNormal();
+	const float NdotL = FMath::Clamp(FVector::DotProduct(SmoothNormal, Sun), 0.f, 1.f);
+	// Диффузия с заметным контрастом: склоны к солнцу светлее, от солнца —
+	// темнее. Так рельеф читается даже с неосвещаемым материалом.
+	const float Diffuse = 0.28f + 0.72f * NdotL;
+	// Лёгкий градиент по высоте: низины чуть темнее (читается объём).
+	const float HeightTint = 0.90f + 0.10f * FMath::Clamp(Height / (Amplitude * 2.f) + 0.5f, 0.f, 1.f);
+	const float K = Diffuse * HeightTint;
+	return FLinearColor(Base.R * K, Base.G * K, Base.B * K, Base.A);
 }
 
 FVector AOUVoxelPlanet::HomeSpawnDirectionServer()
@@ -459,14 +548,22 @@ void AOUVoxelPlanet::BuildPlanet()
 				Cube[Third] = Vv;
 
 				const FVector Dir = CubeToSphere(Cube);
-				const float Height = VisualHeight(Dir);
+				// ГЛОБАЛЬНЫЙ меш: только КРУПНЫЙ рельеф (Detail=0). Мелкие волны
+				// (сотни метров) ячейка ~1.5 км не разрешает — их «алиасит» в
+				// плиты, и камера уходит под грань (серая изнанка поверхности).
+				// Мелочь показывает плотный локальный участок (RebuildLocal).
+				const float Height = VisualHeightDetail(Dir, 0);
 				Verts.Add(Dir * (Radius + Height));
 
-				Normals.Add(Dir);
+				// Нормаль — со сглаживанием по рельефу, иначе грань выглядит
+				// плоской и свет не читается.
+				const FVector Nrm = SmoothSurfaceNormal(Dir, 0);
+				Normals.Add(Nrm);
 				UVs.Add(FVector2D(U * 0.5f + 0.5f, Vv * 0.5f + 0.5f));
 
-				// Цвет по высоте и типу планеты (океан/песок/трава/снег и т.д.).
-				Colors.Add(SurfaceColor(Height));
+				// Цвет по высоте и типу планеты (океан/песок/трава/снег и т.д.)
+				// с запечённым освещением — материал планеты не освещается движком.
+				Colors.Add(ShadedVertexColor(Height, Nrm));
 				Tangents.Add(FProcMeshTangent(1.f, 0.f, 0.f));
 			}
 		}
@@ -549,7 +646,7 @@ void AOUVoxelPlanet::RebuildLocal(const FVector& AroundUE)
 
 	// Сетка в касательной плоскости; каждую вершину проецируем на сферу и
 	// берём высоту из ТОЙ ЖЕ формулы, что глобальный меш и сервер.
-	const int32 N = FMath::Clamp(LocalCells, 8, 256);
+	const int32 N = FMath::Clamp(LocalCells, 8, 512);
 	const float Step = (2.f * LocalExtentCm) / N;
 
 	TArray<FVector> Verts;
@@ -569,11 +666,19 @@ void AOUVoxelPlanet::RebuildLocal(const FVector& AroundUE)
 			// Точка в касательной плоскости, затем — на сферу планеты.
 			const FVector Tangent = DirUE * Radius + T1 * A + T2 * B;
 			const FVector Dir = Tangent.GetSafeNormal();
-			const float Height = VisualHeight(Dir);
+			// ЛОКАЛЬНЫЙ участок: ПОЛНЫЙ рельеф (Detail=1). Мелкие волны у края
+			// ГАСИМ (fade), иначе на границе участка был бы обрыв: там глобальный
+			// меш показывает только крупный рельеф (Detail=0). Внутри участка
+			// (там, где ходит игрок) гашения нет — высота совпадает с физикой.
+			const float Fade = LocalDetailFade(FMath::Max(FMath::Abs(A), FMath::Abs(B)));
+			const float HCoarse = VisualHeightDetail(Dir, 0);
+			const float HFull = VisualHeightDetail(Dir, 1);
+			const float Height = HCoarse + (HFull - HCoarse) * Fade;
 			Verts.Add(Dir * (Radius + Height));
-			Normals.Add(Dir);
+			const FVector Nrm = SmoothSurfaceNormal(Dir, 1);
+			Normals.Add(Nrm);
 			UVs.Add(FVector2D(static_cast<float>(I) / N, static_cast<float>(J) / N));
-			Colors.Add(SurfaceColor(Height));
+			Colors.Add(ShadedVertexColor(Height, Nrm));
 			Tangents.Add(FProcMeshTangent(T1.X, T1.Y, T1.Z));
 		}
 	}

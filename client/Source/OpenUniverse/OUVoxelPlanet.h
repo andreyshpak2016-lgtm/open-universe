@@ -100,6 +100,18 @@ public:
 	/** Высота в СЕРВЕРНЫХ осях (совпадает с сервером бит-в-бит). */
 	float HeightAtServer(const FVector& DirServer) const;
 
+	/**
+	 * Высота в СЕРВЕРНЫХ осях с уровнем детализации.
+	 *
+	 * `Detail = 0` — крупный рельеф (глобальный меш планеты: ячейка ~1.5 км),
+	 * `Detail = 1` — полный (физика сервера и локальный участок у игрока).
+	 * См. `OUTerrain.h::HeightDir`.
+	 */
+	float HeightAtServerDetail(const FVector& DirServer, int32 Detail) const;
+
+	/** Высота в UE-осях с уровнем детализации. */
+	float HeightAtDetail(const FVector& Direction, int32 Detail) const;
+
 	/** Радиус поверхности в направлении (UE-оси). */
 	UFUNCTION(BlueprintPure, Category = "Open Universe|Planet")
 	float SurfaceRadiusAt(const FVector& Direction) const;
@@ -164,10 +176,10 @@ public:
 
 	/** Размер локального участка (полусторона, см) и число ячеек на сторону. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Open Universe|Planet")
-	float LocalExtentCm = 400000.f;   // 4 км в каждую сторону
+	float LocalExtentCm = 400000.f;   // 4 км в каждую сторону (за горизонт)
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Open Universe|Planet")
-	int32 LocalCells = 128;           // 256×256 вершин, ячейка ~60 м
+	int32 LocalCells = 384;           // 768×768 вершин, ячейка ~21 м
 
 	/** Максимум облачных «клубов» на планету (пул создаётся в конструкторе). */
 	static constexpr int32 MaxCloudPuffs = 160;
@@ -201,11 +213,48 @@ protected:
 	FLinearColor SurfaceColor(float Height) const;
 
 	/**
+	 * Цвет вершины с запечённым простым освещением.
+	 *
+	 * Материал планеты — отладочный `VertexColorMaterial` (не освещается движком):
+	 * без этого рельеф выглядит однотонной плоскостью, потому что цвет вершины не
+	 * зависит от наклона поверхности. Считаем «псевдо-свет»: солнце сверху-сбоку,
+	 * диффуз по нормали (плюс немного) — так сглаженные склоны и хребты читаются.
+	 */
+	FLinearColor ShadedVertexColor(float Height, const FVector& SmoothNormal) const;
+
+	/**
+	 * Сглаженная нормаль поверхности в точке (конечными разностями по рельефу).
+	 * Даёт рельефу «объём» на меше: плоские грани по-разному освещены.
+	 */
+	FVector SmoothSurfaceNormal(const FVector& DirUE, int32 Detail) const;
+
+	/**
+	 * Гашение мелкого рельефа у края локального участка.
+	 *
+	 * @param DistCm  расстояние от центра участка в касательной плоскости, см
+	 * @return 1 в глубине участка, 0 на самой границе (и за ней)
+	 *
+	 * Нужно, чтобы край плотного участка совпал с глобальным мешем (там мелкого
+	 * рельефа нет): иначе виден обрыв высоты в несколько сотен метров на линии
+	 * горизонта. Внутри участка гашения нет — под игроком высота = физике.
+	 */
+	float LocalDetailFade(float DistCm) const;
+
+	/**
 	 * Высота рельефа для ВИЗУАЛЬНОГО меша с учётом характера типа планеты.
 	 * Для домашней планеты совпадает с физической высотой (иначе игрок
 	 * «висел» бы над землёй); для декоративных — добавляет дюны/кратеры/полосы.
 	 */
 	float VisualHeight(const FVector& DirUE) const;
+
+	/**
+	 * То же, но с уровнем детализации рельефа.
+	 *
+	 * `Detail = 0` — только крупный рельеф: так строится ГЛОБАЛЬНЫЙ меш планеты
+	 * (ячейка ~1.5 км не может показать мелкие волны, иначе камера уходит под
+	 * грань). `Detail = 1` — полный рельеф для плотного локального участка.
+	 */
+	float VisualHeightDetail(const FVector& DirUE, int32 Detail) const;
 
 private:
 	/** Детерминированный шум для облаков (независимый канал). */

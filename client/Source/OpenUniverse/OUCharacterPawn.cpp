@@ -243,6 +243,11 @@ void AOUCharacterPawn::BeginPlay()
 	PlaceAt(CharPos, LookYaw);
 	// Смотрим чуть вверх: в кадр попадают и земля, и небо с облаками.
 	ViewPitch = 0.10f;
+	// Диагностика: `-OULookDown` смотрит вниз — видно рельеф у ног.
+	if (FParse::Param(FCommandLine::Get(), TEXT("OULookDown")))
+	{
+		ViewPitch = -0.55f;
+	}
 
 	// Корабль стоит рядом (между базой и персонажем).
 	if (!Ship)
@@ -253,6 +258,15 @@ void AOUCharacterPawn::BeginPlay()
 		{
 			Ship->Character = this;
 		}
+	}
+
+	// Плотный локальный участок вокруг игрока строим СРАЗУ: без него у ног
+	// видна только крупная форма рельефа (глобальный меш грубый), и земля
+	// выглядит плоской.
+	if (AOUVoxelPlanet* Planet = AOUVoxelPlanet::FindHomePlanet(World))
+	{
+		LocalTerrainCenter = CharPos;
+		Planet->RebuildLocal(CharPos);
 	}
 
 	UE_LOG(LogOUChar, Log, TEXT("Персонаж создан: ходьба по поверхности, корабль рядом"));
