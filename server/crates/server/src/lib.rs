@@ -1012,7 +1012,7 @@ mod tests {
         s.tick();
         // Игрок 2 начинает двигаться.
         for tick in 1..=5u32 {
-            s.receive_input(2, &[InputFrame { seq: tick, throttle: 1.0, yaw: -1.5707963, pitch: 0.0, fire: false }]);
+            s.receive_input(2, &[InputFrame { seq: tick, throttle: 1.0, yaw: -1.5707963, pitch: 0.0, fire: false, ..Default::default() }]);
         }
         let plan = s.tick();
         let snap = plan.messages[&1].iter().find_map(|m| match m {
@@ -1301,7 +1301,7 @@ mod tests {
         s.connect(2, Vec3::new(100.0, 0.0, 0.0));
         s.tick(); // базовый снимок
         // Игрок 1 стреляет: ввод с fire.
-        s.receive_input(1, &[InputFrame { seq: 1, throttle: 0.0, yaw: 0.0, pitch: 0.0, fire: true }]);
+        s.receive_input(1, &[InputFrame { seq: 1, throttle: 0.0, yaw: 0.0, pitch: 0.0, fire: true, ..Default::default() }]);
         let plan = s.tick();
         let msgs = &plan.messages[&2];
         assert!(

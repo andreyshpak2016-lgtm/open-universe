@@ -33,6 +33,7 @@ fn simulate_frames(ticks: u32, every: u32) -> Vec<Vec<EntityState>> {
                 yaw: (det_sin(t as f64 * 0.03) * 0.35) as f32,
                 pitch: (det_cos(t as f64 * 0.05) * 0.10) as f32,
                 fire: false,
+                ..Default::default()
             },
         );
         inputs.insert(
@@ -43,6 +44,7 @@ fn simulate_frames(ticks: u32, every: u32) -> Vec<Vec<EntityState>> {
                 yaw: (det_sin(t as f64 * 0.03 + 0.2) * 0.35) as f32,
                 pitch: 0.0,
                 fire: false,
+                ..Default::default()
             },
         );
         world.step(&inputs);

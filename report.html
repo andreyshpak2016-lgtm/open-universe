@@ -6,7 +6,7 @@
   <title data-i18n="rep.title">Open Universe — development report</title>
   <meta name="description" content="Open Universe development report: what is done, engine screenshots, metrics and test results." />
   <link rel="icon" href="assets/blackhole.svg" type="image/svg+xml" />
-  <link rel="stylesheet" href="styles.css?v=0.49.0" />
+  <link rel="stylesheet" href="styles.css?v=0.50.0" />
   <style>
     .report { max-width: 1100px; margin: 0 auto; padding: 0 24px 80px; }
     .report h1 { font-size: clamp(2rem, 5vw, 3rem); margin: 40px 0 8px; letter-spacing: -1px;
@@ -51,13 +51,13 @@
 
   <main class="report">
     <h1 data-i18n="rep.h1">Development report</h1>
-    <p style="font-size:1.05rem" data-i18n="rep.intro">What already works, with evidence: engine screenshots, metrics and test results. Version <b id="ver">0.49.0</b>.</p>
+    <p style="font-size:1.05rem" data-i18n="rep.intro">What already works, with evidence: engine screenshots, metrics and test results. Version <b id="ver">0.50.0</b>.</p>
 
     <div class="meta">
       <div><b id="m-tests">223</b><span data-i18n="rep.m.tests">core tests (Rust)</span></div>
       <div><b id="m-crates">13</b><span data-i18n="rep.m.crates">modules (crates)</span></div>
       <div><b id="m-progress">73%</b><span data-i18n="rep.m.progress">plan complete</span></div>
-      <div><b id="m-version">v0.49.0</b><span data-i18n="rep.m.version">latest release</span></div>
+      <div><b id="m-version">v0.50.0</b><span data-i18n="rep.m.version">latest release</span></div>
     </div>
 
     <!-- ================= 1. What is done ================= -->
@@ -110,6 +110,7 @@
       <li data-i18n="rep.done45"><b>In-game editor: place / remove / paint</b> - a crosshair and three server-authoritative actions: place (LMB), remove the block under the crosshair (E), repaint it (R). The server validates every edit (integrity against the construction core, limits, ownership) and replicates it to all players.</li>
       <li data-i18n="rep.done46"><b>Dual-Universe-style controls and HUD</b> - mouse look for character and ship (FPS-independent), Alt releases the cursor, ship strafe/ascend; a persistent in-game HUD with corner status plates, a reticle and a hotbar. Terrain is visible again: relief wavelengths now exceed the mesh step, and the mesh was raised to 512 segments.</li>
       <li data-i18n="rep.done47"><b>Planet relief became volumetric</b> - the shared formula now has two detail levels: a coarse one (continents, big hills, mountain ridges) for the coarse global planet mesh, and a full one (plus metre-scale detail) for the dense patch around the player and for server physics; both are compared bit-for-bit. Lighting is baked into vertex colours, because the planet's debug material is not lit - so slopes facing the sun are brighter and hills finally read as hills instead of a flat colour fill.</li>
+      <li data-i18n="rep.done48"><b>Dual-Universe-style controls, fixed and verified live</b> - on foot A/D were swapped (D went left) and arrows double-bound (steered and strafed at once); A/D now strafe properly and arrows are look-only. The ship's A/D strafe was dead code and Space fired instead of ascending - now W/S is thrust, A/D strafe, Space/Ctrl ascend/descend and the fire button is the left mouse button. Strafe and ascend are new fields in the network input frame, so server physics and client prediction stay identical. Every control was checked with real key presses in a running game.</li>
     </ul>
 
     <p style="margin-top:14px" data-i18n="rep.sync">The client skeleton mirrors the server logic: C++ kinematics over 1 s gives <b>z = 23.101</b> versus the server's <b>23.10086</b> — the same number. Details: <code>client/README.md</code>.</p>
@@ -310,7 +311,7 @@ $ cargo run -p ou-render --release --bin ou-netrender -- 127.0.0.1:7777 8 4
     </div>
   </footer>
 
-  <script src="i18n.js?v=0.49.0"></script>
+  <script src="i18n.js?v=0.50.0"></script>
   <script>
     (function () {
       "use strict";

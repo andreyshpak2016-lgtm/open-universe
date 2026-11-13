@@ -29,11 +29,11 @@ fn main() {
     for tick in 1..=120u32 {
         server.receive_input(
             1,
-            &[InputFrame { seq: tick, throttle: 1.0, yaw: 0.1, pitch: 0.0, fire: false }],
+            &[InputFrame { seq: tick, throttle: 1.0, yaw: 0.1, pitch: 0.0, fire: false, ..Default::default() }],
         );
         server.receive_input(
             2,
-            &[InputFrame { seq: tick, throttle: 1.0, yaw: 0.0, pitch: 0.0, fire: false }],
+            &[InputFrame { seq: tick, throttle: 1.0, yaw: 0.0, pitch: 0.0, fire: false, ..Default::default() }],
         );
         server.tick();
     }
@@ -79,7 +79,7 @@ fn main() {
     for tick in 1..=30u32 {
         server2.receive_input(
             1,
-            &[InputFrame { seq: tick, throttle: 0.5, yaw: -0.2, pitch: 0.0, fire: false }],
+            &[InputFrame { seq: tick, throttle: 0.5, yaw: -0.2, pitch: 0.0, fire: false, ..Default::default() }],
         );
         server2.tick();
     }

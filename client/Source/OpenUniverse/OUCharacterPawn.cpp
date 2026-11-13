@@ -269,6 +269,13 @@ void AOUCharacterPawn::BeginPlay()
 		Planet->RebuildLocal(CharPos);
 	}
 
+	// Диагностика/тесты: `-OUStartInShip` сразу сажает игрока в корабль (удобно
+	// проверять управление кораблём без ручных нажатий).
+	if (Ship && FParse::Param(FCommandLine::Get(), TEXT("OUStartInShip")))
+	{
+		Ship->EnterShip(this);
+	}
+
 	UE_LOG(LogOUChar, Log, TEXT("Персонаж создан: ходьба по поверхности, корабль рядом"));
 }
 
@@ -320,8 +327,10 @@ void AOUCharacterPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputCom
 	{
 		return;
 	}
-	PlayerInputComponent->BindAxis(TEXT("Throttle"), this, &AOUCharacterPawn::AxisForward);
-	PlayerInputComponent->BindAxis(TEXT("Yaw"), this, &AOUCharacterPawn::AxisRight);
+	// Ходьба: W/S — вперёд/назад, A/D — стрейф вбок.
+	PlayerInputComponent->BindAxis(TEXT("Move"), this, &AOUCharacterPawn::AxisForward);
+	PlayerInputComponent->BindAxis(TEXT("Strafe"), this, &AOUCharacterPawn::AxisRight);
+	// Обзор: мышь (и стрелки как запасной вариант).
 	PlayerInputComponent->BindAxis(TEXT("LookYaw"), this, &AOUCharacterPawn::AxisLookYaw);
 	PlayerInputComponent->BindAxis(TEXT("LookPitch"), this, &AOUCharacterPawn::AxisLookPitch);
 	// Мышь: значение уже является дельтой за кадр, поэтому обрабатываем отдельно

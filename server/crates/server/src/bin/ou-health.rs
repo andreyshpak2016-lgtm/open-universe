@@ -227,7 +227,7 @@ fn run_check() -> Health {
         // Отправляем ввод: сервер должен двигать корабль.
         if me.is_some() {
             seq += 1;
-            let input = InputFrame { seq, throttle: 0.0, yaw: 0.0, pitch: 0.0, fire: false };
+            let input = InputFrame { seq, throttle: 0.0, yaw: 0.0, pitch: 0.0, fire: false, ..Default::default() };
             net.send_to(token, server_addr, &Message::ClientInput { inputs: vec![input] }).ok();
             net.flush().ok();
         }

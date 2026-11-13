@@ -14,7 +14,7 @@ fn main() {
 
     // --- Фаза 1: идеальная сеть ---
     for seq in 0..60u32 {
-        let input = InputFrame { seq, throttle: 1.0, yaw: 0.1, pitch: 0.0, fire: false };
+        let input = InputFrame { seq, throttle: 1.0, yaw: 0.1, pitch: 0.0, fire: false, ..Default::default() };
         let mut m = BTreeMap::new();
         m.insert(1, input);
         server.step(&m);
@@ -39,7 +39,7 @@ fn main() {
     // Клиент предсказывает 5 кадров вперёд; до сервера они ещё не дошли.
     let mut pending = Vec::new();
     for seq in 60..65u32 {
-        let input = InputFrame { seq, throttle: 1.0, yaw: 1.0, pitch: 0.0, fire: false };
+        let input = InputFrame { seq, throttle: 1.0, yaw: 1.0, pitch: 0.0, fire: false, ..Default::default() };
         client.local_input(input, 1);
         pending.push(input);
     }

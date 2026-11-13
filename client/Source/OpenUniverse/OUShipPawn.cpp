@@ -14,6 +14,7 @@
 #include "Engine/StaticMesh.h"
 #include "UObject/ConstructorHelpers.h"
 #include "Kismet/GameplayStatics.h"
+#include "GameFramework/PlayerController.h"
 #include "DrawDebugHelpers.h"
 #include "Misc/CommandLine.h"
 #include "Misc/Parse.h"
@@ -302,35 +303,72 @@ void AOUShipPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 		return;
 	}
 	// Классический ввод (без ассетов): работает сразу, без Blueprint.
+	// Координатные оси не могут переиспользовать имена персонажа (‘Move’),
+	// поэтому у корабля своя ось тяги и стрейфа; обзор — мышь.
 	PlayerInputComponent->BindAxis(TEXT("Throttle"), this, &AOUShipPawn::AxisThrottle);
-	PlayerInputComponent->BindAxis(TEXT("Yaw"), this, &AOUShipPawn::AxisYaw);
-	PlayerInputComponent->BindAxis(TEXT("Pitch"), this, &AOUShipPawn::AxisPitch);
-	// Мышь — обзор (как в Dual Universe): значение уже дельта за кадр.
 	PlayerInputComponent->BindAxis(TEXT("YawMouse"), this, &AOUShipPawn::AxisYawMouse);
 	PlayerInputComponent->BindAxis(TEXT("PitchMouse"), this, &AOUShipPawn::AxisPitchMouse);
-	PlayerInputComponent->BindAxis(TEXT("Strafe"), this, &AOUShipPawn::AxisStrafe);
-	PlayerInputComponent->BindAction(TEXT("Fire"), IE_Pressed, this, &AOUShipPawn::StartFire);
-	PlayerInputComponent->BindAction(TEXT("Fire"), IE_Released, this, &AOUShipPawn::StopFire);
+	PlayerInputComponent->BindAxis(TEXT("ShipStrafe"), this, &AOUShipPawn::AxisStrafe);
+	PlayerInputComponent->BindAction(TEXT("Ascend"), IE_Pressed, this, &AOUShipPawn::OnAscendPressed);
+	PlayerInputComponent->BindAction(TEXT("Ascend"), IE_Released, this, &AOUShipPawn::OnAscendReleased);
+	PlayerInputComponent->BindAction(TEXT("Descend"), IE_Pressed, this, &AOUShipPawn::OnDescendPressed);
+	PlayerInputComponent->BindAction(TEXT("Descend"), IE_Released, this, &AOUShipPawn::OnDescendReleased);
+	// Огонь — ЛЕВАЯ кнопка мыши (в духе DU). Пробел теперь подъём, не огонь.
+	PlayerInputComponent->BindAction(TEXT("ShipFire"), IE_Pressed, this, &AOUShipPawn::StartFire);
+	PlayerInputComponent->BindAction(TEXT("ShipFire"), IE_Released, this, &AOUShipPawn::StopFire);
 	PlayerInputComponent->BindAction(TEXT("ExitShip"), IE_Pressed, this, &AOUShipPawn::OnExitPressed);
 	PlayerInputComponent->BindAction(TEXT("ExitShip"), IE_Released, this, &AOUShipPawn::OnExitReleased);
+	PlayerInputComponent->BindAction(TEXT("CursorToggle"), IE_Pressed, this, &AOUShipPawn::OnCursorToggle);
 }
 
 void AOUShipPawn::AxisYawMouse(float Value)
 {
 	// Мышь: дельта за кадр — применяем сразу (без умножения на время кадра).
 	// Копим и отправляем как обычный ввод, чтобы сервер видел тот же курс.
-	MouseYawAccum += Value * MouseSensitivity;
+	if (bCursorCaptured)
+	{
+		MouseYawAccum += Value * MouseSensitivity;
+	}
 }
 
 void AOUShipPawn::AxisPitchMouse(float Value)
 {
-	MousePitchAccum += Value * MouseSensitivity;
+	if (bCursorCaptured)
+	{
+		MousePitchAccum += Value * MouseSensitivity;
+	}
+}
+
+void AOUShipPawn::OnCursorToggle()
+{
+	// Alt — отпустить/вернуть курсор (как в DU): пока курсор свободен, обзор
+	// мышью и огонь не срабатывают, можно работать с интерфейсом.
+	bCursorCaptured = !bCursorCaptured;
+	if (APlayerController* PC = Cast<APlayerController>(GetController()))
+	{
+		PC->bShowMouseCursor = !bCursorCaptured;
+		if (bCursorCaptured)
+		{
+			PC->SetInputMode(FInputModeGameOnly());
+		}
+		else
+		{
+			FInputModeGameAndUI Mode;
+			Mode.SetHideCursorDuringCapture(false);
+			PC->SetInputMode(Mode);
+		}
+	}
 }
 
 void AOUShipPawn::AxisStrafe(float Value)
 {
 	StrafeInput = FMath::Clamp(Value, -1.f, 1.f);
 }
+
+void AOUShipPawn::OnAscendPressed() { bAscend = true; }
+void AOUShipPawn::OnAscendReleased() { bAscend = false; }
+void AOUShipPawn::OnDescendPressed() { bDescend = true; }
+void AOUShipPawn::OnDescendReleased() { bDescend = false; }
 
 void AOUShipPawn::OnExitPressed()
 {
@@ -462,12 +500,22 @@ void AOUShipPawn::StepPrediction(const FOUInputFrame& Input, float Dt)
 		DetSin(Pitch),
 		DetCos(Pitch) * DetCos(Yaw));
 
-	// 3. Тяга + демпфирование + гравитация планеты (как на сервере:
-	//    `integrate_with_accel` добавляет внешнее ускорение до шага).
+	// Локальные оси: «вверх» — мировой +Y, «вправо» — up × forward, «локальный
+	// верх» — forward × right. Как на сервере (проверено тестом).
+	const FVector WorldUp(0.0, 1.0, 0.0);
+	FVector Right = FVector::CrossProduct(WorldUp, Forward);
+	Right = Right.SizeSquared() > 1e-12 ? Right.GetSafeNormal() : FVector::ZeroVector;
+	FVector UpLocal = FVector::CrossProduct(Forward, Right);
+	UpLocal = UpLocal.SizeSquared() > 1e-12 ? UpLocal.GetSafeNormal() : WorldUp;
+
+	// 3. Тяга + стрейф + подъём/спуск + демпфирование + гравитация планеты (как
+	//    на сервере: `integrate_with_accel` добавляет внешнее ускорение до шага).
 	const FVector Thrust = Forward * (Input.Throttle * Flight.MaxThrust);
+	const FVector Side = Right * (Input.Strafe * Flight.MaxStrafeThrust);
+	const FVector Lift = UpLocal * (Input.Up * Flight.MaxStrafeThrust);
 	const FVector Damp = State.Velocity * (-Flight.LinearDamping);
 	const FVector Gravity = GravityAt(State.Position);
-	State.Velocity += (Thrust + Damp + Gravity) * Dt;
+	State.Velocity += (Thrust + Side + Lift + Damp + Gravity) * Dt;
 
 	// 4. Ограничение скорости.
 	const double Speed = State.Velocity.Size();
@@ -673,15 +721,14 @@ void AOUShipPawn::Tick(float DeltaSeconds)
 	// привычный кадр и предсказание совпадает.
 	if (MouseYawAccum != 0.f || MousePitchAccum != 0.f)
 	{
-		const float YawSec = FMath::DegreesToRadians(90.f);   // масштаб за секунду
-		(void)YawSec;
 		CurrentInput.Yaw = FMath::Clamp(CurrentInput.Yaw + MouseYawAccum * 40.f, -1.f, 1.f);
 		CurrentInput.Pitch = FMath::Clamp(CurrentInput.Pitch + MousePitchAccum * 40.f, -1.f, 1.f);
 		MouseYawAccum = 0.f;
 		MousePitchAccum = 0.f;
 	}
-	// Стрейф (A/D) — как в Dual Universe, помимо клавиатурного рыскания.
-	(void)StrafeInput;
+	// Стрейф (A/D) и подъём/спуск (Пробел/Ctrl) — как в Dual Universe.
+	CurrentInput.Strafe = StrafeInput;
+	CurrentInput.Up = (bAscend ? 1.f : 0.f) + (bDescend ? -1.f : 0.f);
 
 	// Предсказываем движение нашим же шагом (сеть не требуется).
 	CurrentInput.Seq += 1;

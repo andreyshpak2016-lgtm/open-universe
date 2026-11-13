@@ -118,6 +118,7 @@ fn main() {
             yaw: (det_sin(seq as f64 * 0.04) * 0.35) as f32,
             pitch: (det_sin(seq as f64 * 0.02 + 1.0) * 0.08) as f32,
             fire: false,
+            ..Default::default()
         };
         net.send_to(token, server, &Message::ClientInput { inputs: vec![input] }).ok();
         net.flush().ok();

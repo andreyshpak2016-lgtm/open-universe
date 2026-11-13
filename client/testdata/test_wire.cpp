@@ -192,6 +192,23 @@ int main(int argc, char** argv)
         Check(br.Accepted && br.Reason == OUWire::BuildOk, "команда принята сервером");
     }
 
+    // --- 6a. Кадр ввода (клиент → сервер, тег 2) ---
+    std::printf("\n=== 6a. Кадр управления (клиент → сервер) ===\n");
+    {
+        const std::vector<uint8_t> ib =
+            OUWire::EncodeInput(42, 1.0f, -0.5f, 0.25f, -0.75f, 1.0f, true);
+        Check(ib[0] == OUWire::TagInput, "тег кадра управления = 2");
+        OUWire::InputFrameView iv;
+        Check(OUWire::DecodeInput(ib.data(), ib.size(), iv), "кадр управления разобран");
+        Check(iv.Seq == 42, "seq совпал");
+        Check(std::fabs(iv.Throttle - 1.0f) < 1e-3f, "тяга совпала");
+        Check(std::fabs(iv.Yaw + 0.5f) < 1e-3f, "рыскание совпало");
+        Check(std::fabs(iv.Pitch - 0.25f) < 1e-3f, "тангаж совпал");
+        Check(std::fabs(iv.Strafe + 0.75f) < 1e-3f, "стрейф совпал");
+        Check(std::fabs(iv.Up - 1.0f) < 1e-3f, "подъём совпал");
+        Check(iv.Fire, "огонь совпал");
+    }
+
     // --- 7. Приветствие сервера (какой сущностью управляем) ---
     std::printf("\n=== 7. Приветствие сервера (welcome) ===\n");
     {

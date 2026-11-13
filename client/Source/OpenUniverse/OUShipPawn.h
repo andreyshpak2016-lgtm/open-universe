@@ -83,12 +83,16 @@ protected:
 	void AxisThrottle(float Value);
 	void AxisYaw(float Value);
 	void AxisPitch(float Value);
-
 	/** Мышь: значение уже дельта за кадр (копим и применяем при отправке). */
 	void AxisYawMouse(float Value);
 	void AxisPitchMouse(float Value);
 	/** Горизонтальное смещение (A/D), как в Dual Universe. */
 	void AxisStrafe(float Value);
+	/** Подъём/спуск (Пробел/Ctrl), как в Dual Universe. */
+	void OnAscendPressed();
+	void OnAscendReleased();
+	void OnDescendPressed();
+	void OnDescendReleased();
 
 	/** Чувствительность мыши для корабля (рад на единицу дельты). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Open Universe|Input")
@@ -99,6 +103,12 @@ protected:
 	float MousePitchAccum = 0.f;
 	/** Смещение A/D. */
 	float StrafeInput = 0.f;
+	/** Подъём/спуск (Пробел/Ctrl). */
+	bool bAscend = false;
+	bool bDescend = false;
+	/** Захвачен ли курсор: Alt отпускает/возвращает (как в DU). */
+	bool bCursorCaptured = true;
+	void OnCursorToggle();
 	void StartFire();
 	void StopFire();
 

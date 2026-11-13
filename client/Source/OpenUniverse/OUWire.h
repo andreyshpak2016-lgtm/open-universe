@@ -594,6 +594,69 @@ namespace OUWire
 
     // --- Кодирование (для тестов и клиента) ---
 
+    /// Собрать кадр ввода (клиент → сервер, тег 2).
+    ///
+    /// Формат (должен совпадать с `ou_protocol`):
+    /// [tag][count u16][seq u32][throttle i16][yaw i16][pitch i16][strafe i16][up i16][fire u8].
+    inline std::vector<uint8_t> EncodeInput(
+        uint32_t seq, float throttle, float yaw, float pitch, float strafe, float up, bool fire)
+    {
+        std::vector<uint8_t> out;
+        out.push_back(TagInput);
+        out.push_back(1); // count = 1
+        out.push_back(0);
+        out.push_back(static_cast<uint8_t>(seq & 0xFF));
+        out.push_back(static_cast<uint8_t>((seq >> 8) & 0xFF));
+        out.push_back(static_cast<uint8_t>((seq >> 16) & 0xFF));
+        out.push_back(static_cast<uint8_t>((seq >> 24) & 0xFF));
+        auto push_unit = [&out](float v) {
+            const float c = v < -1.f ? -1.f : (v > 1.f ? 1.f : v);
+            const int16_t q = static_cast<int16_t>(std::lround(c * 32767.f));
+            out.push_back(static_cast<uint8_t>(static_cast<uint16_t>(q) & 0xFF));
+            out.push_back(static_cast<uint8_t>((static_cast<uint16_t>(q) >> 8) & 0xFF));
+        };
+        push_unit(throttle);
+        push_unit(yaw);
+        push_unit(pitch);
+        push_unit(strafe);
+        push_unit(up);
+        out.push_back(fire ? 1 : 0);
+        return out;
+    }
+
+    /// Разобрать кадр ввода (для стенда).
+    struct InputFrameView
+    {
+        uint32_t Seq = 0;
+        float Throttle = 0.f, Yaw = 0.f, Pitch = 0.f, Strafe = 0.f, Up = 0.f;
+        bool Fire = false;
+    };
+
+    inline bool DecodeInput(const uint8_t* p, size_t n, InputFrameView& out)
+    {
+        size_t i = 0;
+        if (n < 1 + 2 + 4 + 10 + 1 || p[0] != TagInput) return false;
+        i = 1;
+        const uint16_t count = static_cast<uint16_t>(p[i] | (p[i + 1] << 8));
+        i += 2;
+        if (count < 1) return false;
+        out.Seq = static_cast<uint32_t>(p[i]) | (static_cast<uint32_t>(p[i + 1]) << 8)
+            | (static_cast<uint32_t>(p[i + 2]) << 16) | (static_cast<uint32_t>(p[i + 3]) << 24);
+        i += 4;
+        auto read_unit = [&p, &i]() -> float {
+            const int16_t q = static_cast<int16_t>(static_cast<uint16_t>(p[i]) | (static_cast<uint16_t>(p[i + 1]) << 8));
+            i += 2;
+            return static_cast<float>(q) / 32767.f;
+        };
+        out.Throttle = read_unit();
+        out.Yaw = read_unit();
+        out.Pitch = read_unit();
+        out.Strafe = read_unit();
+        out.Up = read_unit();
+        out.Fire = p[i] != 0;
+        return true;
+    }
+
     /// Собрать команду строительства.
     inline std::vector<uint8_t> EncodeBuild(const BuildCommand& cmd)
     {

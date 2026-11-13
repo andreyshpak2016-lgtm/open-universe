@@ -83,6 +83,8 @@ pub fn det_cos(x: f64) -> f64 {
 pub struct ShipParams {
     /// Максимальное ускорение тяги, ед/с².
     pub max_thrust: f64,
+    /// Максимальное ускорение бокового стрейфа и подъёма/спуска, ед/с².
+    pub max_strafe_thrust: f64,
     /// Максимальная угловая скорость рыскания, рад/с.
     pub max_yaw_rate: f64,
     /// Максимальная угловая скорость тангажа, рад/с.
@@ -101,6 +103,7 @@ impl Default for ShipParams {
     fn default() -> Self {
         ShipParams {
             max_thrust: 45.0,
+            max_strafe_thrust: 30.0,
             max_yaw_rate: 1.2,
             max_pitch_rate: 1.0,
             linear_damping: 0.02,
@@ -180,12 +183,23 @@ pub fn integrate_with_accel(
     let sy = det_sin(yaw);
     let forward = Vec3::new(cp * sy, sp, cp * cy);
 
-    // 3. Тяга + демпфирование + гравитация.
+    // Локальные оси: «вверх» — мировой +Y (углы вращают только вперёд), «вправо»
+    // — up × forward, «локальный верх» — forward × right. При yaw=pitch=0 это
+    // (+X) и (+Y): D двигает вправо, Пробел — вверх (проверено тестом).
+    let world_up = Vec3::new(0.0, 1.0, 0.0);
+    let right = world_up.cross(forward);
+    let right = if right.length() > 1e-6 { right.scale(1.0 / right.length()) } else { Vec3::ZERO };
+    let up_local = forward.cross(right);
+    let up_local = if up_local.length() > 1e-6 { up_local.scale(1.0 / up_local.length()) } else { world_up };
+
+    // 3. Тяга (вперёд) + стрейф (вбок) + подъём/спуск + демпфирование + гравитация.
     let thrust = forward.scale(input.throttle as f64 * p.max_thrust);
+    let side = right.scale(input.strafe as f64 * p.max_strafe_thrust);
+    let lift = up_local.scale(input.up as f64 * p.max_strafe_thrust);
     let damp = state.vel.scale(-p.linear_damping);
     state.vel = state
         .vel
-        .add(thrust.add(damp).add(external_accel).scale(dt));
+        .add(thrust.add(side).add(lift).add(damp).add(external_accel).scale(dt));
 
     // 4. Ограничение скорости.
     let speed = state.vel.length();
@@ -607,11 +621,34 @@ mod tests {
     }
 
     #[test]
+    fn strafe_and_up_move_along_local_axes() {
+        // yaw=0, pitch=0: «вперёд» = +Z, локальный «верх» = +Y, «вправо» = +X.
+        let run = |strafe: f32, up: f32| -> Vec3 {
+            let mut w = World::new();
+            w.spawn(1, Vec3::ZERO);
+            let mut inputs = BTreeMap::new();
+            inputs.insert(1, InputFrame {
+                seq: 1, throttle: 0.0, yaw: 0.0, pitch: 0.0, strafe, up, fire: false,
+            });
+            for _ in 0..30 {
+                w.step(&inputs);
+            }
+            w.entities.get(&1).unwrap().state.pos
+        };
+        let right = run(1.0, 0.0);
+        assert!(right.x > 1.0, "стрейф вправо должен двигать по +X, получено {right:?}");
+        assert!(right.y.abs() < 1e-9 && right.z.abs() < 1e-9, "стрейф не должен уводить по Y/Z: {right:?}");
+        let upv = run(0.0, 1.0);
+        assert!(upv.y > 1.0, "подъём должен двигать по +Y (вверх), получено {upv:?}");
+        assert!(upv.x.abs() < 1e-9 && upv.z.abs() < 1e-9, "подъём не должен уводить по X/Z: {upv:?}");
+    }
+
+    #[test]
     fn throttle_accelerates_along_forward() {
         let mut w = World::new();
         w.spawn(1, Vec3::ZERO);
         let mut inputs = BTreeMap::new();
-        inputs.insert(1, InputFrame { seq: 1, throttle: 1.0, yaw: 0.0, pitch: 0.0, fire: false });
+        inputs.insert(1, InputFrame { seq: 1, throttle: 1.0, yaw: 0.0, pitch: 0.0, fire: false, ..Default::default() });
         for _ in 0..30 {
             w.step(&inputs);
         }
@@ -637,7 +674,7 @@ mod tests {
                     let s = (seed.wrapping_mul(31).wrapping_add(t as u64).wrapping_add(id as u64)) as f64;
                     let throttle = det_sin(s) as f32;
                     let yaw = det_cos(s * 0.5) as f32;
-                    inputs.insert(id, InputFrame { seq: t, throttle, yaw, pitch: 0.2, fire: false });
+                    inputs.insert(id, InputFrame { seq: t, throttle, yaw, pitch: 0.2, fire: false, ..Default::default() });
                 }
                 w.step(&inputs);
             }
@@ -652,7 +689,7 @@ mod tests {
         let mut w = World::new();
         w.spawn(1, Vec3::ZERO);
         let mut inputs = BTreeMap::new();
-        inputs.insert(1, InputFrame { seq: 1, throttle: 1.0, yaw: 0.0, pitch: 0.0, fire: false });
+        inputs.insert(1, InputFrame { seq: 1, throttle: 1.0, yaw: 0.0, pitch: 0.0, fire: false, ..Default::default() });
         for _ in 0..30 {
             w.step(&inputs);
         }
@@ -788,7 +825,7 @@ mod tests {
         let mut w = World::new();
         w.spawn(1, Vec3::ZERO);
         let mut inputs = BTreeMap::new();
-        inputs.insert(1, InputFrame { seq: 1, throttle: 1.0, yaw: 0.0, pitch: 0.0, fire: false });
+        inputs.insert(1, InputFrame { seq: 1, throttle: 1.0, yaw: 0.0, pitch: 0.0, fire: false, ..Default::default() });
         for _ in 0..30 {
             w.step(&inputs);
         }

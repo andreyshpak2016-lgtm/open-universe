@@ -109,6 +109,7 @@ fn main() {
                 yaw: (det_sin(seq as f64 * 0.05) * 0.4) as f32,
                 pitch: 0.0,
                 fire: false,
+                ..Default::default()
             };
             c.local_input(input, id); // применяем немедленно (предсказание)
             net.send_to(token, server_addr, &Message::ClientInput { inputs: vec![input] }).ok();

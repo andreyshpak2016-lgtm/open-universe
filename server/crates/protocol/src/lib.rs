@@ -115,7 +115,7 @@ impl Vec3 {
 // ---------------------------------------------------------------------------
 
 /// Кадр управления от клиента.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Default)]
 pub struct InputFrame {
     /// Монотонный номер кадра (используется для реконсиляции).
     pub seq: u32,
@@ -125,13 +125,17 @@ pub struct InputFrame {
     pub yaw: f32,
     /// Тангаж, −1..1.
     pub pitch: f32,
+    /// Стрейф (вбок: вправо положительно), −1..1.
+    pub strafe: f32,
+    /// Подъём/спуск вдоль локального «верха», −1..1.
+    pub up: f32,
     /// Огонь.
     pub fire: bool,
 }
 
 impl InputFrame {
     pub fn neutral(seq: u32) -> Self {
-        InputFrame { seq, throttle: 0.0, yaw: 0.0, pitch: 0.0, fire: false }
+        InputFrame { seq, ..Default::default() }
     }
 }
 
@@ -522,6 +526,8 @@ mod wire {
                     w.unit(i.throttle);
                     w.unit(i.yaw);
                     w.unit(i.pitch);
+                    w.unit(i.strafe);
+                    w.unit(i.up);
                     w.bool(i.fire);
                 }
             }
@@ -684,6 +690,8 @@ mod wire {
                         throttle: r.unit()?,
                         yaw: r.unit()?,
                         pitch: r.unit()?,
+                        strafe: r.unit()?,
+                        up: r.unit()?,
                         fire: r.bool()?,
                     });
                 }
@@ -921,7 +929,7 @@ mod tests {
     fn input_roundtrip() {
         let m = Message::ClientInput {
             inputs: vec![
-                InputFrame { seq: 10, throttle: 1.0, yaw: -0.5, pitch: 0.25, fire: true },
+                InputFrame { seq: 10, throttle: 1.0, yaw: -0.5, pitch: 0.25, strafe: -0.3, up: 0.4, fire: true, ..Default::default() },
                 InputFrame::neutral(11),
             ],
         };

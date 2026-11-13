@@ -147,34 +147,13 @@ void UOUClientNet::SendInput(const FOUInputFrame& Input)
 	{
 		return;
 	}
-	// Кадр (тег 2): [tag][count u16][seq u32][throttle i16][yaw i16][pitch i16][fire u8]
-	TArray<uint8> Body;
-	Body.Add(2);
-	Body.Add(1); // count = 1
-	Body.Add(0);
-
-	const uint32 Seq = static_cast<uint32>(Input.Seq);
-	for (int32 i = 0; i < 4; ++i)
-	{
-		Body.Add(static_cast<uint8>((Seq >> (8 * i)) & 0xFF));
-	}
-	// Квантование −1..1 в i16 (масштаб 32767, как на сервере).
-	auto Quantize = [](float V) -> int16
-	{
-		const float Clamped = FMath::Clamp(V, -1.f, 1.f);
-		return static_cast<int16>(FMath::RoundToInt(Clamped * 32767.f));
-	};
-	auto AddI16 = [&Body](int16 V)
-	{
-		Body.Add(static_cast<uint8>(V & 0xFF));
-		Body.Add(static_cast<uint8>((V >> 8) & 0xFF));
-	};
-	AddI16(Quantize(Input.Throttle));
-	AddI16(Quantize(Input.Yaw));
-	AddI16(Quantize(Input.Pitch));
-	Body.Add(Input.bFire ? 1 : 0);
-
-	SendPacket(Body);
+	// Формат кадра — в OUWire (тот же код проверяет стенд test_wire).
+	const std::vector<uint8_t> Body = OUWire::EncodeInput(
+		static_cast<uint32_t>(Input.Seq),
+		Input.Throttle, Input.Yaw, Input.Pitch, Input.Strafe, Input.Up, Input.bFire);
+	TArray<uint8> Arr;
+	Arr.Append(Body.data(), static_cast<int32>(Body.size()));
+	SendPacket(Arr);
 }
 
 void UOUClientNet::SendCharacter(const FVector& PositionServer, float Yaw, bool bMoving, bool bActive)

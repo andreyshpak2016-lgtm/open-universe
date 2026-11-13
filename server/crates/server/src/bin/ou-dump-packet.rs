@@ -35,6 +35,7 @@ fn main() {
                     yaw,
                     pitch: 0.05,
                     fire: false,
+                    ..Default::default()
                 }],
             );
         }

@@ -61,6 +61,14 @@ struct FOUInputFrame
 	UPROPERTY(BlueprintReadOnly, Category = "Open Universe")
 	float Pitch = 0.f;
 
+	/** Стрейф вбок (вправо положительно), −1..1. */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe")
+	float Strafe = 0.f;
+
+	/** Подъём/спуск вдоль локального «верха» (вверх положительно), −1..1. */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe")
+	float Up = 0.f;
+
 	UPROPERTY(BlueprintReadOnly, Category = "Open Universe")
 	bool bFire = false;
 };
@@ -80,6 +88,10 @@ struct FOUShipParams
 	/** Ускорение тяги, ед/с² (сервер: max_thrust = 45). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Open Universe")
 	float MaxThrust = 45.f;
+
+	/** Ускорение стрейфа и подъёма/спуска, ед/с² (сервер: max_strafe_thrust = 30). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Open Universe")
+	float MaxStrafeThrust = 30.f;
 
 	/** Макс. угловая скорость рыскания, рад/с (сервер: 1.2). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Open Universe")

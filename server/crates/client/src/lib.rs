@@ -178,6 +178,7 @@ mod tests {
                 yaw: ou_sim::det_sin(seq as f64) as f32 * 0.3,
                 pitch: 0.0,
                 fire: false,
+                ..Default::default()
             };
             let mut m = BTreeMap::new();
             m.insert(1, input);
@@ -199,7 +200,7 @@ mod tests {
 
         // 1. Первые 10 тиков — согласованно.
         for seq in 0..10u32 {
-            let input = InputFrame { seq, throttle: 1.0, yaw: 0.0, pitch: 0.0, fire: false };
+            let input = InputFrame { seq, throttle: 1.0, yaw: 0.0, pitch: 0.0, fire: false, ..Default::default() };
             let mut m = BTreeMap::new();
             m.insert(1, input);
             server.step(&m);
@@ -211,7 +212,7 @@ mod tests {
         // 2. Клиент предсказывает 5 кадров вперёд, сервер их ещё не получил.
         let mut pending = Vec::new();
         for seq in 10..15u32 {
-            let input = InputFrame { seq, throttle: 1.0, yaw: 0.5, pitch: 0.0, fire: false };
+            let input = InputFrame { seq, throttle: 1.0, yaw: 0.5, pitch: 0.0, fire: false, ..Default::default() };
             client.local_input(input, 1);
             pending.push(input);
         }

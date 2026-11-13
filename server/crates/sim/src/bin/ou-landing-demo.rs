@@ -40,7 +40,7 @@ fn main() {
     for tick in 1..=400u64 {
         let mut inputs = BTreeMap::new();
         // Автопилот: лёгкая тяга «вверх», чтобы скорость не росла.
-        inputs.insert(id, InputFrame { seq: tick as u32, throttle: 0.0, yaw: 0.0, pitch: 0.6, fire: false });
+        inputs.insert(id, InputFrame { seq: tick as u32, throttle: 0.0, yaw: 0.0, pitch: 0.6, fire: false, ..Default::default() });
         world.step(&inputs);
         let e = world.entities.get(&id).unwrap();
         if tick % 40 == 0 {

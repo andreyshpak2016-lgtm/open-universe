@@ -816,13 +816,16 @@ void AOUPlayerMenuController::DrawGameHud(UCanvas* InCanvas)
 		}
 	}
 
-	// --- Снизу слева: подсказка управления (компактно, в духе DU) ---
+	// --- Снизу слева: подсказка управления (своя для пешего и для корабля) ---
 	// При строительстве её заменяет подсказка палитры.
 	if (!bBuilding)
 	{
-		FillBox(InCanvas, FVector2D(16, H - 30), FVector2D(470, 20), Plate);
-		DrawText(InCanvas, Tiny, TEXT("Мышь — обзор   ·   W/A/S/D — ходьба   ·   Пробел — прыжок   ·   B — строительство   ·   Alt — курсор"),
-			FVector2D(24, H - 28), Dim);
+		const bool bInShip = GetPawn() && GetPawn()->IsA(AOUShipPawn::StaticClass());
+		const FString Hint = bInShip
+			? TEXT("Мышь — обзор   ·   W/S — тяга   ·   A/D — стрейф   ·   Пробел/Ctrl — вверх/вниз   ·   ЛКМ — огонь   ·   F — выход")
+			: TEXT("Мышь — обзор   ·   W/A/S/D — ходьба   ·   Пробел — прыжок   ·   B — строительство   ·   Alt — курсор");
+		FillBox(InCanvas, FVector2D(16, H - 30), FVector2D(700, 20), Plate);
+		DrawText(InCanvas, Tiny, Hint, FVector2D(24, H - 28), Dim);
 	}
 }
 

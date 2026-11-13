@@ -45,7 +45,7 @@ fn main() {
         // Игрок 1 стоит на месте и ждёт. Игрок 2 летит к нему «вперёд».
         server.receive_input(
             2,
-            &[InputFrame { seq: tick, throttle: 1.0, yaw: 0.0, pitch: 0.0, fire: false }],
+            &[InputFrame { seq: tick, throttle: 1.0, yaw: 0.0, pitch: 0.0, fire: false, ..Default::default() }],
         );
 
         let plan = server.tick();

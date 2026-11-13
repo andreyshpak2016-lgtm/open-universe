@@ -286,6 +286,7 @@ impl ScriptEngine {
                 yaw: acc.yaw.clamp(-1.0, 1.0),
                 pitch: acc.pitch.clamp(-1.0, 1.0),
                 fire: acc.fire,
+                ..Default::default()
             },
             fire: acc.fire,
             steps: 0,
