@@ -137,10 +137,12 @@ public:
 	double SpawnRoughnessServer(const FVector& DirServer, double RadiusM) const;
 
 	/**
-	 * Выравнивание площадки базы в направлении (см). Ноль вне площадки.
+	 * Рельеф площадки базы в направлении (см): плоский пол внутри и
+	 * ВОКСЕЛЬНЫЕ ТЕРРАСЫ (ступени) по краю, а не гладкий пандус.
 	 *
 	 * Единая точка правды: визуальный меш планеты и земля персонажа берут эту
-	 * функцию, поэтому пол базы ровный, а по краю идёт плавный пандус к рельефу.
+	 * функцию, поэтому пол базы ровный, а на базу поднимаешься по воксельным
+	 * ступеням — как в Dual Universe.
 	 */
 	static double PadFlattenCm(const FVector& DirUE);
 
@@ -149,6 +151,39 @@ public:
 
 	/** Насколько площадка приподнята над максимумом земли под ней, см. */
 	static constexpr float PadLift = 40.f;
+
+	/** Высота одной воксельной ступени площадки, см (1 м — как воксель DU). */
+	static constexpr float PadVoxelCm = 100.f;
+
+	/** Вылет одной воксельной ступени по горизонтали, см. */
+	static constexpr float PadVoxelRunCm = 300.f;
+
+	/** Внешний радиус влияния площадки (пол + террасы), см. */
+	static constexpr float PadOuterRadiusCm = PadFlatRadius * 1.35f;
+
+	/** Дуговое расстояние (см) от центра базы до направления (0 — центр). */
+	static double PadDistanceCm(const FVector& DirUE);
+
+	/**
+	 * Абсолютная высота земли площадки (см над центром планеты) в направлении:
+	 * рельеф + воксельные террасы `PadFlattenCm`. По ней строится воксельный меш
+	 * площадки и ставятся постройки.
+	 */
+	static double PadGroundAboveCenterCm(const FVector& DirUE)
+	{
+		return AnalyticHeightCm(DirUE) + PadFlattenCm(DirUE);
+	}
+
+	/**
+	 * Построить ВОКСЕЛЬНЫЙ меш площадки базы (ступени) вокруг её центра.
+	 *
+	 * Глобальный меш планеты (~1.5 км/ячейка) и плотный локальный участок
+	 * (~21 м) слишком грубы, чтобы показать ступени по ~1 м. Поэтому площадка
+	 * рисуется отдельным мелким мешем: верхние грани — по высоте террас, а на
+	 * перепадах добавляются ВЕРТИКАЛЬНЫЕ стенки-воксели (иначе ступени были бы
+	 * наклонными).
+	 */
+	void BuildPadMesh();
 
 	/** Уровень пола площадки над центром планеты, см (макс. земля + подъём). */
 	static double DeckLevelAboveCenterCm();
@@ -243,6 +278,14 @@ protected:
 	/** Локальный детальный участок поверхности вокруг игрока (отдельный меш). */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Open Universe|Planet")
 	UProceduralMeshComponent* LocalMesh = nullptr;
+
+	/**
+	 * Воксельный меш площадки базы (ступени). Отдельный мелкий меш: глобальный
+	 * меш (~1.5 км/ячейка) и локальный участок (~21 м) не показывают ступени по
+	 * ~1 м, поэтому площадка рисуется своей сеткой.
+	 */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Open Universe|Planet")
+	UProceduralMeshComponent* PadMesh = nullptr;
 
 	/** Слой атмосферы: чуть больше планеты, полупрозрачный ореол. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Open Universe|Planet")
