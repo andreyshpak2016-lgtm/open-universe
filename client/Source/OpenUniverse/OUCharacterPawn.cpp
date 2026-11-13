@@ -405,8 +405,9 @@ void AOUCharacterPawn::AxisLookPitchMouse(float Value)
 {
 	if (bCursorCaptured)
 	{
-		// Мышь ВВЕРХ должна смотреть ВВЕРХ. UE даёт MouseY > 0 при движении вверх,
-		// поэтому прибавляем без инверсии (в ini ось теперь тоже Scale=+1).
+		// Мышь ВВЕРХ должна смотреть ВВЕРХ. Движок (`SceneViewport`) считает
+		// MouseDelta.Y -= CursorDelta.Y, поэтому движению вверх соответствует
+		// MouseY > 0; в ini ось задана Scale=+1 — инверсии нет.
 		ViewPitch = FMath::Clamp(ViewPitch + Value * MouseSensitivity, -1.4f, 1.4f);
 	}
 }
