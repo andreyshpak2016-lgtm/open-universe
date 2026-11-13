@@ -253,6 +253,21 @@ void AOUPlayerMenuController::Tick(float DeltaSeconds)
 		}
 		AutoConnectStep();
 	}
+
+	// Диагностика: `-OUPauseMenu` — открыть пауза-меню (ESC) через пару секунд
+	// после входа в игру, чтобы снять кадр без ручных нажатий.
+	if (FParse::Param(FCommandLine::Get(), TEXT("OUPauseMenu")) && !bPauseOpen && !bMenuOpen)
+	{
+		PauseShotTimer += DeltaSeconds;
+		if (PauseShotTimer >= 3.f)
+		{
+			OpenPauseMenu();
+			if (FParse::Param(FCommandLine::Get(), TEXT("OUSettings")))
+			{
+				Screen = EOUMenuScreen::Settings;
+			}
+		}
+	}
 }
 
 void AOUPlayerMenuController::SetMenuCursor(bool bShow)
@@ -286,6 +301,42 @@ void AOUPlayerMenuController::OnLeftClick()
 		if (Mouse.X >= B.Pos.X && Mouse.X <= B.Pos.X + B.Size.X &&
 			Mouse.Y >= B.Pos.Y && Mouse.Y <= B.Pos.Y + B.Size.Y)
 		{
+			// Пауза-меню и его настройки обрабатываем первыми.
+			if (bPauseOpen)
+			{
+				if (Screen == EOUMenuScreen::Settings)
+				{
+					AOUCharacterPawn* Char = Cast<AOUCharacterPawn>(GetPawn());
+					if (B.Id == 10 && Char)
+					{
+						Char->MouseSensitivity = FMath::Clamp(Char->MouseSensitivity - 0.0005f, 0.0005f, 0.02f);
+					}
+					else if (B.Id == 11 && Char)
+					{
+						Char->MouseSensitivity = FMath::Clamp(Char->MouseSensitivity + 0.0005f, 0.0005f, 0.02f);
+					}
+					else if (B.Id == 12)
+					{
+						Screen = EOUMenuScreen::Pause;
+					}
+				}
+				else
+				{
+					if (B.Id == 1)
+					{
+						ClosePauseMenu();
+					}
+					else if (B.Id == 2)
+					{
+						Screen = EOUMenuScreen::Settings;
+					}
+					else if (B.Id == 3)
+					{
+						LeaveServer();
+					}
+				}
+				return;
+			}
 			if (Screen == EOUMenuScreen::Character)
 			{
 				if (B.Id == 1)
@@ -362,11 +413,32 @@ void AOUPlayerMenuController::OnBackspace()
 
 bool AOUPlayerMenuController::InputKey(const FInputKeyParams& Params)
 {
-	// Пока открыто меню — перехватываем ввод текста (позывной/адрес). Игре
-	// ввод сейчас не нужен: она ещё не началась.
+	const FKey Key = Params.Key;
+
+	// --- ESC: пауза-меню в игре ---
+	if (Key == EKeys::Escape && Params.Event == IE_Pressed)
+	{
+		if (bPauseOpen)
+		{
+			if (Screen == EOUMenuScreen::Settings)
+			{
+				Screen = EOUMenuScreen::Pause;   // из настроек — назад в паузу
+			}
+			else
+			{
+				ClosePauseMenu();                // из паузы — в игру
+			}
+		}
+		else if (!bMenuOpen)
+		{
+			OpenPauseMenu();                     // в игре — открыть паузу
+		}
+		return true;
+	}
+
+	// Пока открыто стартовое меню — перехватываем ввод текста (позывной/адрес).
 	if (bMenuOpen)
 	{
-		const FKey Key = Params.Key;
 		if (Params.Event == IE_Pressed || Params.Event == IE_Repeat)
 		{
 			if (Key == EKeys::BackSpace)
@@ -707,7 +779,7 @@ void AOUPlayerMenuController::DrawMenu(UCanvas* InCanvas)
 
 void AOUPlayerMenuController::DrawBuildMenu(UCanvas* InCanvas)
 {
-	if (bMenuOpen || !InCanvas)   // в игре и есть канвас
+	if (bMenuOpen || bPauseOpen || !InCanvas)   // в игре и есть канвас
 	{
 		return;
 	}
@@ -763,6 +835,141 @@ void AOUPlayerMenuController::DrawBuildMenu(UCanvas* InCanvas)
 
 	DrawText(InCanvas, Small, FString::Printf(TEXT("Блоков поставлено: %d"), Char->BuiltCount),
 		FVector2D(PanelPos.X + PanelSize.X - 220, PanelPos.Y + 16), ColOk);
+}
+
+void AOUPlayerMenuController::OpenPauseMenu()
+{
+	if (bMenuOpen)
+	{
+		return;   // стартовое меню ещё открыто — пауза не нужна
+	}
+	bPauseOpen = true;
+	// Онлайн-мир не «замирает» (сервер продолжает работать), но локально мы
+	// освобождаем курсор и глушим управление персонажем (см. AOUCharacterPawn::Tick).
+	SetMenuCursor(true);
+	UE_LOG(LogOUMenu, Log, TEXT("Пауза-меню открыто (ESC)"));
+}
+
+void AOUPlayerMenuController::ClosePauseMenu()
+{
+	bPauseOpen = false;
+	// Настройки при закрытии паузы тоже схлопываем.
+	if (Screen == EOUMenuScreen::Settings)
+	{
+		Screen = EOUMenuScreen::Pause;
+	}
+	SetMenuCursor(false);
+	UE_LOG(LogOUMenu, Log, TEXT("Пауза-меню закрыто — возврат в игру"));
+}
+
+void AOUPlayerMenuController::LeaveServer()
+{
+	// Отлучиться: рвём соединение и возвращаемся в стартовое меню выбора сервера.
+	bPauseOpen = false;
+	ResolveNet();
+	if (Net)
+	{
+		Net->Disconnect();
+	}
+	bConnecting = false;
+	bAutoConnectStarted = false;
+	Screen = EOUMenuScreen::Server;
+	bMenuOpen = true;
+	SetConnectStatus(TEXT("Отлучились от сервера."));
+	SetMenuCursor(true);
+	UE_LOG(LogOUMenu, Log, TEXT("Отлучились от сервера — вернулись в меню выбора сервера"));
+}
+
+void AOUPlayerMenuController::DrawPauseMenu(UCanvas* InCanvas)
+{
+	if (!bPauseOpen || !InCanvas)
+	{
+		return;
+	}
+	Buttons.Reset();
+
+	const float W = InCanvas->SizeX;
+	const float H = InCanvas->SizeY;
+	UFont* Font = GEngine->GetLargeFont();
+	UFont* Small = GEngine->GetMediumFont();
+
+	// Затемнение фона (полупрозрачное — видно игру).
+	FillBox(InCanvas, FVector2D(0, 0), FVector2D(W, H), FLinearColor(0.02f, 0.03f, 0.06f, 0.72f));
+
+	const float PanelW = FMath::Min(520.f, W - 80.f);
+	const float PanelH = FMath::Min(420.f, H - 120.f);
+	const FVector2D PanelPos((W - PanelW) * 0.5f, (H - PanelH) * 0.5f);
+	GlassPanel(InCanvas, PanelPos, FVector2D(PanelW, PanelH), ColPanelBorder, ColAccent);
+
+	DrawText(InCanvas, Font, TEXT("ПАУЗА"), FVector2D(PanelPos.X + 28, PanelPos.Y + 22), ColAccent);
+
+	// --- Экран настроек ---
+	if (Screen == EOUMenuScreen::Settings)
+	{
+		AOUCharacterPawn* Char = Cast<AOUCharacterPawn>(GetPawn());
+		const float Sens = Char ? Char->MouseSensitivity : 0.0025f;
+
+		DrawText(InCanvas, Small, FString::Printf(TEXT("Чувствительность мыши: %.4f"), Sens),
+			FVector2D(PanelPos.X + 28, PanelPos.Y + 88), ColText);
+
+		const float SBX = PanelPos.X + 28;
+		const float SBW = PanelW - 56;
+		// Кнопки «-» и «+».
+		const FVector2D MinusPos(SBX, PanelPos.Y + 120);
+		const FVector2D PlusPos(SBX + SBW - 64, PanelPos.Y + 120);
+		const FVector2D StepSize(64, 48);
+		FillBox(InCanvas, MinusPos, StepSize, FLinearColor(0.10f, 0.13f, 0.28f, 1.f));
+		StrokeBox(InCanvas, MinusPos, StepSize, ColPanelBorder, 1.5f);
+		DrawText(InCanvas, Font, TEXT("-"), MinusPos + FVector2D(22, 8), ColText);
+		Buttons.Add({ MinusPos, StepSize, 10 });
+
+		FillBox(InCanvas, PlusPos, StepSize, FLinearColor(0.10f, 0.13f, 0.28f, 1.f));
+		StrokeBox(InCanvas, PlusPos, StepSize, ColPanelBorder, 1.5f);
+		DrawText(InCanvas, Font, TEXT("+"), PlusPos + FVector2D(20, 8), ColText);
+		Buttons.Add({ PlusPos, StepSize, 11 });
+
+		// Полоса-индикатор чувствительности (0.005..0.05).
+		const FVector2D BarPos(SBX + 76, PanelPos.Y + 134);
+		const FVector2D BarSize(SBW - 152, 20);
+		Bar(InCanvas, BarPos, BarSize, (Sens - 0.0005f) / 0.0195f, ColAccent2,
+			FLinearColor(0.05f, 0.07f, 0.16f, 1.f));
+
+		// Кнопка «Назад» в паузу.
+		const FVector2D BackPos(SBX, PanelPos.Y + PanelH - 84);
+		const FVector2D BackSize(200, 52);
+		FillBox(InCanvas, BackPos, BackSize, FLinearColor(0.10f, 0.13f, 0.28f, 1.f));
+		DrawText(InCanvas, Font, TEXT("< Назад"), BackPos + FVector2D(28, 14), ColText);
+		Buttons.Add({ BackPos, BackSize, 12 });
+
+		DrawText(InCanvas, Small, TEXT("ESC — назад в паузу"),
+			FVector2D(PanelPos.X + 28, PanelPos.Y + PanelH - 28), ColMuted);
+		return;
+	}
+
+	// --- Главный экран паузы ---
+	// Строки меню: id 1 — продолжить, 2 — настройки, 3 — отлучиться.
+	const float BtnX = PanelPos.X + 28;
+	const float BtnW = PanelW - 56;
+	const float BtnH = 56;
+	float BY = PanelPos.Y + 96;
+
+	auto MenuRow = [&](int32 Id, const TCHAR* Label, const FLinearColor& Accent)
+	{
+		const FVector2D RowPos(BtnX, BY);
+		const FVector2D RowSize(BtnW, BtnH);
+		FillBox(InCanvas, RowPos, RowSize, FLinearColor(0.07f, 0.09f, 0.19f, 0.96f));
+		StrokeBox(InCanvas, RowPos, RowSize, Accent, 1.5f);
+		FillBox(InCanvas, RowPos, FVector2D(4.f, RowSize.Y), Accent);
+		DrawText(InCanvas, Font, Label, RowPos + FVector2D(20, 16), ColText);
+		Buttons.Add({ RowPos, RowSize, Id });
+		BY += BtnH + 12;
+	};
+	MenuRow(1, TEXT("Продолжить"), ColAccent2);
+	MenuRow(2, TEXT("Настройки"), ColAccent);
+	MenuRow(3, TEXT("Отлучиться от сервера"), ColErr);
+
+	DrawText(InCanvas, Small, TEXT("ESC — закрыть  ·  ЛКМ — выбрать"),
+		FVector2D(PanelPos.X + 28, PanelPos.Y + PanelH - 28), ColMuted);
 }
 
 void AOUPlayerMenuController::DrawMarket(UCanvas* InCanvas)

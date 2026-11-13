@@ -20,7 +20,11 @@ enum class EOUMenuScreen : uint8
 	/** Выбор сервера и подключение. */
 	Server UMETA(DisplayName = "Сервер"),
 	/** Меню уже закрыто, идёт игра. */
-	InGame UMETA(DisplayName = "Игра")
+	InGame UMETA(DisplayName = "Игра"),
+	/** Пауза-меню (ESC в игре): продолжить / настройки / отлучиться. */
+	Pause UMETA(DisplayName = "Пауза"),
+	/** Настройки (из пауза-меню). */
+	Settings UMETA(DisplayName = "Настройки")
 };
 
 /**
@@ -48,6 +52,32 @@ public:
 	/** Открыто ли меню (для гейта ввода в корабле). */
 	UFUNCTION(BlueprintPure, Category = "Open Universe|Menu")
 	bool IsMenuOpen() const { return bMenuOpen; }
+
+	/**
+	 * Пауза-меню открыто (ESC в игре). Пока оно открыто, игра ставится на паузу,
+	 * курсор свободен, а игровой ввод (ходьба/обзор) не проходит.
+	 */
+	UFUNCTION(BlueprintPure, Category = "Open Universe|Menu")
+	bool IsPauseMenuOpen() const { return bPauseOpen; }
+
+	/** Открыть пауза-меню (ESC в игре). */
+	UFUNCTION(BlueprintCallable, Category = "Open Universe|Menu")
+	void OpenPauseMenu();
+
+	/** Закрыть пауза-меню и вернуться в игру. */
+	UFUNCTION(BlueprintCallable, Category = "Open Universe|Menu")
+	void ClosePauseMenu();
+
+	/** Отлучиться от сервера: разорвать соединение и вернуться в стартовое меню. */
+	UFUNCTION(BlueprintCallable, Category = "Open Universe|Menu")
+	void LeaveServer();
+
+	/** Нарисовать пауза-меню в канвасе (вызывает HUD). */
+	void DrawPauseMenu(class UCanvas* InCanvas);
+
+	/** Открыто ли пауза-меню. */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Menu")
+	bool bPauseOpen = false;
 
 	/** Текущий экран меню. */
 	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Menu")
@@ -216,6 +246,9 @@ private:
 
 	/** Гарантирует, что авто-подключение запущено один раз. */
 	bool bAutoConnectStarted = false;
+
+	/** Диагностика `-OUPauseMenu`: таймер до открытия пауза-меню. */
+	float PauseShotTimer = 0.f;
 
 	/** Найти сеть (после создания Pawn). */
 	void ResolveNet();

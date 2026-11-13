@@ -251,7 +251,7 @@ void AOUCharacterPawn::BeginPlay()
 	}
 
 	// Курс персонажа — «наружу» от базы (по Fwd).
-	const float LookYaw = FMath::Atan2(Fwd.Y, Fwd.X);
+	float LookYaw = FMath::Atan2(Fwd.Y, Fwd.X);
 	// Диагностика: `-OUBaseOverview` — обзор комплекса сверху.
 	const bool bOverview = FParse::Param(FCommandLine::Get(), TEXT("OUBaseOverview"));
 	if (bOverview)
@@ -259,6 +259,17 @@ void AOUCharacterPawn::BeginPlay()
 		// Ставим ровно над центром базы и поднимаем камеру.
 		const FVector Center = AOUVoxelPlanet::HomeSpawn(2.0f);
 		CharPos = Center.GetSafeNormal() * (Center.Size() + 14000.f);
+	}
+	// Диагностика: `-OUBaseSide` — стоим ВНЕ террас и смотрим НА базу, чтобы
+	// увидеть ступени сбоку.
+	if (FParse::Param(FCommandLine::Get(), TEXT("OUBaseSide")))
+	{
+		FVector Center, UpB, T1, T2;
+		AOUVoxelPlanet::PadFrame(Center, UpB, T1, T2);
+		const float Dist = AOUVoxelPlanet::PadOuterRadiusCm + 2500.f;
+		FVector Dir = (UpB * static_cast<float>(AOUVoxelPlanet::PadHomeRadiusCm) + T2 * Dist).GetSafeNormal();
+		CharPos = Dir * (AOUVoxelPlanet::PadHomeRadiusCm + 300.f);
+		LookYaw = FMath::Atan2(-T2.Y, -T2.X);   // смотрим внутрь, на базу
 	}
 	PlaceAt(CharPos, LookYaw);
 	// Смотрим чуть вверх: в кадр попадают и земля, и небо с облаками.
@@ -954,6 +965,35 @@ void AOUCharacterPawn::Tick(float DeltaSeconds)
 	{
 		return;
 	}
+
+	// Пауза-меню (ESC): персонаж не двигается и не смотрит, пока оно открыто.
+	if (AOUPlayerMenuController* Menu = Cast<AOUPlayerMenuController>(GetController()))
+	{
+		if (Menu->IsPauseMenuOpen())
+		{
+			// Гасим накопленный ввод, чтобы при возврате не «рвануло».
+			InputForward = 0.f;
+			InputRight = 0.f;
+			InputLookYaw = 0.f;
+			InputLookPitch = 0.f;
+			Velocity = FVector::ZeroVector;
+			return;
+		}
+	}
+	else if (AOUPlayerMenuController* Menu2 = Cast<AOUPlayerMenuController>(
+		World->GetFirstPlayerController()))
+	{
+		if (Menu2->IsPauseMenuOpen())
+		{
+			InputForward = 0.f;
+			InputRight = 0.f;
+			InputLookYaw = 0.f;
+			InputLookPitch = 0.f;
+			Velocity = FVector::ZeroVector;
+			return;
+		}
+	}
+
 	const FVector Pos = GetActorLocation();
 	const FVector Up = Pos.GetSafeNormal();          // «вверх» — от центра планеты
 	if (Up.IsNearlyZero())

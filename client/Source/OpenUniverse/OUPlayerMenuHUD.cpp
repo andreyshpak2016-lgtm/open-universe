@@ -21,5 +21,7 @@ void AOUPlayerMenuHUD::DrawHUD()
 		Menu->DrawBuildMenu(Canvas);
 		Menu->DrawGameHud(Canvas);
 		Menu->DrawMarket(Canvas);
+		// Пауза-меню (ESC) — поверх всего.
+		Menu->DrawPauseMenu(Canvas);
 	}
 }
