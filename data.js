@@ -7,7 +7,9 @@ window.PLAN = {
   "project": "Open Universe",
   "tagline": "Один общий космос. Построен игроками.",
   "tagline_en": "One shared universe. Built by players.",
-  "updated": "2026-11-11",
+  "updated": "2026-11-13",
+  "rule": "«Готово» ставится только тому, что игрок реально видит в игре (клиент UE5 + живой сервер). Написано и протестировано, но к игре не подключено — это «в работе».",
+  "rule_en": "\"Done\" is only for what the player actually sees in the game (UE5 client + live server). Written and tested but not wired into the game counts as \"in progress\".",
   "phases": [
     {
       "id": "p0",
@@ -30,18 +32,19 @@ window.PLAN = {
       "id": "p1",
       "title": "Ядро движка (UE5)",
       "title_en": "Engine core (UE5)",
-      "goal": "Клиентский модуль на Unreal Engine 5: воксель, планеты, floating origin.",
-      "goal_en": "Client module on Unreal Engine 5: voxels, planets, floating origin.",
+      "goal": "Клиентский модуль на Unreal Engine 5: сферический рельеф планеты, floating origin.",
+      "goal_en": "Client module on Unreal Engine 5: spherical planet terrain, floating origin.",
       "tasks": [
         { "title": "Каркас проекта на Unreal Engine 5 — модуль собран, открывается 3D-сцена", "title_en": "Unreal Engine 5 project skeleton — module builds, 3D scene opens", "status": "done" },
         { "title": "Стартовое меню персонажа и выбор сервера", "title_en": "Startup character menu and server selection", "status": "done" },
         { "title": "Floating origin / double-precision (AUOOriginManager)", "title_en": "Floating origin / double-precision (AUOOriginManager)", "status": "done" },
-        { "title": "Воксельный рендер с LOD (cube-to-sphere)", "title_en": "Voxel rendering with LOD (cube-to-sphere)", "status": "done" },
-        { "title": "Планеты как сферы с искривлением воксель-сетки", "title_en": "Planets as spheres with a warped voxel grid", "status": "done" },
-        { "title": "Система небесных тел (звёзды, луны, чёрные дыры)", "title_en": "Celestial body system (stars, moons, black holes)", "status": "done" },
-        { "title": "Атмосферы, скайбокс и постобработка", "title_en": "Atmospheres, skybox and post-processing", "status": "done" },
-        { "title": "Разрушение вокселей: копание и взрывы", "title_en": "Voxel destruction: digging and explosions", "status": "done" },
-        { "title": "Клиентский каркас: сетевой рендер мира", "title_en": "Client skeleton: networked world rendering", "status": "done" }
+        { "title": "Сферическая планета с рельефом (общая формула с сервером)", "title_en": "Spherical planet with terrain (formula shared with the server)", "status": "done" },
+        { "title": "Ландшафт: континенты, равнины, горы; биомы", "title_en": "Terrain: continents, plains, mountains; biomes", "status": "done" },
+        { "title": "Атмосфера, скайбокс и постобработка", "title_en": "Atmosphere, skybox and post-processing", "status": "done" },
+        { "title": "Вид от первого лица (персонаж и корабль)", "title_en": "First-person view (character and ship)", "status": "done" },
+        { "title": "Клиентский каркас: сетевой рендер мира", "title_en": "Client skeleton: networked world rendering", "status": "done" },
+        { "title": "Разрушение вокселей: копание и взрывы (в клиент не подключены)", "title_en": "Voxel destruction: digging and explosions (not wired into the client)", "status": "in_progress" },
+        { "title": "Система небесных тел (генератор есть; в игре одна планета)", "title_en": "Celestial body system (generator exists; the game has one planet)", "status": "in_progress" }
       ]
     },
     {
@@ -71,11 +74,12 @@ window.PLAN = {
       "goal_en": "One continuous world without clone servers, authoritative simulation in Rust.",
       "tasks": [
         { "title": "Серверный каркас на Rust (tick loop, зоны интереса)", "title_en": "Rust server skeleton (tick loop, interest zones)", "status": "done" },
+        { "title": "Пространственный индекс (grid) для зон интереса", "title_en": "Spatial index (grid) for interest zones", "status": "done" },
+        { "title": "Персистентность мира в живой игре (автосейв, восстановление)", "title_en": "World persistence in the live game (autosave, recovery)", "status": "done" },
+        { "title": "Мониторинг, логи, метрики", "title_en": "Monitoring, logs, metrics", "status": "done" },
+        { "title": "Шардирование по системам (есть в crates/shard, к игре не подключено)", "title_en": "Sharding by system (exists in crates/shard, not wired into the game)", "status": "in_progress" },
         { "title": "Микросервисная архитектура (auth, мир, чат, рынок)", "title_en": "Microservice architecture (auth, world, chat, market)", "status": "in_progress" },
-        { "title": "Spatial-индекс и шардирование по системам", "title_en": "Spatial index and sharding by system", "status": "done" },
-        { "title": "Персистентность мира (снимки, восстановление)", "title_en": "World persistence (snapshots, recovery)", "status": "done" },
-        { "title": "Оркестрация в Kubernetes, автомасштабирование", "title_en": "Kubernetes orchestration, autoscaling", "status": "todo" },
-        { "title": "Мониторинг, логи, метрики", "title_en": "Monitoring, logs, metrics", "status": "done" }
+        { "title": "Оркестрация в Kubernetes, автомасштабирование", "title_en": "Kubernetes orchestration, autoscaling", "status": "todo" }
       ]
     },
     {
@@ -85,11 +89,12 @@ window.PLAN = {
       "goal": "Полноценный воксельный редактор конструкций.",
       "goal_en": "A full voxel construction editor.",
       "tasks": [
-        { "title": "Воксельный редактор (ставить/удалять/красить)", "title_en": "Voxel editor (place/remove/paint)", "status": "done" },
+        { "title": "Постановка блоков в игре (сервер-авторитетно)", "title_en": "Placing blocks in the game (server-authoritative)", "status": "done" },
         { "title": "Сетка деталей и «ядра» конструкций", "title_en": "Part and construction core grid", "status": "done" },
-        { "title": "Дублирование и шаблоны (blueprints)", "title_en": "Duplication and blueprints", "status": "done" },
         { "title": "Валидация физической целостности", "title_en": "Physical integrity validation", "status": "done" },
-        { "title": "Совместное строительство (multiplayer edit): репликация правок, права, подтверждения", "title_en": "Co-op building (multiplayer edit): edit replication, permissions, confirmations", "status": "done" }
+        { "title": "Совместное строительство: репликация правок, права, подтверждения", "title_en": "Co-op building: edit replication, permissions, confirmations", "status": "done" },
+        { "title": "Воксельный редактор: ставить/удалять/красить (в игре пока только постановка)", "title_en": "Voxel editor: place/remove/paint (in-game only placement so far)", "status": "in_progress" },
+        { "title": "Дублирование и шаблоны (blueprints) — в игру не подключено", "title_en": "Duplication and blueprints — not wired into the game", "status": "in_progress" }
       ]
     },
     {
@@ -98,12 +103,14 @@ window.PLAN = {
       "title_en": "Economy and production",
       "goal": "Экономика, которую двигают сами игроки.",
       "goal_en": "An economy driven by the players themselves.",
+      "note": "Реализовано как библиотека + офлайн-демо; к игровому серверу пока не подключено.",
+      "note_en": "Implemented as a library + offline demo; not yet wired into the game server.",
       "tasks": [
-        { "title": "Добыча ресурсов (ресурсы систем и поясов)", "title_en": "Resource extraction (system and belt resources)", "status": "done" },
-        { "title": "Переработка и производственные цепочки", "title_en": "Refining and production chains", "status": "done" },
-        { "title": "Игрок-рынок: ордера, стакан, логистика", "title_en": "Player market: orders, order book, logistics", "status": "done" },
-        { "title": "Модули контейнеров, топлива, энергии", "title_en": "Container, fuel and energy modules", "status": "done" },
-        { "title": "Экономическая симуляция и баланс", "title_en": "Economic simulation and balance", "status": "done" }
+        { "title": "Добыча ресурсов (ресурсы систем и поясов)", "title_en": "Resource extraction (system and belt resources)", "status": "in_progress" },
+        { "title": "Переработка и производственные цепочки", "title_en": "Refining and production chains", "status": "in_progress" },
+        { "title": "Игрок-рынок: ордера, стакан, логистика", "title_en": "Player market: orders, order book, logistics", "status": "in_progress" },
+        { "title": "Модули контейнеров, топлива, энергии", "title_en": "Container, fuel and energy modules", "status": "in_progress" },
+        { "title": "Экономическая симуляция и баланс", "title_en": "Economic simulation and balance", "status": "in_progress" }
       ]
     },
     {
@@ -114,8 +121,8 @@ window.PLAN = {
       "goal_en": "From a planet surface to interstellar travel.",
       "tasks": [
         { "title": "Атмосферный → орбитальный переход (посадка)", "title_en": "Atmospheric → orbital transition (landing)", "status": "done" },
+        { "title": "Генерация звёздных систем и поясов (генератор есть; в игре одна планета)", "title_en": "Star system and belt generation (generator exists; the game has one planet)", "status": "in_progress" },
         { "title": "Сверхсветовые перемещения между системами", "title_en": "Superluminal travel between systems", "status": "todo" },
-        { "title": "Генерация звёздных систем и поясов астероидов", "title_en": "Star system and asteroid belt generation", "status": "done" },
         { "title": "Орбитальные станции и шлюзы", "title_en": "Orbital stations and gateways", "status": "todo" },
         { "title": "Опасные зоны: чёрные дыры, радиация", "title_en": "Hazard zones: black holes, radiation", "status": "todo" }
       ]
@@ -127,10 +134,11 @@ window.PLAN = {
       "goal": "Конфликты за ресурсы и пространство.",
       "goal_en": "Conflict over resources and space.",
       "tasks": [
-        { "title": "Турели, щиты, повреждения по секциям", "title_en": "Turrets, shields, sectional damage", "status": "done" },
-        { "title": "Захват и удержание территорий", "title_en": "Territory capture and holding", "status": "done" },
+        { "title": "Щиты, броня, урон по секциям; смерть и возрождение (в игре)", "title_en": "Shields, armor, sectional damage; death and respawn (in game)", "status": "done" },
+        { "title": "Дроны-цели: спавн, отстрел, возрождение (в игре)", "title_en": "Target drones: spawn, shoot, respawn (in game)", "status": "done" },
+        { "title": "Захват и удержание территорий (есть в combat, к игре не подключено)", "title_en": "Territory capture and holding (exists in combat, not wired into the game)", "status": "in_progress" },
+        { "title": "Право собственности и налоги (есть в библиотеке)", "title_en": "Ownership and taxes (exists in the library)", "status": "in_progress" },
         { "title": "Орбитальные и планетарные сражения", "title_en": "Orbital and planetary battles", "status": "in_progress" },
-        { "title": "Право собственности и налоги", "title_en": "Ownership and taxes", "status": "done" },
         { "title": "Античит и валидация на сервере", "title_en": "Anti-cheat and server-side validation", "status": "in_progress" }
       ]
     },
@@ -141,11 +149,11 @@ window.PLAN = {
       "goal": "Игроки программируют свои конструкции.",
       "goal_en": "Players program their own constructions.",
       "tasks": [
-        { "title": "Встроенный Lua-подобный скриптинг", "title_en": "Built-in Lua-like scripting", "status": "done" },
-        { "title": "Автопилоты, турели, логистика на скриптах", "title_en": "Scripted autopilots, turrets and logistics", "status": "done" },
-        { "title": "Мастерская и торговля шаблонами", "title_en": "Workshop and blueprint trading", "status": "todo" },
+        { "title": "Lua-подобный скриптинг (движок есть; в игре скрипты не привязаны)", "title_en": "Lua-like scripting (engine exists; no scripts are wired into the game)", "status": "in_progress" },
+        { "title": "Автопилоты, турели, логистика на скриптах", "title_en": "Scripted autopilots, turrets and logistics", "status": "in_progress" },
+        { "title": "Sandbox-ограничения и безопасность", "title_en": "Sandbox limits and security", "status": "done" },
         { "title": "Внутриигровые экраны и дисплеи", "title_en": "In-game screens and displays", "status": "in_progress" },
-        { "title": "Sandbox-ограничения и безопасность", "title_en": "Sandbox limits and security", "status": "done" }
+        { "title": "Мастерская и торговля шаблонами", "title_en": "Workshop and blueprint trading", "status": "todo" }
       ]
     },
     {
