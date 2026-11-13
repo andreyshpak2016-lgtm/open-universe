@@ -6,7 +6,7 @@
   <title data-i18n="rep.title">Open Universe — development report</title>
   <meta name="description" content="Open Universe development report: what is done, engine screenshots, metrics and test results." />
   <link rel="icon" href="assets/blackhole.svg" type="image/svg+xml" />
-  <link rel="stylesheet" href="styles.css?v=0.58.0" />
+  <link rel="stylesheet" href="styles.css?v=0.59.0" />
   <style>
     .report { max-width: 1100px; margin: 0 auto; padding: 0 24px 80px; }
     .report h1 { font-size: clamp(2rem, 5vw, 3rem); margin: 40px 0 8px; letter-spacing: -1px;
@@ -51,13 +51,13 @@
 
   <main class="report">
     <h1 data-i18n="rep.h1">Development report</h1>
-    <p style="font-size:1.05rem" data-i18n="rep.intro">What already works, with evidence: engine screenshots, metrics and test results. Version <b id="ver">0.58.0</b>.</p>
+    <p style="font-size:1.05rem" data-i18n="rep.intro">What already works, with evidence: engine screenshots, metrics and test results. Version <b id="ver">0.59.0</b>.</p>
 
     <div class="meta">
       <div><b id="m-tests">223</b><span data-i18n="rep.m.tests">core tests (Rust)</span></div>
       <div><b id="m-crates">13</b><span data-i18n="rep.m.crates">modules (crates)</span></div>
       <div><b id="m-progress">73%</b><span data-i18n="rep.m.progress">plan complete</span></div>
-      <div><b id="m-version">v0.58.0</b><span data-i18n="rep.m.version">latest release</span></div>
+      <div><b id="m-version">v0.59.0</b><span data-i18n="rep.m.version">latest release</span></div>
     </div>
 
     <!-- ================= 1. What is done ================= -->
@@ -116,6 +116,7 @@
       <li data-i18n="rep.done51"><b>Economy in game</b> - digging now yields ore, and a live market runs on the server (the ou-economy matching engine is wired in). Orders to buy and sell execute against the order book by price then time; a sell escrows the goods, and on each trade credits move to the seller and the goods to the buyer - all on integers, so it stays deterministic. Every player starts with 1000 credits. Press M for the market and inventory window (credits, cargo, best bid/ask); keys 1 and 2 place quick sell/buy order for ore. The HUD shows your credits.</li>
       <li data-i18n="rep.done52"><b>Solid buildings and real surfaces</b> - the player no longer falls through the base: base blocks and editor blocks had no collision at all, and the character capsule was empty. Blocks are now solid (they block the player and the aim ray), the capsule is solid, and movement sweeps so you slide along walls instead of passing through them; you can stand on the pad and jump. The base also got a proper material, M_BasePanel, with procedural panel lines, roughness and per-block colour, used by the base and the editor blocks - instead of flat grey. The material is generated from a script and cooked into the build.</li>
       <li data-i18n="rep.done53"><b>Walkable base and a fixed vertical look</b> - the landing complex was a raised deck ringed by a solid wall up to the ground, so you could not walk onto it (and could clip through it). The pad tiles now lie on the ground, so the whole complex is walkable while buildings stay solid obstacles. The vertical mouse look was inverted: it now looks up when you move the mouse up (verified against the engine source, where MouseDelta.Y is negated relative to the cursor delta).</li>
+      <li data-i18n="rep.done54"><b>A truly flat, single-piece base floor</b> - the landing pad is now levelled by the planet itself, so the visible ground and the surface the character walks on are one and the same: the floor inside the pad is flat and the edge blends into the terrain with a smooth ramp. The pad is a single solid slab instead of a grid of separate tiles with black gaps, and the buildings (tower, hangars, tanks, terminals, beacons) are placed on the actual ground at their spot, so nothing floats or sinks. A 100x scale bug that had silently prevented the levelling was fixed, and a planet-build hang (the floor level was recomputed on every mesh vertex) was removed.</li>
     </ul>
 
     <p style="margin-top:14px" data-i18n="rep.sync">The client skeleton mirrors the server logic: C++ kinematics over 1 s gives <b>z = 23.101</b> versus the server's <b>23.10086</b> — the same number. Details: <code>client/README.md</code>.</p>
@@ -316,7 +317,7 @@ $ cargo run -p ou-render --release --bin ou-netrender -- 127.0.0.1:7777 8 4
     </div>
   </footer>
 
-  <script src="i18n.js?v=0.58.0"></script>
+  <script src="i18n.js?v=0.59.0"></script>
   <script>
     (function () {
       "use strict";
