@@ -6,7 +6,7 @@
   <title data-i18n="rep.title">Open Universe — development report</title>
   <meta name="description" content="Open Universe development report: what is done, engine screenshots, metrics and test results." />
   <link rel="icon" href="assets/blackhole.svg" type="image/svg+xml" />
-  <link rel="stylesheet" href="styles.css?v=0.46.2" />
+  <link rel="stylesheet" href="styles.css?v=0.47.0" />
   <style>
     .report { max-width: 1100px; margin: 0 auto; padding: 0 24px 80px; }
     .report h1 { font-size: clamp(2rem, 5vw, 3rem); margin: 40px 0 8px; letter-spacing: -1px;
@@ -51,13 +51,13 @@
 
   <main class="report">
     <h1 data-i18n="rep.h1">Development report</h1>
-    <p style="font-size:1.05rem" data-i18n="rep.intro">What already works, with evidence: engine screenshots, metrics and test results. Version <b id="ver">0.46.2</b>.</p>
+    <p style="font-size:1.05rem" data-i18n="rep.intro">What already works, with evidence: engine screenshots, metrics and test results. Version <b id="ver">0.47.0</b>.</p>
 
     <div class="meta">
       <div><b id="m-tests">223</b><span data-i18n="rep.m.tests">core tests (Rust)</span></div>
       <div><b id="m-crates">13</b><span data-i18n="rep.m.crates">modules (crates)</span></div>
       <div><b id="m-progress">73%</b><span data-i18n="rep.m.progress">plan complete</span></div>
-      <div><b id="m-version">v0.46.2</b><span data-i18n="rep.m.version">latest release</span></div>
+      <div><b id="m-version">v0.47.0</b><span data-i18n="rep.m.version">latest release</span></div>
     </div>
 
     <!-- ================= 1. What is done ================= -->
@@ -105,6 +105,7 @@
       <li data-i18n="rep.done40"><b>Wire position precision</b> - on a 500 km planet the old position step (0.1 mm, range +/-214 km) overflowed and bodies drifted hundreds of km off the surface; the step is now 1 mm (range +/-2147 km), with a regression test.</li>
       <li data-i18n="rep.done41"><b>Launcher version display fixed</b> - the launcher showed "Installed: vX / Available: vY" even when the game was up to date, because the VERSION file was not part of the manifest and never got refreshed by incremental updates; the launcher now verifies and repairs it, and the file ships inside the game.</li>
       <li data-i18n="rep.done42"><b>Planet "core" and tilted horizon fixed</b> - the planet mesh covered only ~51% of the sphere (a cube-face table bug: +/-Z faces were missing and +/-X were duplicated), so the player saw the planet interior; and the sky was built for a 6360 km planet while ours is 500 km, so its layer edge read as a slanted horizon. Both fixed: full sphere coverage and sky bound to the planet center (horizon tilt now -0.3 deg).</li>
+      <li data-i18n="rep.done43"><b>Shared terrain for server and client</b> - one relief formula drives both the server physics and the client visuals, with continents, plains and sharp mountain ridges, biomes, and a version tag. 3D noise by direction removed the folds/seams the old sphere-to-plane mapping produced. A headless cross-check compares the two implementations bit-for-bit (max diff 4e-12).</li>
     </ul>
 
     <p style="margin-top:14px" data-i18n="rep.sync">The client skeleton mirrors the server logic: C++ kinematics over 1 s gives <b>z = 23.101</b> versus the server's <b>23.10086</b> — the same number. Details: <code>client/README.md</code>.</p>
@@ -305,7 +306,7 @@ $ cargo run -p ou-render --release --bin ou-netrender -- 127.0.0.1:7777 8 4
     </div>
   </footer>
 
-  <script src="i18n.js?v=0.46.2"></script>
+  <script src="i18n.js?v=0.47.0"></script>
   <script>
     (function () {
       "use strict";
