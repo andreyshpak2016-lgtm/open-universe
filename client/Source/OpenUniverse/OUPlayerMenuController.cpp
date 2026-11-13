@@ -765,6 +765,98 @@ void AOUPlayerMenuController::DrawBuildMenu(UCanvas* InCanvas)
 		FVector2D(PanelPos.X + PanelSize.X - 220, PanelPos.Y + 16), ColOk);
 }
 
+void AOUPlayerMenuController::DrawMarket(UCanvas* InCanvas)
+{
+	if (!bMarketOpen || !InCanvas || bMenuOpen)
+	{
+		return;
+	}
+	ResolveNet();
+
+	const float W = InCanvas->SizeX;
+	const float H = InCanvas->SizeY;
+	UFont* Font = GEngine->GetLargeFont();
+	UFont* Small = GEngine->GetMediumFont();
+	UFont* Tiny = GEngine->GetSmallFont();
+	const FLinearColor PanelB(0.34f, 0.44f, 0.85f, 0.9f);
+	const FLinearColor Dim(0.66f, 0.72f, 0.86f, 1.f);
+
+	const float PW = FMath::Min(900.f, W - 80.f);
+	const float PH = FMath::Min(600.f, H - 100.f);
+	const FVector2D P((W - PW) * 0.5f, (H - PH) * 0.5f);
+	GlassPanel(InCanvas, P, FVector2D(PW, PH), PanelB, ColAccent2);
+	DrawText(InCanvas, Font, TEXT("РЫНОК  ·  HOME"), P + FVector2D(24, 16), ColAccent);
+	DrawText(InCanvas, Small, TEXT("M — закрыть"), P + FVector2D(PW - 140, 24), Dim);
+
+	// Кредиты.
+	const int64 Credits = Net ? Net->Credits : 0;
+	DrawText(InCanvas, Font, FString::Printf(TEXT("Кредиты: %lld"), Credits), P + FVector2D(24, 56), ColOk);
+
+	// Инвентарь (левая колонка).
+	DrawText(InCanvas, Small, TEXT("Инвентарь"), P + FVector2D(24, 96), ColText);
+	float Y = P.Y + 122;
+	if (Net && Net->InventoryItems.Num() > 0)
+	{
+		for (const FOUInventoryItem& It : Net->InventoryItems)
+		{
+			const FString Row = FString::Printf(TEXT("%s  ×%lld"), *ItemName(It.Item), It.Qty);
+			DrawText(InCanvas, Small, Row, FVector2D(P.X + 24, Y), Dim);
+			Y += 22;
+		}
+	}
+	else
+	{
+		DrawText(InCanvas, Small, TEXT("(пусто — копайте грунт)"), FVector2D(P.X + 24, Y), Dim);
+	}
+
+	// Стакан (правая колонка).
+	const float RX = P.X + PW * 0.5f;
+	DrawText(InCanvas, Small, TEXT("Стакан: покупки / продажи"), FVector2D(RX, P.Y + 96), ColText);
+	float BY = P.Y + 122;
+	auto DrawLevels = [&](const TArray<FOUOrderLevel>& Lv, const FLinearColor& C, const TCHAR* Tag)
+	{
+		if (Lv.Num() == 0)
+		{
+			DrawText(InCanvas, Tiny, FString::Printf(TEXT("%s: —"), Tag), FVector2D(RX, BY), Dim);
+			BY += 20;
+			return;
+		}
+		for (const FOUOrderLevel& L : Lv)
+		{
+			const FString Row = FString::Printf(TEXT("%s %s  %lld ×%lld"), Tag, *ItemName(L.Item), L.Price, L.Qty);
+			DrawText(InCanvas, Tiny, Row, FVector2D(RX, BY), C);
+			BY += 18;
+		}
+		BY += 6;
+	};
+	DrawLevels(Net ? Net->MarketBids : TArray<FOUOrderLevel>(), ColOk, TEXT("ПОК"));
+	DrawLevels(Net ? Net->MarketAsks : TArray<FOUOrderLevel>(), FLinearColor(1.f, 0.6f, 0.4f), TEXT("ПРО"));
+
+	// Подсказка по торговле + простая горячая сделка: продать руду, купить руду.
+	DrawText(InCanvas, Small,
+		TEXT("1 — продать 1 руду по 20   ·   2 — купить 1 руду по 20   ·   (позже: выбор цены)"),
+		P + FVector2D(24, PH - 52), Dim);
+}
+
+FString AOUPlayerMenuController::ItemName(int32 Item)
+{
+	// Имена предметов дублируют серверный `ItemRegistry::default_universe`.
+	switch (Item)
+	{
+	case 1: return TEXT("руда");
+	case 2: return TEXT("лёд");
+	case 3: return TEXT("кристалл");
+	case 4: return TEXT("металл");
+	case 5: return TEXT("топливо");
+	case 6: return TEXT("сплав");
+	case 7: return TEXT("электроника");
+	case 8: return TEXT("корпус");
+	case 9: return TEXT("двигатель");
+	case 10: return TEXT("корабль");
+	default: return FString::Printf(TEXT("предмет %d"), Item);
+	}
+}
+
 void AOUPlayerMenuController::DrawGameHud(UCanvas* InCanvas)
 {
 	// Постоянный HUD в духе Dual Universe: тонкие линии, «стеклянные» панели,
@@ -839,11 +931,14 @@ void AOUPlayerMenuController::DrawGameHud(UCanvas* InCanvas)
 	if (MyPawn)
 	{
 		const FVector2D P(16, 16);
-		GlassPanel(InCanvas, P, FVector2D(230, 92), PanelB, Line);
-		DrawText(InCanvas, Small, TEXT("ПЛАНЕТА  ·  HOME"), P + FVector2D(12, 8), ColText);
-		DrawText(InCanvas, Tiny, FString::Printf(TEXT("высота  %+6.0f м"), Alt), P + FVector2D(12, 38), Dim);
+		GlassPanel(InCanvas, P, FVector2D(230, 112), PanelB, Line);
+		DrawText(InCanvas, Small, TEXT("ПЛАНЕТА  ·  HOME"), P + FVector2D(12, 8), ColText);		DrawText(InCanvas, Tiny, FString::Printf(TEXT("высота  %+6.0f м"), Alt), P + FVector2D(12, 38), Dim);
 		DrawText(InCanvas, Tiny, FString::Printf(TEXT("коорд  %.0f, %.0f"), Pos.X / 100.f, Pos.Y / 100.f), P + FVector2D(12, 56), Dim);
 		DrawText(InCanvas, Tiny, FString::Printf(TEXT("позывной  %s"), *Profile.Name), P + FVector2D(12, 74), ColAccent);
+		if (Net && Net->bMarketReceived)
+		{
+			DrawText(InCanvas, Tiny, FString::Printf(TEXT("кредиты  %lld"), Net->Credits), P + FVector2D(12, 92), ColOk);
+		}
 	}
 
 	// --- Справа сверху: состояние сети ---

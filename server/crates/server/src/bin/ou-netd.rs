@@ -155,10 +155,21 @@ fn main() {
                         }
                     }
                     Message::ClientDig { slot, dir, cos_radius, depth } => {
-                        if clients.contains_key(&from) {
-                            // Авторитетно применяем воронку и рассылаем всем.
-                            let dent = server.dig(slot, dir, cos_radius, depth);
+                        if let Some(pid) = clients.get(&from) {
+                            // Авторитетно применяем воронку и рассылаем всем;
+                            // игроку начисляется руда (источник сырья).
+                            let dent = server.dig_as(*pid, slot, dir, cos_radius, depth);
                             pending_digs.push((slot, dent));
+                        }
+                    }
+                    Message::ClientMarket { side, item, price, qty } => {
+                        if let Some(pid) = clients.get(&from) {
+                            match server.place_order(*pid, side, item, price, qty) {
+                                Ok(filled) => println!(
+                                    "рынок: игрок {pid} выставил ордер (сторона {side}, предмет {item}, цена {price}, {qty} шт), исполнено {filled}"
+                                ),
+                                Err(e) => println!("рынок: ордер игрока {pid} отклонён: {e}"),
+                            }
                         }
                     }
                     Message::ClientGrantBuild { entity, player } => {

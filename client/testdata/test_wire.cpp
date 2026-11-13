@@ -225,6 +225,33 @@ int main(int argc, char** argv)
         Check(std::fabs(dw.Depth - 12.5) < 1e-9, "глубина воронки совпала");
     }
 
+    // --- 6c. Рынок (тег 21 запрос, тег 22 состояние) ---
+    std::printf("\n=== 6c. Рынок ===\n");
+    {
+        const std::vector<uint8_t> ob = OUWire::EncodeMarketOrder(1, 4, 40, 25);
+        Check(ob[0] == OUWire::TagMarketOrder, "тег ордера = 21");
+        Check(ob[1] == 1, "сторона ордера (продажа)");
+
+        // Состояние экономики: [tag22][credits][items][bids][asks].
+        std::vector<uint8_t> sb;
+        sb.push_back(OUWire::TagMarketState);
+        OUWire::push_varint(sb, 1500);
+        OUWire::push_varint(sb, 2);          // 2 предмета
+        OUWire::push_varint(sb, 1); OUWire::push_varint(sb, 120);
+        OUWire::push_varint(sb, 4); OUWire::push_varint(sb, 25);
+        OUWire::push_varint(sb, 1);          // 1 покупка
+        OUWire::push_varint(sb, 1); OUWire::push_varint(sb, 30); OUWire::push_varint(sb, 40);
+        OUWire::push_varint(sb, 2);          // 2 продажи
+        OUWire::push_varint(sb, 1); OUWire::push_varint(sb, 25); OUWire::push_varint(sb, 60);
+        OUWire::push_varint(sb, 4); OUWire::push_varint(sb, 90); OUWire::push_varint(sb, 10);
+        OUWire::MarketState ms;
+        Check(OUWire::DecodeMarketState(sb.data(), sb.size(), ms), "состояние рынка разобрано");
+        Check(ms.Credits == 1500, "кредиты совпали");
+        Check(ms.Items.size() == 2 && ms.Items[0].second == 120, "инвентарь совпал");
+        Check(ms.Bids.size() == 1 && std::get<1>(ms.Bids[0]) == 30, "стакан покупок совпал");
+        Check(ms.Asks.size() == 2 && std::get<2>(ms.Asks[1]) == 10, "стакан продаж совпал");
+    }
+
     // --- 7. Приветствие сервера (какой сущностью управляем) ---
     std::printf("\n=== 7. Приветствие сервера (welcome) ===\n");
     {

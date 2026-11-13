@@ -188,6 +188,22 @@ void UOUClientNet::SendDig(int32 Slot, double X, double Y, double Z, double CosR
 	SendPacket(Arr);
 }
 
+void UOUClientNet::SendMarketOrder(int32 Side, int32 Item, int64 Price, int64 Qty)
+{
+	if (!IsConnected())
+	{
+		return;
+	}
+	const std::vector<uint8_t> Body = OUWire::EncodeMarketOrder(
+		static_cast<uint8_t>(Side & 0xFF),
+		static_cast<uint32_t>(Item),
+		static_cast<uint64_t>(FMath::Max<int64>(0, Price)),
+		static_cast<uint64_t>(FMath::Max<int64>(0, Qty)));
+	TArray<uint8> Arr;
+	Arr.Append(Body.data(), static_cast<int32>(Body.size()));
+	SendPacket(Arr);
+}
+
 void UOUClientNet::SendBuild(int32 Entity, int32 Action, int32 X, int32 Y, int32 Z, int32 R, int32 G, int32 B)
 {	if (!IsConnected())
 	{
@@ -445,6 +461,41 @@ void UOUClientNet::Poll()
 				// Воронки копятся: планета помнит все ямы. Слот уникален, поэтому
 				// повторный приход того же слота — это углубление той же ямы.
 				PendingDents.Add(Dent);
+			}
+		}
+		else if (Body[0] == OUWire::TagMarketState) // состояние экономики
+		{
+			OUWire::MarketState M;
+			if (OUWire::DecodeMarketState(Body.GetData(), static_cast<size_t>(Body.Num()), M))
+			{
+				Credits = static_cast<int64>(M.Credits);
+				InventoryItems.Reset();
+				for (const auto& it : M.Items)
+				{
+					FOUInventoryItem E;
+					E.Item = static_cast<int32>(it.first);
+					E.Qty = static_cast<int64>(it.second);
+					InventoryItems.Add(E);
+				}
+				MarketBids.Reset();
+				for (const auto& b : M.Bids)
+				{
+					FOUOrderLevel L;
+					L.Item = static_cast<int32>(std::get<0>(b));
+					L.Price = static_cast<int64>(std::get<1>(b));
+					L.Qty = static_cast<int64>(std::get<2>(b));
+					MarketBids.Add(L);
+				}
+				MarketAsks.Reset();
+				for (const auto& a : M.Asks)
+				{
+					FOUOrderLevel L;
+					L.Item = static_cast<int32>(std::get<0>(a));
+					L.Price = static_cast<int64>(std::get<1>(a));
+					L.Qty = static_cast<int64>(std::get<2>(a));
+					MarketAsks.Add(L);
+				}
+				bMarketReceived = true;
 			}
 		}
 	}

@@ -59,6 +59,8 @@ namespace OUWire
         TagServerCharacter = 18,
         TagSystem = 19,
         TagDig = 20,
+        TagMarketOrder = 21,
+        TagMarketState = 22,
     };
 
     /// Действия редактора конструкций.
@@ -613,8 +615,7 @@ namespace OUWire
         double Depth = 0.0;
     };
 
-    /// Собрать запрос копания (клиент → сервер, тег 20).
-    ///
+    /// Собрать запрос копания (клиент → сервер, тег 20).    ///
     /// Формат: [tag][from_server=0][slot u32][dir f64×3][cos_radius f64][depth f64].
     inline std::vector<uint8_t> EncodeDig(
         uint32_t slot, double x, double y, double z, double cosRadius, double depth)
@@ -656,8 +657,58 @@ namespace OUWire
             && r.F64(out.CosRadius) && r.F64(out.Depth);
     }
 
+    /// Ордер на рынке (клиент → сервер, тег 21).
+    inline std::vector<uint8_t> EncodeMarketOrder(uint8_t side, uint32_t item, uint64_t price, uint64_t qty)
+    {
+        std::vector<uint8_t> out;
+        out.push_back(TagMarketOrder);
+        out.push_back(side);
+        push_varint(out, item);
+        push_varint(out, price);
+        push_varint(out, qty);
+        return out;
+    }
+
+    /// Состояние экономики игрока (сервер → клиент, тег 22).
+    struct MarketState
+    {
+        uint64_t Credits = 0;
+        std::vector<std::pair<uint32_t, uint64_t>> Items;
+        std::vector<std::tuple<uint32_t, uint64_t, uint64_t>> Bids;   // (item, price, qty)
+        std::vector<std::tuple<uint32_t, uint64_t, uint64_t>> Asks;
+    };
+
+    inline bool DecodeMarketState(const uint8_t* body, size_t len, MarketState& out)
+    {
+        Reader r{body, len, 0};
+        uint8_t tag = 0;
+        if (!r.U8(tag) || tag != TagMarketState) return false;
+        if (!r.Varint(out.Credits)) return false;
+        uint64_t n = 0;
+        if (!r.Varint(n)) return false;
+        out.Items.clear();
+        for (uint64_t i = 0; i < n; ++i)
+        {
+            uint64_t id = 0, q = 0;
+            if (!r.Varint(id) || !r.Varint(q)) return false;
+            out.Items.emplace_back(static_cast<uint32_t>(id), q);
+        }
+        auto read_levels = [&r](std::vector<std::tuple<uint32_t, uint64_t, uint64_t>>& dst) -> bool {
+            uint64_t m = 0;
+            if (!r.Varint(m)) return false;
+            dst.clear();
+            for (uint64_t i = 0; i < m; ++i)
+            {
+                uint64_t id = 0, price = 0, q = 0;
+                if (!r.Varint(id) || !r.Varint(price) || !r.Varint(q)) return false;
+                dst.emplace_back(static_cast<uint32_t>(id), price, q);
+            }
+            return true;
+        };
+        return read_levels(out.Bids) && read_levels(out.Asks);
+    }
+
     /// Собрать кадр ввода (клиент → сервер, тег 2).
-    ///
     /// Формат (должен совпадать с `ou_protocol`):
     /// [tag][count u16][seq u32][throttle i16][yaw i16][pitch i16][strafe i16][up i16][fire u8].
     inline std::vector<uint8_t> EncodeInput(

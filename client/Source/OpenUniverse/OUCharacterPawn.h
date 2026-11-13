@@ -165,6 +165,14 @@ public:
 	/** Применить воронки, пришедшие от сервера (перестроить рельеф). */
 	void ApplyServerDigs();
 
+	/** Открыть/закрыть окно рынка (клавиша M). */
+	void ToggleMarket();
+
+	/** Быстрая сделка: продать (`bSell`) или купить 1 руду по фиксированной цене. */
+	void MarketQuickTrade(bool bSell);
+	void OnMarketSell() { MarketQuickTrade(true); }
+	void OnMarketBuy() { MarketQuickTrade(false); }
+
 	/** Радиус воронки копания, см (по умолчанию ~10 м). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Open Universe|Terrain")
 	float DigRadiusCm = 1000.f;
@@ -176,6 +184,10 @@ public:
 	/** Таймер/счётчик тестового копания (`-OUAutoDig`). */
 	float DigTimer = 0.f;
 	int32 DigCount = 0;
+
+	/** Таймер/счётчик тестовой торговли (`-OUAutoTrade`). */
+	float TradeTimer = 0.f;
+	int32 TradeCount = 0;
 
 	/** Название типа блока (для меню). */
 	static FString BuildPartName(int32 Index);

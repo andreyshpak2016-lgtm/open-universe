@@ -159,6 +159,22 @@ public:
 	 */
 	void DrawGameHud(class UCanvas* InCanvas);
 
+	/**
+	 * Окно рынка и инвентаря (клавиша M).
+	 *
+	 * Показывает кредиты, содержимое трюма и верх стакана по каждому предмету.
+	 * Можно выставить ордер покупки/продажи по выбранному предмету — команда
+	 * уходит на сервер, он авторитетно исполняет.
+	 */
+	void DrawMarket(class UCanvas* InCanvas);
+
+	/** Открыто ли окно рынка. */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Economy")
+	bool bMarketOpen = false;
+
+	/** Имя предмета по id (дублирует серверный реестр). */
+	static FString ItemName(int32 Item);
+
 	/** Курсор мыши показывать в меню, прятать в игре. */
 	void SetMenuCursor(bool bShow);
 

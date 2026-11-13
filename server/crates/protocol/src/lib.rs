@@ -221,6 +221,21 @@ pub enum Message {
     ///
     /// Клиент вставляет её в свой список деформаций и перестраивает рельеф.
     ServerTerrainDig { slot: u32, dir: Vec3, cos_radius: f64, depth: f64 },
+    /// Клиент: разместить ордер на рынке.
+    ///
+    /// `side` 0 — покупка, 1 — продажа. `item` — id предмета, `price` — цена за
+    /// единицу, `qty` — количество. Сервер авторитетно исполняет против стакана.
+    ClientMarket { side: u8, item: u32, price: u64, qty: u64 },
+    /// Сервер: состояние экономики игрока (для HUD и окна рынка).
+    ///
+    /// `credits` — кредиты, `items` — инвентарь (id, количество), `bids`/`asks`
+    /// — верх стакана по каждому предмету (цена, объём). Шлётся при изменении.
+    ServerMarket {
+        credits: u64,
+        items: Vec<(u32, u64)>,
+        bids: Vec<(u32, u64, u64)>,
+        asks: Vec<(u32, u64, u64)>,
+    },
 }
 
 /// Тело системы в сообщении.
@@ -520,6 +535,8 @@ mod wire {
     const TAG_SERVER_CHARACTER: u8 = 18;
     const TAG_SYSTEM: u8 = 19;
     const TAG_DIG: u8 = 20;
+    const TAG_MARKET_ORDER: u8 = 21;
+    const TAG_MARKET_STATE: u8 = 22;
 
     pub fn encode(msg: &Message) -> Vec<u8> {
         let mut w = Writer::new();
@@ -703,6 +720,34 @@ mod wire {
                 w.f64(*cos_radius);
                 w.f64(*depth);
             }
+            Message::ClientMarket { side, item, price, qty } => {
+                w.u8(TAG_MARKET_ORDER);
+                w.u8(*side);
+                w.varint(*item as u64);
+                w.varint(*price);
+                w.varint(*qty);
+            }
+            Message::ServerMarket { credits, items, bids, asks } => {
+                w.u8(TAG_MARKET_STATE);
+                w.varint(*credits);
+                w.varint(items.len() as u64);
+                for (id, qty) in items {
+                    w.varint(*id as u64);
+                    w.varint(*qty);
+                }
+                w.varint(bids.len() as u64);
+                for (id, price, qty) in bids {
+                    w.varint(*id as u64);
+                    w.varint(*price);
+                    w.varint(*qty);
+                }
+                w.varint(asks.len() as u64);
+                for (id, price, qty) in asks {
+                    w.varint(*id as u64);
+                    w.varint(*price);
+                    w.varint(*qty);
+                }
+            }
         }
         w.buf
     }
@@ -878,6 +923,31 @@ mod wire {
                     Ok(Message::ClientDig { slot, dir, cos_radius, depth })
                 }
             }
+            TAG_MARKET_ORDER => Ok(Message::ClientMarket {
+                side: r.u8()?,
+                item: r.varint()? as u32,
+                price: r.varint()?,
+                qty: r.varint()?,
+            }),
+            TAG_MARKET_STATE => {
+                let credits = r.varint()?;
+                let ni = r.varint()? as usize;
+                let mut items = Vec::with_capacity(ni);
+                for _ in 0..ni {
+                    items.push((r.varint()? as u32, r.varint()?));
+                }
+                let nb = r.varint()? as usize;
+                let mut bids = Vec::with_capacity(nb);
+                for _ in 0..nb {
+                    bids.push((r.varint()? as u32, r.varint()?, r.varint()?));
+                }
+                let na = r.varint()? as usize;
+                let mut asks = Vec::with_capacity(na);
+                for _ in 0..na {
+                    asks.push((r.varint()? as u32, r.varint()?, r.varint()?));
+                }
+                Ok(Message::ServerMarket { credits, items, bids, asks })
+            }
             other => Err(WireError::BadTag(other)),
         }
     }
@@ -939,6 +1009,19 @@ pub fn state_checksum(map: &BTreeMap<NetId, EntityState>) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn market_roundtrip() {
+        let order = Message::ClientMarket { side: 1, item: 4, price: 40, qty: 25 };
+        assert_eq!(decode(&encode(&order)).unwrap(), order);
+        let state = Message::ServerMarket {
+            credits: 1500,
+            items: vec![(1, 120), (4, 25)],
+            bids: vec![(1, 30, 40)],
+            asks: vec![(1, 25, 60), (4, 90, 10)],
+        };
+        assert_eq!(decode(&encode(&state)).unwrap(), state);
+    }
 
     #[test]
     fn dig_roundtrip() {

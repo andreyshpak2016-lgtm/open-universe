@@ -10,6 +10,7 @@
 
 use ou_build::{BuildError, Color as BuildColor, VoxelGrid};
 use ou_combat::{weapon, ShipHull, Weapon};
+use ou_economy::{Inventory, ItemRegistry, Market, MatchingEngine, Side};
 use ou_protocol::{
     BuildAction, BuildCommand, BuildEdit, BuildReason, EntityState, InputFrame, Message, NetId,
     ShotEvent, Snapshot, Vec3,
@@ -127,7 +128,55 @@ pub struct Server {
     /// Копание меняет именно его (список воронок), поэтому физика всех
     /// сущностей и рассылка правок идут из одного источника.
     pub planet: Terrain,
+    /// Экономика в игре: реестр предметов, кредиты и рынок (движок сделок).
+    pub economy: Economy,
+    /// Экономика изменилась с прошлого тика (надо разослать состояние рынка).
+    pub market_dirty: bool,
     next_entity_id: NetId,
+}
+
+/// Экономическое состояние мира: предметы, кредиты игроков и рынок.
+///
+/// Живёт на сервере и меняется только авторитетно (копание даёт руду,
+/// выставление ордера исполняется против стакана). Детерминировано: только
+/// целые числа.
+pub struct Economy {
+    pub registry: ItemRegistry,
+    /// Движок рынка: стакан ордеров + инвентарь (по владельцу и системе).
+    pub engine: MatchingEngine,
+    /// Кредиты каждого игрока.
+    pub credits: BTreeMap<NetId, u64>,
+    /// Звёздная система домашней планеты (рынки изолированы по системам).
+    pub system: u32,
+    /// Id сырья, которое даёт копание (руда).
+    pub ore_item: u32,
+    /// Id топлива (покупается у рынка/тратится).
+    pub fuel_item: u32,
+    /// Сколько руды даёт один удар копания.
+    pub ore_per_dig: u64,
+}
+
+impl Economy {
+    /// Новая экономика с рынком по умолчанию и стартовым капиталом игроков.
+    fn new() -> Self {
+        let registry = ItemRegistry::default_universe();
+        let find = |n: &str| -> u32 { (1..=registry.len() as u32).find(|i| registry.name(*i) == n).unwrap_or(0) };
+        let engine = MatchingEngine::new(Market::new(), Inventory::new());
+        Economy {
+            ore_item: find("руда"),
+            fuel_item: find("топливо"),
+            registry,
+            engine,
+            credits: BTreeMap::new(),
+            system: 1,
+            ore_per_dig: 5,
+        }
+    }
+
+    /// Выдать игроку стартовый капитал (один раз при подключении).
+    pub fn grant_start(&mut self, player: NetId) {
+        self.credits.entry(player).or_insert(1000);
+    }
 }
 
 /// Поза пешего персонажа (для репликации другим клиентам).
@@ -158,6 +207,8 @@ impl Server {
             target_respawn_tick: BTreeMap::new(),
             characters: BTreeMap::new(),
             planet: ou_sim::home_planet(),
+            economy: Economy::new(),
+            market_dirty: true,
             next_entity_id: 1,
         }
     }
@@ -179,6 +230,101 @@ impl Server {
             }
         }
         dent
+    }
+
+    /// Выкопать грунт игроком: рельеф + добыча руды.
+    ///
+    /// Возвращает применённую воронку. Руду начисляем игроку (владельцу
+    /// сущности): копание — источник сырья для экономики.
+    pub fn dig_as(&mut self, player: NetId, slot: u32, dir: Vec3, cos_radius: f64, depth: f64) -> Dent {
+        let dent = self.dig(slot, dir, cos_radius, depth);
+        let sys = self.economy.system;
+        let ore = self.economy.ore_item;
+        let yield_qty = self.economy.ore_per_dig.max(1);
+        self.economy.engine.inventory.add(player, sys, ore, yield_qty);
+        // Прибавка к добыче за глубину: чем глубже — тем больше руды за удар.
+        let bonus = (depth / 10.0).clamp(0.0, 20.0) as u64;
+        if bonus > 0 {
+            self.economy.engine.inventory.add(player, sys, ore, bonus);
+        }
+        self.market_dirty = true;
+        dent
+    }
+
+    /// Разместить ордер на рынке от имени игрока.
+    ///
+    /// Авторитетно: продажа списывает предметы сразу (эскроу), покупка
+    /// исполняется против стакана, при исполнении кредиты переходят продавцу,
+    /// предметы — покупателю. Возвращает (исполнено, ошибка), ошибка — строка.
+    pub fn place_order(
+        &mut self,
+        player: NetId,
+        side: u8,
+        item: u32,
+        price: u64,
+        qty: u64,
+    ) -> Result<u64, String> {
+        let sys = self.economy.system;
+        let tick = self.world.tick;
+        let side = if side == 0 { Side::Buy } else { Side::Sell };
+        // Кредиты: у покупателя должно хватать на весь ордер (MVP-проверка).
+        if side == Side::Buy {
+            let have = *self.economy.credits.get(&player).unwrap_or(&0);
+            let need = price.saturating_mul(qty);
+            if have < need {
+                return Err(format!("не хватает кредитов: есть {have}, нужно {need}"));
+            }
+        }
+        let report = match side {
+            Side::Buy => self
+                .economy
+                .engine
+                .place_buy(sys, item, player, price, qty, tick),
+            Side::Sell => self
+                .economy
+                .engine
+                .place_sell(sys, item, player, price, qty, tick),
+        };
+        let report = match report {
+            Ok(r) => r,
+            Err(e) => return Err(e.to_string()),
+        };
+        // Перевод кредитов по каждой сделке. Предметы движок рынка уже
+        // перевёл сам (`settle`): покупателю прибавил, у продавца списал при
+        // размещении ордера продажи.
+        for t in &report.trades {
+            let total = t.total();
+            *self.economy.credits.entry(t.buyer).or_insert(0) =
+                self.economy.credits.get(&t.buyer).copied().unwrap_or(0).saturating_sub(total);
+            *self.economy.credits.entry(t.seller).or_insert(0) =
+                self.economy.credits.get(&t.seller).copied().unwrap_or(0).saturating_add(total);
+        }
+        self.market_dirty = true;
+        Ok(report.filled)
+    }
+
+    /// Состояние экономики игрока для UI: кредиты, инвентарь, верх стакана.
+    pub fn market_state(&self, player: NetId) -> (u64, Vec<(u32, u64)>, Vec<(u32, u64, u64)>, Vec<(u32, u64, u64)>) {
+        let sys = self.economy.system;
+        let credits = *self.economy.credits.get(&player).unwrap_or(&0);
+        let mut items = Vec::new();
+        for i in 1..=self.economy.registry.len() as u32 {
+            let a = self.economy.engine.inventory.amount(player, sys, i);
+            if a > 0 {
+                items.push((i, a));
+            }
+        }
+        let mut bids = Vec::new();
+        let mut asks = Vec::new();
+        for i in 1..=self.economy.registry.len() as u32 {
+            if let Some(l) = self.economy.engine.market.best_bid(sys, i) {
+                bids.push((i, l.price, l.qty));
+            }
+            if let Some(l) = self.economy.engine.market.best_ask(sys, i) {
+                asks.push((i, l.price, l.qty));
+            }
+        }
+        (credits, items, bids, asks)
     }
 
     /// Создать пустую конструкцию для сущности.
@@ -536,6 +682,8 @@ impl Server {
         }
         // У каждого игрока есть своя конструкция (её же он и редактирует).
         self.constructions.entry(entity_id).or_insert_with(|| Construction::new(player_id));
+        // Стартовый капитал и право торговать.
+        self.economy.grant_start(player_id);
         self.connections.insert(
             player_id,
             Connection {
@@ -687,6 +835,20 @@ impl Server {
         let tick_now = self.world.tick;
         let (died, respawned) = self.process_respawns(tick_now);
         self.process_target_respawns(tick_now);
+
+        // Состояние экономики по игрокам (только если она менялась): считаем
+        // заранее, чтобы не конфликтовать с мутабельным проходом по соединениям.
+        let market_states: BTreeMap<NetId, Message> = if self.market_dirty {
+            self.connections
+                .keys()
+                .map(|pid| {
+                    let (credits, items, bids, asks) = self.market_state(*pid);
+                    (*pid, Message::ServerMarket { credits, items, bids, asks })
+                })
+                .collect()
+        } else {
+            BTreeMap::new()
+        };
 
         // 1. Собрать вводы по сущностям.
         let mut inputs: BTreeMap<NetId, InputFrame> = BTreeMap::new();
@@ -924,7 +1086,16 @@ impl Server {
             // Обновляем «что клиент знает и в каком виде».
             conn.last_sent = visible.iter().map(|id| (*id, all_states[id])).collect();
             conn.known = visible;
+
+            // Рынок: состояние экономики игрока шлём, когда оно менялось.
+            if let Some(m) = market_states.get(player_id) {
+                msgs.push(m.clone());
+            }
+
             plan.messages.insert(*player_id, msgs);
+        }
+        if self.market_dirty {
+            self.market_dirty = false;
         }
 
         plan
@@ -1359,6 +1530,53 @@ mod tests {
             .unwrap()
             .height(dir);
         assert!(deeper < after, "повторный удар должен углубить яму: {after} -> {deeper}");
+    }
+
+    #[test]
+    fn digging_yields_ore_and_market_trades_for_credits() {
+        let mut s = Server::new();
+        let a = s.connect_on_planet(1);   // продавец
+        let b = s.connect_on_planet(2);   // покупатель
+        let _ = a;
+        let dir = ou_sim::home_spawn_direction();
+        let ore = s.economy.ore_item;
+        // Игрок 1 копает несколько раз — получает руду.
+        for i in 0..5 {
+            s.dig_as(1, i, dir, 0.9995, 30.0);
+        }
+        let mined = s.economy.engine.inventory.amount(1, 1, ore);
+        assert!(mined > 0, "копание должно давать руду, получено {mined}");
+
+        let c1_start = *s.economy.credits.get(&1).unwrap();
+        let c2_start = *s.economy.credits.get(&2).unwrap();
+        assert!(c1_start > 0 && c2_start > 0, "стартовый капитал должен быть");
+
+        // Игрок 1 продаёт руду по 10, игрок 2 покупает — сделка исполняется.
+        let sold = s.place_order(1, /*side=Sell*/1, ore, 10, mined).unwrap();
+        assert!(sold == 0, "ордер продажи просто встаёт в стакан");
+        let bought = s.place_order(2, /*side=Buy*/0, ore, 10, mined).unwrap();
+        assert_eq!(bought, mined, "покупка должна исполниться полностью");
+
+        // Кредиты перешли продавцу, а руда — покупателю.
+        assert_eq!(*s.economy.credits.get(&1).unwrap(), c1_start + mined * 10);
+        assert_eq!(*s.economy.credits.get(&2).unwrap(), c2_start - mined * 10);
+        assert_eq!(s.economy.engine.inventory.amount(2, 1, ore), mined);
+        assert_eq!(s.economy.engine.inventory.amount(1, 1, ore), 0);
+    }
+
+    #[test]
+    fn market_state_is_pushed_after_dig() {
+        let mut s = Server::new();
+        s.connect_on_planet(1);
+        s.tick();   // первый тик: состояние рынка уходит
+        let dir = ou_sim::home_spawn_direction();
+        s.dig_as(1, 0, dir, 0.9995, 30.0);
+        let plan = s.tick();
+        let msgs = &plan.messages[&1];
+        assert!(
+            msgs.iter().any(|m| matches!(m, Message::ServerMarket { .. })),
+            "после копания сервер должен прислать состояние экономики"
+        );
     }
 
     #[test]

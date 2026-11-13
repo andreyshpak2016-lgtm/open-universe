@@ -106,9 +106,9 @@ window.PLAN = {
       "note": "Реализовано как библиотека + офлайн-демо; к игровому серверу пока не подключено.",
       "note_en": "Implemented as a library + offline demo; not yet wired into the game server.",
       "tasks": [
-        { "title": "Добыча ресурсов (ресурсы систем и поясов)", "title_en": "Resource extraction (system and belt resources)", "status": "in_progress" },
+        { "title": "Добыча ресурсов (копание грунта даёт руду)", "title_en": "Resource extraction (digging yields ore)", "status": "done" },
         { "title": "Переработка и производственные цепочки", "title_en": "Refining and production chains", "status": "in_progress" },
-        { "title": "Игрок-рынок: ордера, стакан, логистика", "title_en": "Player market: orders, order book, logistics", "status": "in_progress" },
+        { "title": "Игрок-рынок: ордера, стакан, сделки (в игре, клавиша M)", "title_en": "Player market: orders, order book, trades (in game, key M)", "status": "done" },
         { "title": "Модули контейнеров, топлива, энергии", "title_en": "Container, fuel and energy modules", "status": "in_progress" },
         { "title": "Экономическая симуляция и баланс", "title_en": "Economic simulation and balance", "status": "in_progress" }
       ]

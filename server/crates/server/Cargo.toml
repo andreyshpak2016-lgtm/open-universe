@@ -22,3 +22,4 @@ ou-persist = { path = "../persist" }
 ou-script = { path = "../script" }
 ou-build = { path = "../build" }
 ou-combat = { path = "../combat" }
+ou-economy = { path = "../economy" }

@@ -121,8 +121,31 @@ struct FOUHullState
 	bool bDestroyed = false;
 };
 
-/** Воронка (яма) на планете, применённая сервером. */
+/** Запись инвентаря игрока (id предмета и количество). */
 USTRUCT(BlueprintType)
+struct FOUInventoryItem
+{
+	GENERATED_BODY()
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Economy")
+	int32 Item = 0;
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Economy")
+	int64 Qty = 0;
+};
+
+/** Уровень стакана: цена и объём (для окна рынка). */
+USTRUCT(BlueprintType)
+struct FOUOrderLevel
+{
+	GENERATED_BODY()
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Economy")
+	int32 Item = 0;
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Economy")
+	int64 Price = 0;
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Economy")
+	int64 Qty = 0;
+};
+
+/** Воронка (яма) на планете, применённая сервером. */USTRUCT(BlueprintType)
 struct FOUTerrainDent
 {
 	GENERATED_BODY()
@@ -266,6 +289,24 @@ public:
 	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Terrain")
 	TArray<FOUTerrainDent> PendingDents;
 
+	/** Кредиты игрока (приходят от сервера). */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Economy")
+	int64 Credits = 0;
+
+	/** Инвентарь игрока. */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Economy")
+	TArray<FOUInventoryItem> InventoryItems;
+
+	/** Верх стакана покупок и продаж (для окна рынка). */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Economy")
+	TArray<FOUOrderLevel> MarketBids;
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Economy")
+	TArray<FOUOrderLevel> MarketAsks;
+
+	/** Приходило ли хоть раз состояние экономики. */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Economy")
+	bool bMarketReceived = false;
+
 	/** Последний результат команды строительства: принята ли. */
 	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Build")
 	bool bLastBuildAccepted = false;
@@ -344,6 +385,10 @@ public:
 	/** Отправить запрос копания грунта в направлении (серверные оси). */
 	UFUNCTION(BlueprintCallable, Category = "Open Universe|Terrain")
 	void SendDig(int32 Slot, double X, double Y, double Z, double CosRadius, double Depth);
+
+	/** Отправить ордер на рынок (0 — покупка, 1 — продажа). */
+	UFUNCTION(BlueprintCallable, Category = "Open Universe|Economy")
+	void SendMarketOrder(int32 Side, int32 Item, int64 Price, int64 Qty);
 
 	/** Подтвердить серверу приём правок до этой ревизии (чтобы не слал снова). */
 	UFUNCTION(BlueprintCallable, Category = "Open Universe|Build")

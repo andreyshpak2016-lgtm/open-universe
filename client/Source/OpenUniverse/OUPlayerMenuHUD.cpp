@@ -20,5 +20,6 @@ void AOUPlayerMenuHUD::DrawHUD()
 		// всегда сверху, а хотбар не перекрывает палитру (см. DrawGameHud).
 		Menu->DrawBuildMenu(Canvas);
 		Menu->DrawGameHud(Canvas);
+		Menu->DrawMarket(Canvas);
 	}
 }

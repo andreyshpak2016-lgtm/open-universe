@@ -5,6 +5,7 @@
 #include "OUClientNet.h"
 #include "OUVoxelPlanet.h"
 #include "OUSurfaceBase.h"
+#include "OUPlayerMenuController.h"
 #include "OUInterop.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/StaticMeshComponent.h"
@@ -362,6 +363,10 @@ void AOUCharacterPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputCom
 	PlayerInputComponent->BindAction(TEXT("FireWeapon"), IE_Pressed, this, &AOUCharacterPawn::FireWeapon);
 	// Копание грунта (ЛКМ вне строительства).
 	PlayerInputComponent->BindAction(TEXT("Dig"), IE_Pressed, this, &AOUCharacterPawn::DigTerrain);
+	// Рынок и инвентарь: M — окно, 1 — продать руду, 2 — купить руду.
+	PlayerInputComponent->BindAction(TEXT("MarketToggle"), IE_Pressed, this, &AOUCharacterPawn::ToggleMarket);
+	PlayerInputComponent->BindAction(TEXT("MarketSell"), IE_Pressed, this, &AOUCharacterPawn::OnMarketSell);
+	PlayerInputComponent->BindAction(TEXT("MarketBuy"), IE_Pressed, this, &AOUCharacterPawn::OnMarketBuy);
 	// Строительство: B открывает/закрывает меню, ЛКМ ставит выбранный блок.
 	PlayerInputComponent->BindAction(TEXT("BuildMode"), IE_Pressed, this, &AOUCharacterPawn::ToggleBuildMenu);
 	PlayerInputComponent->BindAction(TEXT("BuildPlace"), IE_Pressed, this, &AOUCharacterPawn::PlaceBuildBlock);
@@ -818,6 +823,39 @@ void AOUCharacterPawn::ApplyServerDigs()
 	Net->PendingDents.Reset();
 }
 
+void AOUCharacterPawn::ToggleMarket()
+{
+	if (bBuildMenuOpen)
+	{
+		return;
+	}
+	AOUPlayerMenuController* Menu = Cast<AOUPlayerMenuController>(
+		GetController() ? GetController() : nullptr);
+	if (!Menu)
+	{
+		Menu = Cast<AOUPlayerMenuController>(GetWorld() ? GetWorld()->GetFirstPlayerController() : nullptr);
+	}
+	if (Menu)
+	{
+		Menu->bMarketOpen = !Menu->bMarketOpen;
+		// Пока рынок открыт — курсор свободен (можно кликать по UI).
+		Menu->SetMenuCursor(Menu->bMarketOpen);
+		UE_LOG(LogOUChar, Log, TEXT("Рынок: %s"), Menu->bMarketOpen ? TEXT("открыт") : TEXT("закрыт"));
+	}
+}
+
+void AOUCharacterPawn::MarketQuickTrade(bool bSell)
+{
+	Net = Net ? Net : FindComponentByClass<UOUClientNet>();
+	if (!Net || !Net->IsConnected())
+	{
+		return;
+	}
+	// Руда — предмет 1. Быстрая сделка по 20 кредитов за единицу.
+	Net->SendMarketOrder(bSell ? 1 : 0, /*руда=*/1, 20, 1);
+	UE_LOG(LogOUChar, Log, TEXT("Рынок: %s руды по 20"), bSell ? TEXT("продать") : TEXT("купить"));
+}
+
 void AOUCharacterPawn::FireWeapon()
 {	UWorld* World = GetWorld();
 	if (!World || !GunMesh || FireTimer > 0.f)
@@ -1088,6 +1126,35 @@ void AOUCharacterPawn::Tick(float DeltaSeconds)
 			DigTimer = 0.f;
 			++DigCount;
 			DigTerrain();
+		}
+	}
+
+	// Тестовая торговля (`-OUAutoTrade`): добыть руду, выставить продажу,
+	// затем купить — проверка рынка вживую.
+	if (FParse::Param(FCommandLine::Get(), TEXT("OUAutoTrade")))
+	{
+		TradeTimer += DeltaSeconds;
+		if (TradeTimer >= 1.5f)
+		{
+			TradeTimer = 0.f;
+			++TradeCount;
+			// Открыть окно рынка, чтобы оно попало на отложенный снимок.
+			if (TradeCount == 1)
+			{
+				ToggleMarket();
+			}
+			if (TradeCount <= 6)
+			{
+				DigTerrain();   // накопить руду
+			}
+			else if (TradeCount == 7)
+			{
+				MarketQuickTrade(true);   // продать руду по 20
+			}
+			else if (TradeCount == 9)
+			{
+				MarketQuickTrade(false);  // купить руду по 20
+			}
 		}
 	}
 
