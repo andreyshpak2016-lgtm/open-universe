@@ -78,8 +78,7 @@ struct FOUBuildEdit
 
 /** Событие выстрела, полученное от сервера (для трассера и эффектов). */
 USTRUCT(BlueprintType)
-struct FOUShotEvent
-{
+struct FOUShotEvent{
 	GENERATED_BODY()
 
 	/** Кто стрелял. */
@@ -120,6 +119,29 @@ struct FOUHullState
 
 	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Combat")
 	bool bDestroyed = false;
+};
+
+/** Воронка (яма) на планете, применённая сервером. */
+USTRUCT(BlueprintType)
+struct FOUTerrainDent
+{
+	GENERATED_BODY()
+
+	/** Номер воронки (слот): повторный приход = углубление той же ямы. */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Terrain")
+	int32 Slot = 0;
+
+	/** Направление центра воронки (серверные оси). */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Terrain")
+	double X = 0.0, Y = 0.0, Z = 0.0;
+
+	/** Косинус углового радиуса воронки. */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Terrain")
+	double CosRadius = 1.0;
+
+	/** Глубина (в единицах длины). */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Terrain")
+	double Depth = 0.0;
 };
 
 /** Поза чужого пешего персонажа от сервера. */
@@ -240,6 +262,10 @@ public:
 	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Build")
 	TArray<FOUBuildEdit> PendingBuildEdits;
 
+	/** Очередь воронок от сервера (забирается планетой для перестройки рельефа). */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Terrain")
+	TArray<FOUTerrainDent> PendingDents;
+
 	/** Последний результат команды строительства: принята ли. */
 	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Build")
 	bool bLastBuildAccepted = false;
@@ -314,6 +340,10 @@ public:
 	/** Отправить команду строительства (поставить/удалить/покрасить воксель). */
 	UFUNCTION(BlueprintCallable, Category = "Open Universe|Build")
 	void SendBuild(int32 Entity, int32 Action, int32 X, int32 Y, int32 Z, int32 R, int32 G, int32 B);
+
+	/** Отправить запрос копания грунта в направлении (серверные оси). */
+	UFUNCTION(BlueprintCallable, Category = "Open Universe|Terrain")
+	void SendDig(int32 Slot, double X, double Y, double Z, double CosRadius, double Depth);
 
 	/** Подтвердить серверу приём правок до этой ревизии (чтобы не слал снова). */
 	UFUNCTION(BlueprintCallable, Category = "Open Universe|Build")

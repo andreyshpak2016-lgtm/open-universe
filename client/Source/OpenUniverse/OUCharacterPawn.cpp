@@ -360,6 +360,8 @@ void AOUCharacterPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputCom
 	PlayerInputComponent->BindAction(TEXT("ExitShip"), IE_Released, this, &AOUCharacterPawn::OnExitReleased);
 	// Огонь: зажимание кнопки ведёт непрерывную стрельбу (окно оружия).
 	PlayerInputComponent->BindAction(TEXT("FireWeapon"), IE_Pressed, this, &AOUCharacterPawn::FireWeapon);
+	// Копание грунта (ЛКМ вне строительства).
+	PlayerInputComponent->BindAction(TEXT("Dig"), IE_Pressed, this, &AOUCharacterPawn::DigTerrain);
 	// Строительство: B открывает/закрывает меню, ЛКМ ставит выбранный блок.
 	PlayerInputComponent->BindAction(TEXT("BuildMode"), IE_Pressed, this, &AOUCharacterPawn::ToggleBuildMenu);
 	PlayerInputComponent->BindAction(TEXT("BuildPlace"), IE_Pressed, this, &AOUCharacterPawn::PlaceBuildBlock);
@@ -753,9 +755,71 @@ void AOUCharacterPawn::ApplyServerBuildEdits()
 	Net->PendingBuildEdits.Reset();
 }
 
-void AOUCharacterPawn::FireWeapon()
+void AOUCharacterPawn::DigTerrain()
 {
 	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+	// В режиме строительства ЛКМ ставит блок (BuildPlace), а не копает.
+	if (bBuildMenuOpen)
+	{
+		return;
+	}
+	// Направление — куда смотрит камера (прицел), из центра планеты.
+	const FVector DirUE = (Camera ? Camera->GetForwardVector() : GetActorForwardVector()).GetSafeNormal();
+	AOUVoxelPlanet* Planet = AOUVoxelPlanet::FindHomePlanet(World);
+	if (!Planet || DirUE.IsNearlyZero())
+	{
+		return;
+	}
+	// Направление и радиус — в СЕРВЕРНЫХ единицах (1 ед = 100 см).
+	const FVector DirServer = OUInterop::UEDirToServer(DirUE).GetSafeNormal();
+	const double RadiusServer = DigRadiusCm / OUInterop::ServerUnitToCm;
+	const double DepthServer = DigDepthCm / OUInterop::ServerUnitToCm;
+	const double R = 500000.0;   // радиус планеты в серверных единицах
+	// Косинус углового радиуса воронки: чем больше радиус, тем меньше cos.
+	const double CosRadius = FMath::Clamp(1.0 - (RadiusServer * RadiusServer) / (2.0 * R * R), -1.0, 1.0);
+
+	Net = Net ? Net : FindComponentByClass<UOUClientNet>();
+	if (Net && Net->IsConnected())
+	{
+		// Слот воронки — по направлению: повторный удар рядом углубляет ту же
+		// яму. Слот ищется по «квантованному» направлению. Слот — низкие 6 бит.
+		const int32 Slot = static_cast<int32>(FMath::Abs(
+			FMath::RoundToInt(DirServer.X * 1000.f) * 73
+			+ FMath::RoundToInt(DirServer.Y * 1000.f) * 19
+			+ FMath::RoundToInt(DirServer.Z * 1000.f) * 7)) % 64;
+		Net->SendDig(Slot, DirServer.X, DirServer.Y, DirServer.Z, CosRadius, DepthServer);
+		UE_LOG(LogOUChar, Log, TEXT("Копание: слот %d, радиус %.0f см, глубина %.0f см"),
+			Slot, DigRadiusCm, DigDepthCm);
+	}
+}
+
+void AOUCharacterPawn::ApplyServerDigs()
+{
+	// Забираем воронки, пришедшие от сервера, и применяем их к планете.
+	if (!Net)
+	{
+		return;
+	}
+	if (Net->PendingDents.Num() == 0)
+	{
+		return;
+	}
+	if (AOUVoxelPlanet* Planet = AOUVoxelPlanet::FindHomePlanet(GetWorld()))
+	{
+		for (const FOUTerrainDent& D : Net->PendingDents)
+		{
+			Planet->ApplyDent(D.Slot, D.X, D.Y, D.Z, D.CosRadius, D.Depth);
+		}
+	}
+	Net->PendingDents.Reset();
+}
+
+void AOUCharacterPawn::FireWeapon()
+{	UWorld* World = GetWorld();
 	if (!World || !GunMesh || FireTimer > 0.f)
 	{
 		return;
@@ -987,6 +1051,8 @@ void AOUCharacterPawn::Tick(float DeltaSeconds)
 	// Авторитетное строительство: применяем правки, пришедшие от сервера.
 	ResolveNet();
 	ApplyServerBuildEdits();
+	// Авторитетное копание: применяем воронки, пришедшие от сервера.
+	ApplyServerDigs();
 
 	// Отправляем свою позу пешего персонажа другим игрокам.
 	if (Net && Net->IsConnected())
@@ -1010,6 +1076,19 @@ void AOUCharacterPawn::Tick(float DeltaSeconds)
 	if (bAutoFire)
 	{
 		FireWeapon();
+	}
+
+	// Тестовое копание (`-OUAutoDig`): несколько ударов вперёд — проверка
+	// сервер-авторитетного копания и перестройки рельефа.
+	if (FParse::Param(FCommandLine::Get(), TEXT("OUAutoDig")))
+	{
+		DigTimer += DeltaSeconds;
+		if (DigTimer >= 1.2f && DigCount < 6)
+		{
+			DigTimer = 0.f;
+			++DigCount;
+			DigTerrain();
+		}
 	}
 
 	// Тестовое строительство: открыть меню, поставить блоки и проверить

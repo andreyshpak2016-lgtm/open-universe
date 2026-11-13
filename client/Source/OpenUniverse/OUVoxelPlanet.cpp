@@ -186,16 +186,51 @@ int32 AOUVoxelPlanet::Segments() const
 float AOUVoxelPlanet::HeightAtServerDetail(const FVector& DirServer, int32 Detail) const
 {
 	// Одна общая формула с сервером (см. OUTerrain.h): бит-в-бит тот же рельеф,
-	// что считает физика. Все вычисления — в double, как в Rust.
-	const double H = OULT::HeightDir(
+	// что считает физика. Все вычисления — в double, как в Rust. Воронки игроков
+	// (копание) вычитаются из базовой высоты — тоже как на сервере.
+	const double H = OULT::HeightWithDents(
 		static_cast<double>(DirServer.X),
 		static_cast<double>(DirServer.Y),
 		static_cast<double>(DirServer.Z),
 		static_cast<double>(Amplitude),
 		0.545,                      // уровень океана (как на сервере)
 		static_cast<uint64>(Seed),
-		Detail);
+		Detail,
+		Dents.Num() > 0 ? Dents.GetData() : nullptr,
+		Dents.Num());
 	return static_cast<float>(H);
+}
+
+void AOUVoxelPlanet::ApplyDent(int32 Slot, double X, double Y, double Z, double CosRadius, double Depth)
+{
+	// Кладём воронку в слот (или углубляем существующую в этом слоте) и
+	// перестраиваем рельеф: глобальный меш и локальный участок.
+	while (Dents.Num() <= Slot)
+	{
+		Dents.Add(OULT::Dent());
+	}
+	OULT::Dent& D = Dents[Slot];
+	const bool bSameDir = FMath::Abs(D.X - X) < 1e-6 && FMath::Abs(D.Y - Y) < 1e-6 && FMath::Abs(D.Z - Z) < 1e-6;
+	if (bSameDir && D.Depth > 0.0)
+	{
+		D.Depth += Depth;
+		D.CosR = FMath::Max(D.CosR, CosRadius);
+	}
+	else
+	{
+		D.X = X; D.Y = Y; D.Z = Z;
+		D.CosR = CosRadius;
+		D.Depth = Depth;
+	}
+	// Воронка мелкая по сравнению с глобальным мешем (ячейка ~1.5 км), поэтому
+	// глобальную сферу не перестраиваем — это дорого и ничего не даёт. Яма видна
+	// на ПЛОТНОМ локальном участке у игрока (ячейка ~21 м), его и обновляем.
+	if (LocalDentCenter.IsNearlyZero() == false)
+	{
+		RebuildLocal(LocalDentCenter);
+	}
+	UE_LOG(LogOUPlanet, Log, TEXT("Воронка %d применена: глубина %.0f, всего воронок %d"),
+		Slot, D.Depth, Dents.Num());
 }
 
 float AOUVoxelPlanet::HeightAtServer(const FVector& DirServer) const
@@ -622,6 +657,8 @@ void AOUVoxelPlanet::RebuildLocal(const FVector& AroundUE)
 	{
 		return;
 	}
+	// Запоминаем центр: если придут воронки (копание), перестроим участок тут же.
+	LocalDentCenter = AroundUE;
 
 	// Касательный базис в точке.
 	FVector T1 = FVector::CrossProduct(DirUE, FVector::UpVector);

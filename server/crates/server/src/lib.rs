@@ -15,7 +15,7 @@ use ou_protocol::{
     ShotEvent, Snapshot, Vec3,
 };
 use ou_script::ScriptEngine;
-use ou_sim::World;
+use ou_sim::{Dent, Terrain, World};
 use ou_spatial::SpatialGrid;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -122,6 +122,11 @@ pub struct Server {
     /// Поза пешего персонажа каждой сущности: (позиция, курс, идёт ли).
     /// `None` в значении-словаре означает «в корабле» (поза снята).
     pub characters: BTreeMap<NetId, CharacterPose>,
+    /// Авторитетный рельеф домашней планеты — один на весь мир.
+    ///
+    /// Копание меняет именно его (список воронок), поэтому физика всех
+    /// сущностей и рассылка правок идут из одного источника.
+    pub planet: Terrain,
     next_entity_id: NetId,
 }
 
@@ -152,8 +157,28 @@ impl Server {
             target_spawns: BTreeMap::new(),
             target_respawn_tick: BTreeMap::new(),
             characters: BTreeMap::new(),
+            planet: ou_sim::home_planet(),
             next_entity_id: 1,
         }
+    }
+
+    /// Выкопать воронку в направлении `dir` (авторитетно).
+    ///
+    /// Сервер применяет воронку к своему рельефу планеты, **перепривязывает**
+    /// рельеф всем сущностям-на-планете (чтобы физика видела новую форму и
+    /// посадка/столкновения учитывали яму) и возвращает правку для рассылки.
+    /// Слот выбирается по направлению: удары в одну точку углубляют ту же яму.
+    pub fn dig(&mut self, slot: u32, dir: Vec3, cos_radius: f64, depth: f64) -> Dent {
+        let d = ou_sim::normalize(dir);
+        let dent = Dent { x: d.x, y: d.y, z: d.z, cos_r: cos_radius.clamp(-1.0, 1.0), depth };
+        Dent::place(&mut self.planet.dents, &mut self.planet.dent_count, slot as usize, dent);
+        // Перепривязываем обновлённый рельеф всем, кто на планете.
+        for ent in self.world.entities.values_mut() {
+            if ent.terrain.is_some() {
+                ent.terrain = Some(self.planet);
+            }
+        }
+        dent
     }
 
     /// Создать пустую конструкцию для сущности.
@@ -546,7 +571,9 @@ impl Server {
     pub fn connect_on_planet(&mut self, player_id: NetId) -> NetId {
         // Небольшой зазор над поверхностью: гравитация мягко опустит корабль.
         let entity_id = self.connect(player_id, ou_sim::home_spawn(2.0));
-        self.world.attach_terrain(entity_id, ou_sim::home_planet());
+        // Привязываем АВТОРИТЕТНЫЙ рельеф мира (с уже выкопанными воронками),
+        // а не чистую формулу: иначе игрок не видел бы чужие ямы в физике.
+        self.world.attach_terrain(entity_id, self.planet);
         entity_id
     }
 
@@ -1292,6 +1319,46 @@ mod tests {
             (e1, e2, s.hulls[&2])
         };
         assert_eq!(run(), run(), "бои должен быть детерминированным");
+    }
+
+    #[test]
+    fn dig_lowers_terrain_physics_and_is_idempotent_per_slot() {
+        let mut s = Server::new();
+        let e = s.connect_on_planet(1);
+        let dir = ou_sim::home_spawn_direction();
+        let before = s
+            .world
+            .entities
+            .get(&e)
+            .unwrap()
+            .terrain
+            .unwrap()
+            .height(dir);
+        // Копаем в направлении появления.
+        let dent = s.dig(0, dir, 0.9995, 30.0);
+        assert!(dent.depth > 0.0, "воронка должна иметь глубину");
+        let after = s
+            .world
+            .entities
+            .get(&e)
+            .unwrap()
+            .terrain
+            .unwrap()
+            .height(dir);
+        assert!(after < before, "копание должно понизить поверхность: {before} -> {after}");
+        // Удар в тот же слот углубляет ту же яму, а не плодит новую.
+        let count_before = s.planet.dent_count;
+        s.dig(0, dir, 0.9995, 30.0);
+        assert_eq!(s.planet.dent_count, count_before, "повторный удар — тот же слот");
+        let deeper = s
+            .world
+            .entities
+            .get(&e)
+            .unwrap()
+            .terrain
+            .unwrap()
+            .height(dir);
+        assert!(deeper < after, "повторный удар должен углубить яму: {after} -> {deeper}");
     }
 
     #[test]

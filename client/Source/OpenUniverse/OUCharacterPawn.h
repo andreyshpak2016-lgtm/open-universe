@@ -152,6 +152,31 @@ public:
 	UPROPERTY(BlueprintReadWrite, Category = "Open Universe|Build")
 	class UOUClientNet* Net = nullptr;
 
+	/**
+	 * Копнуть грунт в направлении взгляда.
+	 *
+	 * Находит точку поверхности впереди (луч из камеры), шлёт серверу запрос
+	 * копания. Сервер авторитетно применяет воронку и рассылает её всем —
+	 * клиент перестраивает рельеф, когда правка придёт (`ApplyServerDigs`).
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Open Universe|Terrain")
+	void DigTerrain();
+
+	/** Применить воронки, пришедшие от сервера (перестроить рельеф). */
+	void ApplyServerDigs();
+
+	/** Радиус воронки копания, см (по умолчанию ~10 м). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Open Universe|Terrain")
+	float DigRadiusCm = 1000.f;
+
+	/** Глубина копания за удар, см (по умолчанию ~8 м). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Open Universe|Terrain")
+	float DigDepthCm = 800.f;
+
+	/** Таймер/счётчик тестового копания (`-OUAutoDig`). */
+	float DigTimer = 0.f;
+	int32 DigCount = 0;
+
 	/** Название типа блока (для меню). */
 	static FString BuildPartName(int32 Index);
 

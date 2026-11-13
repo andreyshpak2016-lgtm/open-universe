@@ -174,9 +174,22 @@ void UOUClientNet::SendCharacter(const FVector& PositionServer, float Yaw, bool 
 	SendPacket(Arr);
 }
 
-void UOUClientNet::SendBuild(int32 Entity, int32 Action, int32 X, int32 Y, int32 Z, int32 R, int32 G, int32 B)
+void UOUClientNet::SendDig(int32 Slot, double X, double Y, double Z, double CosRadius, double Depth)
 {
 	if (!IsConnected())
+	{
+		return;
+	}
+	// Формат — в OUWire (тот же код проверяет стенд test_wire).
+	const std::vector<uint8_t> Body = OUWire::EncodeDig(
+		static_cast<uint32_t>(Slot), X, Y, Z, CosRadius, Depth);
+	TArray<uint8> Arr;
+	Arr.Append(Body.data(), static_cast<int32>(Body.size()));
+	SendPacket(Arr);
+}
+
+void UOUClientNet::SendBuild(int32 Entity, int32 Action, int32 X, int32 Y, int32 Z, int32 R, int32 G, int32 B)
+{	if (!IsConnected())
 	{
 		return;
 	}
@@ -417,6 +430,21 @@ void UOUClientNet::Poll()
 					SystemBodies.Add(S);
 				}
 				bSystemReceived = true;
+			}
+		}
+		else if (Body[0] == OUWire::TagDig) // воронка от сервера
+		{
+			OUWire::DentWire D;
+			if (OUWire::DecodeDig(Body.GetData(), static_cast<size_t>(Body.Num()), D))
+			{
+				FOUTerrainDent Dent;
+				Dent.Slot = static_cast<int32>(D.Slot);
+				Dent.X = D.X; Dent.Y = D.Y; Dent.Z = D.Z;
+				Dent.CosRadius = D.CosRadius;
+				Dent.Depth = D.Depth;
+				// Воронки копятся: планета помнит все ямы. Слот уникален, поэтому
+				// повторный приход того же слота — это углубление той же ямы.
+				PendingDents.Add(Dent);
 			}
 		}
 	}

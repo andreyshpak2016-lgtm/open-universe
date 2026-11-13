@@ -209,6 +209,22 @@ int main(int argc, char** argv)
         Check(iv.Fire, "огонь совпал");
     }
 
+    // --- 6b. Копание грунта (тег 20) ---
+    std::printf("\n=== 6b. Копание грунта ===\n");
+    {
+        const std::vector<uint8_t> db = OUWire::EncodeDig(4, 0.13, -0.93, 0.34, 0.9998, 12.5);
+        Check(db[0] == OUWire::TagDig, "тег копания = 20");
+        OUWire::DentWire dw;
+        // Запрос (from_server=0) не должен читаться как воронка сервера.
+        Check(!OUWire::DecodeDig(db.data(), db.size(), dw), "запрос не разобран как серверная воронка");
+        // А серверная воронка (с from_server=1) — разбирается.
+        std::vector<uint8_t> sb = db;
+        sb[1] = 1;
+        Check(OUWire::DecodeDig(sb.data(), sb.size(), dw), "серверная воронка разобрана");
+        Check(dw.Slot == 4, "слот воронки совпал");
+        Check(std::fabs(dw.Depth - 12.5) < 1e-9, "глубина воронки совпала");
+    }
+
     // --- 7. Приветствие сервера (какой сущностью управляем) ---
     std::printf("\n=== 7. Приветствие сервера (welcome) ===\n");
     {

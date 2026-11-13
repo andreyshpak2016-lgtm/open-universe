@@ -56,6 +56,8 @@ int main(int argc, char** argv)
     uint64_t seed = 0;
     double spawnX = 0.0, spawnY = 0.0, spawnZ = 0.0;
     bool haveSpawn = false;
+    double dentX = 0.0, dentY = 0.0, dentZ = 0.0, dentCos = 1.0, dentDepth = 0.0, dentHeight = 0.0;
+    bool haveDent = false;
 
     struct Row { double x, y, z, h0, h1; int biome; };
     std::vector<Row> rows;
@@ -71,6 +73,7 @@ int main(int argc, char** argv)
         if (std::sscanf(line, "sea_level %lf", &seaLevel) == 1) continue;
         if (std::sscanf(line, "seed %llu", reinterpret_cast<unsigned long long*>(&seed)) == 1) continue;
         if (std::sscanf(line, "spawn %lf %lf %lf", &spawnX, &spawnY, &spawnZ) == 3) { haveSpawn = true; continue; }
+        if (std::sscanf(line, "dent %lf %lf %lf %lf %lf %lf", &dentX, &dentY, &dentZ, &dentCos, &dentDepth, &dentHeight) == 6) { haveDent = true; continue; }
         if (std::sscanf(line, "height %lf %lf %lf %lf %lf %d", &x, &y, &z, &h0, &h1, &biome) == 6)
         {
             rows.push_back({ x, y, z, h0, h1, biome });
@@ -140,6 +143,23 @@ int main(int argc, char** argv)
         std::snprintf(buf, sizeof(buf), "площадка под базу ровная (перепад %.1f м на %.0f м)",
             rough, OULT::SpawnFlatRadiusM);
         Check(rough < 40.0, buf);
+    }
+
+    std::printf("\n=== 4. Копание (воронки) ===\n");
+    {
+        // Клиент применяет ту же воронку и должен получить ту же высоту.
+        OULT::Dent dents[1];
+        dents[0].X = dentX; dents[0].Y = dentY; dents[0].Z = dentZ;
+        dents[0].CosR = dentCos; dents[0].Depth = dentDepth;
+        const double dug = OULT::HeightWithDents(
+            dentX, dentY, dentZ, amplitude, seaLevel, seed, 1, dents, 1);
+        const double diff = std::fabs(dug - dentHeight);
+        std::snprintf(buf, sizeof(buf), "высота с воронкой совпала (разница %.2e)", diff);
+        Check(haveDent && diff < 1e-6, buf);
+        // Воронка должна реально понизить рельеф.
+        const double base = OULT::HeightDir(dentX, dentY, dentZ, amplitude, seaLevel, seed, 1);
+        std::snprintf(buf, sizeof(buf), "воронка понизила рельеф (%.1f м)", base - dug);
+        Check(base - dug > 1.0, buf);
     }
 
     std::printf("\n=== Итог ===\n");

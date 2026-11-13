@@ -140,11 +140,101 @@ impl Default for TerrainParams {
 pub struct Terrain {
     pub center: Vec3,
     pub params: TerrainParams,
+    /// Воронки, выкопанные игроками (применяются поверх базовой формулы).
+    ///
+    /// Рельеф — чистая функция направления, а правки игроков хранятся списком
+    /// и вычитаются из базовой высоты. Так сервер (физика) и клиент (картинка)
+    /// считают один и тот же изменённый рельеф. Список мал: он ограничен.
+    pub dents: [Dent; MAX_DENTS],
+    /// Сколько первых слотов `dents` заполнено.
+    pub dent_count: usize,
+}
+
+/// Максимум воронок на планету (слоты провода ограничены этим числом).
+pub const MAX_DENTS: usize = 64;
+
+impl Default for Terrain {
+    fn default() -> Self {
+        Terrain {
+            center: Vec3::ZERO,
+            params: TerrainParams::default(),
+            dents: [Dent::default(); MAX_DENTS],
+            dent_count: 0,
+        }
+    }
+}
+
+/// Воронка (яма), выкопанная игроком. Зеркало клиентской `OULT::Dent`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Dent {
+    /// Направление центра воронки (серверные оси, единичное).
+    pub x: f64,
+    pub y: f64,
+    pub z: f64,
+    /// Косинус углового радиуса: точки с dot(dir) ≥ `cos_r` «внутри» воронки.
+    pub cos_r: f64,
+    /// Глубина в единицах длины (сколько снять в центре).
+    pub depth: f64,
+}
+
+impl Default for Dent {
+    fn default() -> Self {
+        Dent { x: 0.0, y: 0.0, z: 1.0, cos_r: 1.0, depth: 0.0 }
+    }
+}
+
+impl Dent {
+    /// Применить воронку в слоте `slot` (или добавить, если слот свободен).
+    ///
+    /// Если слот уже занят — воронка **углубляется** (игрок копает на месте):
+    /// так повторные удары в одну точку не плодят воронки, а роют глубже.
+    /// Возвращает true, если правка принята.
+    pub fn place(dents: &mut [Dent; MAX_DENTS], count: &mut usize, slot: usize, d: Dent) -> bool {
+        if slot >= MAX_DENTS {
+            return false;
+        }
+        if slot < *count {
+            let e = &mut dents[slot];
+            // Совпадающее направление — углубляем; иначе заменяем (новая яма).
+            if (e.x - d.x).abs() < 1e-6 && (e.y - d.y).abs() < 1e-6 && (e.z - d.z).abs() < 1e-6 {
+                e.depth += d.depth;
+                e.cos_r = e.cos_r.max(d.cos_r);
+            } else {
+                *e = d;
+            }
+        } else {
+            // Заполняем слоты по порядку (провод шлёт компактный список).
+            while *count < slot {
+                dents[*count] = Dent::default();
+                *count += 1;
+            }
+            dents[slot] = d;
+            *count = slot + 1;
+        }
+        true
+    }
 }
 
 impl Terrain {
     pub fn new(center: Vec3, params: TerrainParams) -> Self {
-        Terrain { center, params }
+        Terrain { center, params, dents: [Dent::default(); MAX_DENTS], dent_count: 0 }
+    }
+
+    /// Суммарная глубина воронок в направлении `d` (неотрицательная).
+    /// Зеркало клиентской `DentsOffset`.
+    pub fn dents_offset(&self, d: Vec3) -> f64 {
+        let nd = normalize(d);
+        let mut sum = 0.0;
+        for i in 0..self.dent_count {
+            let e = &self.dents[i];
+            let k = nd.x * e.x + nd.y * e.y + nd.z * e.z;
+            if k >= e.cos_r {
+                let span = 1.0 - e.cos_r;
+                let t = if span > 1e-12 { (k - e.cos_r) / span } else { 1.0 };
+                sum += e.depth * t * t;
+            }
+        }
+        sum
     }
 
     /// Высота над уровнем океана в направлении `dir` (может быть < 0 — вода).
@@ -213,7 +303,14 @@ impl Terrain {
             let b3 = fbm(x, y, z, 2, 2000.0, s ^ 0xA5A5);
             h01 += (0.0025 + b1 * b1 * 0.050 + b2 * b2 * 0.020 + b3 * b3 * 0.008) * lush;
         }
-        h01 * self.params.amplitude * 2.0
+        // Воронки игроков вычитаем из высоты (копание). Применяются к полному
+        // рельефу: копание видно и в физике, и на плотном участке у игрока.
+        let base_h = h01 * self.params.amplitude * 2.0;
+        if self.dent_count > 0 {
+            base_h - self.dents_offset(d)
+        } else {
+            base_h
+        }
     }
 
     /// Биом поверхности по высоте над уровнем океана.

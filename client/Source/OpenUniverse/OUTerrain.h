@@ -217,6 +217,71 @@ namespace OULT
 		BiomeMountains = 4,
 	};
 
+	/**
+	 * Воронка (ямa), выкопанная игроком.
+	 *
+	 * Рельеф — чистая функция направления; правки игроков хранятся отдельным
+	 * списком воронок и **применяются поверх** базовой формулы. Так сервер и
+	 * клиент считают один и тот же изменённый рельеф: сервер — для физики,
+	 * клиент — для картинки. Зеркало серверной `Dent`.
+	 */
+	struct Dent
+	{
+		/** Направление центра воронки (серверные оси). */
+		double X = 0.0, Y = 0.0, Z = 0.0;
+		/** Косинус углового радиуса: точки с dot(dir) ≥ CosR «внутри» воронки. */
+		double CosR = 1.0;
+		/** Глубина в единицах длины (сколько снять в центре). */
+		double Depth = 0.0;
+	};
+
+	/**
+	 * Насколько список воронок понижает рельеф в направлении `Dx,Dy,Dz`.
+	 *
+	 * Возвращает НЕОТРИЦАТЕЛЬНУЮ величину (в тех же единицах, что `Amplitude`).
+	 * Форма — квадратичная: у края воронки глубина 0, в центре — `Depth`.
+	 * Зеркало серверной `Dents::offset`.
+	 */
+	inline double DentsOffset(
+		double Dx, double Dy, double Dz,
+		const Dent* Dents, int32_t Count)
+	{
+		const double Len = std::sqrt(Dx * Dx + Dy * Dy + Dz * Dz);
+		if (Len > 1e-12) { Dx /= Len; Dy /= Len; Dz /= Len; }
+		double Sum = 0.0;
+		for (int32_t I = 0; I < Count; ++I)
+		{
+			const Dent& D = Dents[I];
+			const double K = Dx * D.X + Dy * D.Y + Dz * D.Z;   // cos угла
+			if (K >= D.CosR)
+			{
+				const double Span = 1.0 - D.CosR;
+				const double T = (Span > 1e-12) ? ((K - D.CosR) / Span) : 1.0;
+				Sum += D.Depth * T * T;
+			}
+		}
+		return Sum;
+	}
+
+	/**
+	 * Высота рельефа с учётом воронок игроков.
+	 *
+	 * Базовая высота из [`HeightDir`] минус сумма воронок. Воронки применяются
+	 * к ПОЛНОМУ рельефу (detail=1): копание влияет на физику и плотный участок.
+	 */
+	inline double HeightWithDents(
+		double X, double Y, double Z,
+		double Amplitude, double SeaLevel, uint64_t Seed, int32_t Detail,
+		const Dent* Dents, int32_t Count)
+	{
+		const double Base = HeightDir(X, Y, Z, Amplitude, SeaLevel, Seed, Detail);
+		if (Count <= 0)
+		{
+			return Base;
+		}
+		return Base - DentsOffset(X, Y, Z, Dents, Count);
+	}
+
 	/** Биом по высоте над уровнем океана. Зеркало `Terrain::biome`. */
 	inline int32_t BiomeFromHeight(double Height, double Amplitude)
 	{

@@ -211,6 +211,16 @@ pub enum Message {
     /// относительно центра домашней планеты. Так клиент не хардкодит систему,
     /// а рисует то, что сгенерировал сервер.
     ServerSystem { id: u32, name: String, bodies: Vec<SystemBodyDto> },
+    /// Клиент: копать грунт в направлении взгляда.
+    ///
+    /// `slot` — номер воронки на планете (слот в списке деформаций),
+    /// `dir` — направление из центра планеты (единичное), `cos_radius` —
+    /// косинус углового радиуса воронки, `depth` — глубина в единицах длины.
+    ClientDig { slot: u32, dir: Vec3, cos_radius: f64, depth: f64 },
+    /// Сервер: применённая воронка (репликация всем, включая автора).
+    ///
+    /// Клиент вставляет её в свой список деформаций и перестраивает рельеф.
+    ServerTerrainDig { slot: u32, dir: Vec3, cos_radius: f64, depth: f64 },
 }
 
 /// Тело системы в сообщении.
@@ -509,6 +519,7 @@ mod wire {
     const TAG_CLIENT_CHARACTER: u8 = 17;
     const TAG_SERVER_CHARACTER: u8 = 18;
     const TAG_SYSTEM: u8 = 19;
+    const TAG_DIG: u8 = 20;
 
     pub fn encode(msg: &Message) -> Vec<u8> {
         let mut w = Writer::new();
@@ -671,6 +682,26 @@ mod wire {
                     w.f32(b.omega);
                     w.f64(b.radius);
                 }
+            }
+            Message::ClientDig { slot, dir, cos_radius, depth } => {
+                w.u8(TAG_DIG);
+                w.bool(false);   // 0 = запрос клиента
+                w.u32(*slot);
+                w.f64(dir.x);
+                w.f64(dir.y);
+                w.f64(dir.z);
+                w.f64(*cos_radius);
+                w.f64(*depth);
+            }
+            Message::ServerTerrainDig { slot, dir, cos_radius, depth } => {
+                w.u8(TAG_DIG);
+                w.bool(true);    // 1 = применённая воронка от сервера
+                w.u32(*slot);
+                w.f64(dir.x);
+                w.f64(dir.y);
+                w.f64(dir.z);
+                w.f64(*cos_radius);
+                w.f64(*depth);
             }
         }
         w.buf
@@ -835,6 +866,18 @@ mod wire {
                 }
                 Ok(Message::ServerSystem { id, name, bodies })
             }
+            TAG_DIG => {
+                let from_server = r.bool()?;
+                let slot = r.u32()?;
+                let dir = Vec3::new(r.f64()?, r.f64()?, r.f64()?);
+                let cos_radius = r.f64()?;
+                let depth = r.f64()?;
+                if from_server {
+                    Ok(Message::ServerTerrainDig { slot, dir, cos_radius, depth })
+                } else {
+                    Ok(Message::ClientDig { slot, dir, cos_radius, depth })
+                }
+            }
             other => Err(WireError::BadTag(other)),
         }
     }
@@ -898,8 +941,25 @@ mod tests {
     use super::*;
 
     #[test]
-    fn roundtrip_quantized_position() {
-        let v = Vec3::new(1234.5678, -98765.4321, 0.0625);
+    fn dig_roundtrip() {
+        let req = Message::ClientDig {
+            slot: 3,
+            dir: Vec3::new(0.1, -0.9, 0.42),
+            cos_radius: 0.9998,
+            depth: 12.5,
+        };
+        assert_eq!(decode(&encode(&req)).unwrap(), req);
+        let applied = Message::ServerTerrainDig {
+            slot: 3,
+            dir: Vec3::new(0.1, -0.9, 0.42),
+            cos_radius: 0.9998,
+            depth: 12.5,
+        };
+        assert_eq!(decode(&encode(&applied)).unwrap(), applied);
+    }
+
+    #[test]
+    fn roundtrip_quantized_position() {        let v = Vec3::new(1234.5678, -98765.4321, 0.0625);
         let w = v.to_wire();
         let back = Vec3::from_wire(w);
         // Точность — 1 мм.

@@ -43,7 +43,7 @@ window.PLAN = {
         { "title": "Атмосфера, скайбокс и постобработка", "title_en": "Atmosphere, skybox and post-processing", "status": "done" },
         { "title": "Вид от первого лица (персонаж и корабль)", "title_en": "First-person view (character and ship)", "status": "done" },
         { "title": "Клиентский каркас: сетевой рендер мира", "title_en": "Client skeleton: networked world rendering", "status": "done" },
-        { "title": "Разрушение вокселей: копание и взрывы (в клиент не подключены)", "title_en": "Voxel destruction: digging and explosions (not wired into the client)", "status": "in_progress" },
+        { "title": "Копание грунта в игре (ЛКМ, сервер-авторитетно, с репликацией)", "title_en": "Terrain digging in game (LMB, server-authoritative, replicated)", "status": "done" },
         { "title": "Система небесных тел (генератор есть; в игре одна планета)", "title_en": "Celestial body system (generator exists; the game has one planet)", "status": "in_progress" }
       ]
     },

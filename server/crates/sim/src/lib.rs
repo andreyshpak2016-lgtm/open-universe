@@ -20,7 +20,7 @@ pub mod terrain;
 
 /// Реэкспорт базовых типов, чтобы потребителям хватало одного крейта.
 pub use ou_protocol::Vec3;
-pub use terrain::{landing, normalize, Biome, Terrain, TerrainParams, DEFAULT_SEA_LEVEL, TERRAIN_VERSION};
+pub use terrain::{landing, normalize, Biome, Dent, Terrain, TerrainParams, DEFAULT_SEA_LEVEL, MAX_DENTS, TERRAIN_VERSION};
 
 // ---------------------------------------------------------------------------
 // Детерминированная тригонометрия

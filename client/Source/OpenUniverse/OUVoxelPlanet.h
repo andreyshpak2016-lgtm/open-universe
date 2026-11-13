@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
 #include "OpenUniverseTypes.h"
+#include "OUTerrain.h"
 #include "OUVoxelPlanet.generated.h"
 
 class UProceduralMeshComponent;
@@ -135,6 +136,20 @@ public:
 	 */
 	double SpawnRoughnessServer(const FVector& DirServer, double RadiusM) const;
 
+	/**
+	 * Добавить/обновить воронку, выкопанную игроком (от сервера).
+	 *
+	 * Воронки хранятся списком слотов; повторный слот углубляет ту же яму.
+	 * После добавления нужно перестроить меш (`RebuildLocal` + `BuildPlanet`).
+	 */
+	void ApplyDent(int32 Slot, double X, double Y, double Z, double CosRadius, double Depth);
+
+	/** Сколько воронок сейчас учтено (для диагностики). */
+	int32 DentCount() const { return Dents.Num(); }
+
+	/** Воронки для общей формулы высоты (в серверных осях). */
+	const TArray<OULT::Dent>& DentList() const { return Dents; }
+
 	/** Точка появления в СЕРВЕРНЫХ единицах (как хранит корабль). */
 	static FVector HomeSpawnServer(float Clearance);
 
@@ -189,6 +204,12 @@ public:
 
 	/** Максимум облачных «клубов» на планету (пул создаётся в конструкторе). */
 	static constexpr int32 MaxCloudPuffs = 160;
+
+	/** Воронки, выкопанные игроками (общий список, применяется в высоте). */
+	TArray<OULT::Dent> Dents;
+
+	/** Последний центр локального участка (задаёт персонаж) — для перестройки. */
+	FVector LocalDentCenter = FVector(FLT_MAX, FLT_MAX, FLT_MAX);
 
 protected:
 	virtual void BeginPlay() override;

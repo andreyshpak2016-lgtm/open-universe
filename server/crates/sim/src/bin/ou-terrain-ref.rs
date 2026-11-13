@@ -47,6 +47,15 @@ fn main() {
     // Точка появления (самое ровное место): клиент обязан выбрать ту же.
     let sp = ou_sim::home_spawn_direction();
     out.push_str(&format!("spawn {:.17} {:.17} {:.17}\n", sp.x, sp.y, sp.z));
+    // Воронка копания: клиент обязан посчитать ту же изменённую высоту.
+    {
+        let mut td = t;
+        let dent = ou_sim::Dent { x: sp.x, y: sp.y, z: sp.z, cos_r: 0.9999, depth: 40.0 };
+        ou_sim::Dent::place(&mut td.dents, &mut td.dent_count, 0, dent);
+        let dug = td.height(sp);
+        out.push_str(&format!("dent {:.17} {:.17} {:.17} {:.17} {:.17} {:.17}\n",
+            dent.x, dent.y, dent.z, dent.cos_r, dent.depth, dug));
+    }
     for d in &dirs {
         // Оба уровня детализации: `0` — глобальный меш, `1` — физика/локальный
         // участок. Клиент обязан совпасть с каждым бит-в-бит.

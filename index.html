@@ -6,7 +6,7 @@
   <title data-i18n="page.title">Open Universe — an open-space MMO sandbox</title>
   <meta name="description" content="Open Universe — one living universe, voxel building, a player-driven economy and programmable constructions. A development plan with live progress." />
   <link rel="icon" href="assets/blackhole.svg" type="image/svg+xml" />
-  <link rel="stylesheet" href="styles.css?v=0.52.0" />
+  <link rel="stylesheet" href="styles.css?v=0.53.0" />
 </head>
 <body>
 
@@ -206,7 +206,7 @@
           <table id="codestats">
             <thead><tr><th>Metric</th><th>Value</th></tr></thead>
             <tbody>
-              <tr><td>Core tests</td><td class="ok">247 passed</td></tr>
+              <tr><td>Core tests</td><td class="ok">249 passed</td></tr>
               <tr><td>Crates (modules)</td><td>13 (protocol, sim, spatial, net, shard, persist, economy, combat, render, script, build, server, client)</td></tr>
               <tr><td>Simulation tick rate</td><td>30 Hz (149 ticks per 5 s — verified)</td></tr>
               <tr><td>Persistence</td><td class="ok">world and economy survive a restart</td></tr>
@@ -223,7 +223,7 @@
           </table>
         </div>
 
-        <pre class="codeblock"><code>$ cargo test --workspace   →  247 passed (13 crates)
+        <pre class="codeblock"><code>$ cargo test --workspace   →  249 passed (13 crates)
 
 $ cargo run -p ou-combat --bin ou-combat-demo
 === Hit chance (1000 shots) ===
@@ -296,7 +296,7 @@ VWAP = 26 · Trades in the log: 2</code></pre>
       <div class="download-grid">
         <div class="panel dl-card">
           <div class="dl-head">
-            <span class="dl-ver" id="dl-version">v0.52.0</span>
+            <span class="dl-ver" id="dl-version">v0.53.0</span>
             <span class="hero-badge" style="font-size:.72rem"><span class="dot"></span> <span data-i18n="dl.latestBadge">Latest version</span></span>
           </div>
           <h3 data-i18n="dl.cardTitle">Open Universe launcher</h3>
@@ -362,7 +362,7 @@ VWAP = 26 · Trades in the log: 2</code></pre>
           <p class="dl-desc" data-i18n="dl.devDesc">The project is open: the core is Rust, the client is Unreal Engine 5. Build from source.</p>
           <pre class="codeblock"><code>git clone https://github.com/andreyshpak2016-lgtm/open-universe
 cd open-universe/server
-cargo build --release        # core (247 tests)
+cargo build --release        # core (249 tests)
 
 # UE5 client (needs UE 5.5+, VS 2022 and the .NET Framework SDK)
 powershell -File tools/build-client.ps1
@@ -373,7 +373,7 @@ powershell -File tools/make-map.ps1</code></pre>
         <aside class="panel dl-side">
           <h3 data-i18n="dl.checkTitle">Verify everything works</h3>
           <pre class="codeblock"><code>cd server
-cargo test --workspace        # 247 Rust tests
+cargo test --workspace        # 249 Rust tests
 
 # check the C++ client against a real server packet
 powershell -File tools/test-client.ps1</code></pre>
@@ -428,8 +428,8 @@ powershell -File tools/test-client.ps1</code></pre>
     <span aria-hidden="true">❤</span> <span data-i18n="sponsor.fab">Become a sponsor</span>
   </a>
 
-  <script src="i18n.js?v=0.52.0"></script>
-  <script src="data.js?v=0.52.0"></script>
-  <script src="app.js?v=0.52.0"></script>
+  <script src="i18n.js?v=0.53.0"></script>
+  <script src="data.js?v=0.53.0"></script>
+  <script src="app.js?v=0.53.0"></script>
 </body>
 </html>

@@ -58,6 +58,7 @@ namespace OUWire
         TagClientCharacter = 17,
         TagServerCharacter = 18,
         TagSystem = 19,
+        TagDig = 20,
     };
 
     /// Действия редактора конструкций.
@@ -242,6 +243,16 @@ namespace OUWire
             return true;
         }
 
+        bool F64(double& v)
+        {
+            const uint8_t* p = nullptr;
+            if (!Take(8, p)) return false;
+            uint64_t bits = 0;
+            for (int i = 0; i < 8; ++i) { bits |= static_cast<uint64_t>(p[i]) << (8 * i); }
+            std::memcpy(&v, &bits, 8);
+            return true;
+        }
+
         bool I32(int32_t& v)
         {
             const uint8_t* p = nullptr;
@@ -311,8 +322,7 @@ namespace OUWire
     }
 
     /// Разобрать снимок (tag 5). Позиции переводятся в сантиметры UE.
-    inline bool DecodeSnapshot(const uint8_t* body, size_t len, Snapshot& out)
-    {
+    inline bool DecodeSnapshot(const uint8_t* body, size_t len, Snapshot& out)    {
         Reader r{body, len, 0};
         uint8_t tag = 0;
         if (!r.U8(tag)) return false;
@@ -593,6 +603,58 @@ namespace OUWire
     }
 
     // --- Кодирование (для тестов и клиента) ---
+
+    /// Воронка, выкопанная игроком (общая с сервером). Зеркало `ou_protocol`.
+    struct DentWire
+    {
+        uint32_t Slot = 0;
+        double X = 0.0, Y = 0.0, Z = 0.0;
+        double CosRadius = 1.0;
+        double Depth = 0.0;
+    };
+
+    /// Собрать запрос копания (клиент → сервер, тег 20).
+    ///
+    /// Формат: [tag][from_server=0][slot u32][dir f64×3][cos_radius f64][depth f64].
+    inline std::vector<uint8_t> EncodeDig(
+        uint32_t slot, double x, double y, double z, double cosRadius, double depth)
+    {
+        std::vector<uint8_t> out;
+        out.push_back(TagDig);
+        out.push_back(0);   // from_server = false
+        auto push_u32 = [&out](uint32_t v) {
+            out.push_back(static_cast<uint8_t>(v & 0xFF));
+            out.push_back(static_cast<uint8_t>((v >> 8) & 0xFF));
+            out.push_back(static_cast<uint8_t>((v >> 16) & 0xFF));
+            out.push_back(static_cast<uint8_t>((v >> 24) & 0xFF));
+        };
+        auto push_f64 = [&out](double v) {
+            uint64_t bits = 0;
+            std::memcpy(&bits, &v, 8);
+            for (int i = 0; i < 8; ++i) { out.push_back(static_cast<uint8_t>((bits >> (8 * i)) & 0xFF)); }
+        };
+        push_u32(slot);
+        push_f64(x); push_f64(y); push_f64(z);
+        push_f64(cosRadius);
+        push_f64(depth);
+        return out;
+    }
+
+    /// Разобрать воронку от сервера (тег 20, from_server=1).
+    inline bool DecodeDig(const uint8_t* body, size_t len, DentWire& out)
+    {
+        Reader r{body, len, 0};
+        uint8_t tag = 0;
+        if (!r.U8(tag) || tag != TagDig) return false;
+        uint8_t fromServer = 0;
+        if (!r.U8(fromServer) || fromServer == 0) return false;
+        const uint8_t* p = nullptr;
+        if (!r.Take(4, p)) return false;
+        out.Slot = static_cast<uint32_t>(p[0]) | (static_cast<uint32_t>(p[1]) << 8)
+                 | (static_cast<uint32_t>(p[2]) << 16) | (static_cast<uint32_t>(p[3]) << 24);
+        return r.F64(out.X) && r.F64(out.Y) && r.F64(out.Z)
+            && r.F64(out.CosRadius) && r.F64(out.Depth);
+    }
 
     /// Собрать кадр ввода (клиент → сервер, тег 2).
     ///

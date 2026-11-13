@@ -10,6 +10,7 @@ use ou_net::{new_session_token, UdpTransport};
 use ou_persist::{save_world, FileStore};
 use ou_protocol::{BuildReason, InputFrame, Message, NetId, Snapshot, Vec3, TICK_DT};
 use ou_server::{Server, INTEREST_RADIUS};
+use ou_sim::Dent;
 use std::collections::BTreeMap;
 use std::net::SocketAddr;
 use std::thread::sleep;
@@ -93,6 +94,8 @@ fn main() {
     let mut snapshots_out: u64 = 0;
     let mut saves: u64 = 0;
     let mut saved_bytes: u64 = 0;
+    /// Воронки, применённые на этом тике: (слот, воронка) — рассылаем всем.
+    let mut pending_digs: Vec<(u32, Dent)> = Vec::new();
 
     while start.elapsed().as_secs_f64() < seconds {
         let loop_start = Instant::now();
@@ -151,6 +154,13 @@ fn main() {
                             server.ack_build(*pid, entity, revision);
                         }
                     }
+                    Message::ClientDig { slot, dir, cos_radius, depth } => {
+                        if clients.contains_key(&from) {
+                            // Авторитетно применяем воронку и рассылаем всем.
+                            let dent = server.dig(slot, dir, cos_radius, depth);
+                            pending_digs.push((slot, dent));
+                        }
+                    }
                     Message::ClientGrantBuild { entity, player } => {
                         if let Some(pid) = clients.get(&from) {
                             server.grant_build(*pid, entity, player);
@@ -167,6 +177,19 @@ fn main() {
         for (addr, reason) in build_results.drain(..) {
             let accepted = reason == BuildReason::Ok;
             net.send_to(token, addr, &Message::ServerBuildResult { accepted, reason }).ok();
+        }
+
+        // --- рассылка применённых воронок ВСЕМ (включая автора) ---
+        for (slot, d) in pending_digs.drain(..) {
+            let msg = Message::ServerTerrainDig {
+                slot,
+                dir: Vec3::new(d.x, d.y, d.z),
+                cos_radius: d.cos_r,
+                depth: d.depth,
+            };
+            for addr in clients.keys() {
+                net.send_to(token, *addr, &msg).ok();
+            }
         }
 
         // --- шаг симуляции и рассылка ---
