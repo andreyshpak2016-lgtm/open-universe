@@ -30,6 +30,13 @@ AOUBuildBlock::AOUBuildBlock()
 	{
 		BlockMesh->SetMaterial(0, Mat.Object);
 	}
+	// Тот же материал построек, что у базы (панельные линии), если сгенерирован.
+	static ConstructorHelpers::FObjectFinder<UMaterialInterface> Panel(
+		TEXT("/Game/Materials/M_BasePanel.M_BasePanel"));
+	if (Panel.Succeeded())
+	{
+		BlockMesh->SetMaterial(0, Panel.Object);
+	}
 	ApplyLook();
 }
 

@@ -1034,7 +1034,7 @@ void AOUPlayerMenuController::DrawGameHud(UCanvas* InCanvas)
 		const bool bInShip = ShipPawn != nullptr;
 		const FString Hint = bInShip
 			? TEXT("Мышь — обзор   ·   W/S — тяга   ·   A/D — стрейф   ·   Пробел/Ctrl — вверх/вниз   ·   ЛКМ — огонь   ·   F — выход")
-			: TEXT("Мышь — обзор   ·   W/A/S/D — ходьба   ·   Пробел — прыжок   ·   ЛКМ — копать   ·   B — строительство   ·   Alt — курсор");
+			: TEXT("Мышь — обзор   ·   W/A/S/D — ходьба   ·   ЛКМ — копать   ·   M — рынок   ·   B — строительство");
 		DrawText(InCanvas, Tiny, Hint, FVector2D(18, H - 22), Dim);
 	}
 }

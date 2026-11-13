@@ -38,7 +38,14 @@ AOUCharacterPawn::AOUCharacterPawn()
 
 	Capsule = CreateDefaultSubobject<UCapsuleComponent>(TEXT("Capsule"));
 	Capsule->InitCapsuleSize(CapsuleRadius, CapsuleHalfHeight);
-	Capsule->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	// Капсула — твёрдая: персонаж не проходит сквозь постройки и стоит на них.
+	// Рельеф планеты ведёт серверная формула (аналитическая привязка ниже),
+	// но здания базы и блоки редактора — обычные меши, и без коллизии игрок
+	// «проваливается» через них. Включаем блокировку и свипаем движение.
+	Capsule->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+	Capsule->SetCollisionObjectType(ECC_Pawn);
+	Capsule->SetCollisionResponseToAllChannels(ECR_Block);
+	Capsule->SetGenerateOverlapEvents(false);
 	SetRootComponent(Capsule);
 
 	// Базовые меши движка и материал (параметрический цвет).
@@ -999,8 +1006,33 @@ void AOUCharacterPawn::Tick(float DeltaSeconds)
 	}
 	bJumpQueued = false;
 
-	// Шаг позиции.
+	// Шаг позиции со свипом: персонаж не должен проходить сквозь постройки и
+	// блоки редактора (у них есть коллизия). По рельефу ниже привязываемся
+	// аналитически, но здания ловим обычным свипом UE.
 	FVector NewPos = Pos + Velocity * DeltaSeconds;
+	{
+		FHitResult Hit;
+		FCollisionQueryParams Params(SCENE_QUERY_STAT(OUCharMove), false, this);
+		const bool bHit = World->SweepSingleByChannel(
+			Hit, Pos, NewPos, FQuat::Identity, ECC_Pawn,
+			FCollisionShape::MakeCapsule(CapsuleRadius, CapsuleHalfHeight), Params);
+		if (bHit)
+		{
+			NewPos = Pos + (NewPos - Pos) * Hit.Time;
+			// Гасим скорость в направлении нормали стены (скользим вдоль неё).
+			const FVector N = Hit.Normal;
+			const double VN = FVector::DotProduct(Velocity, N);
+			if (VN < 0.0)
+			{
+				Velocity -= N * VN;
+			}
+			// Стоим на полу (нормаль вверх): можно прыгать.
+			if (FVector::DotProduct(N, Up) > 0.5)
+			{
+				bGrounded = true;
+			}
+		}
+	}
 
 	// Привязка к рельефу: не проваливаемся под поверхность.
 	const FVector Dir = NewPos.GetSafeNormal();

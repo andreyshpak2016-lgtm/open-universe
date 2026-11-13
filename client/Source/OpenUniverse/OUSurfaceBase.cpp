@@ -48,6 +48,14 @@ AOUSurfaceBase::AOUSurfaceBase()
 	{
 		BaseMaterial = Mat.Object;
 	}
+	// Собственный материал построек (панельные линии) — если сгенерирован
+	// (tools/make-materials.ps1). Иначе остаётся базовый материал движка.
+	static ConstructorHelpers::FObjectFinder<UMaterialInterface> Panel(
+		TEXT("/Game/Materials/M_BasePanel.M_BasePanel"));
+	if (Panel.Succeeded())
+	{
+		BaseMaterial = Panel.Object;
+	}
 }
 
 void AOUSurfaceBase::BeginPlay()
@@ -130,7 +138,13 @@ void AOUSurfaceBase::AddBlock(const FVector& Offset, const FVector& Size, const 
 	Comp->SetRelativeLocation(Offset);
 	// Базовый куб движка — 100 см; масштаб задаём относительно него.
 	Comp->SetRelativeScale3D(Size / 100.f);
-	Comp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	// Блок — твёрдый: персонаж не должен «проваливаться» сквозь него. Блокируем
+	// и мир (капсула персонажа — Pawn), и луч прицела (Visibility).
+	Comp->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+	Comp->SetCollisionObjectType(ECC_WorldStatic);
+	Comp->SetCollisionResponseToAllChannels(ECR_Block);
+	Comp->SetMobility(EComponentMobility::Movable);
+	Comp->SetGenerateOverlapEvents(false);
 	if (BaseMaterial)
 	{
 		Comp->SetMaterial(0, BaseMaterial);
@@ -158,15 +172,15 @@ void AOUSurfaceBase::BuildBase()
 	}
 
 	// --- Палитра комплекса: «техно» серый-синий, тёплые акценты, техцвет ---
-	const FLinearColor Concrete(0.20f, 0.22f, 0.26f);
-	const FLinearColor Deck(0.15f, 0.17f, 0.21f);
-	const FLinearColor Steel(0.34f, 0.37f, 0.43f);
-	const FLinearColor Dark(0.10f, 0.11f, 0.14f);
-	const FLinearColor Glass(0.10f, 0.55f, 0.95f);
-	const FLinearColor Warm(1.00f, 0.55f, 0.10f);
-	const FLinearColor Fuel(0.85f, 0.70f, 0.20f);
-	const FLinearColor Cyan(0.00f, 0.90f, 0.82f);
-	const FLinearColor Strip(0.20f, 0.85f, 1.00f);
+	const FLinearColor Concrete(0.42f, 0.45f, 0.50f);
+	const FLinearColor Deck(0.34f, 0.37f, 0.42f);
+	const FLinearColor Steel(0.56f, 0.60f, 0.66f);
+	const FLinearColor Dark(0.18f, 0.19f, 0.22f);
+	const FLinearColor Glass(0.16f, 0.62f, 0.96f);
+	const FLinearColor Warm(1.00f, 0.58f, 0.14f);
+	const FLinearColor Fuel(0.88f, 0.74f, 0.24f);
+	const FLinearColor Cyan(0.10f, 0.92f, 0.86f);
+	const FLinearColor Strip(0.30f, 0.88f, 1.00f);
 
 	// --- Посадочное поле: РОВНАЯ плита-платформа с бортом вниз к земле ---
 	// Место появления — самое ровное на планете, но перепад в десятки метров
