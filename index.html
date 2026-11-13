@@ -206,7 +206,7 @@
           <table id="codestats">
             <thead><tr><th>Metric</th><th>Value</th></tr></thead>
             <tbody>
-              <tr><td>Core tests</td><td class="ok">223 passed</td></tr>
+              <tr><td>Core tests</td><td class="ok">246 passed</td></tr>
               <tr><td>Crates (modules)</td><td>13 (protocol, sim, spatial, net, shard, persist, economy, combat, render, script, build, server, client)</td></tr>
               <tr><td>Simulation tick rate</td><td>30 Hz (149 ticks per 5 s — verified)</td></tr>
               <tr><td>Persistence</td><td class="ok">world and economy survive a restart</td></tr>
@@ -223,7 +223,7 @@
           </table>
         </div>
 
-        <pre class="codeblock"><code>$ cargo test --workspace   →  223 passed (13 crates)
+        <pre class="codeblock"><code>$ cargo test --workspace   →  246 passed (13 crates)
 
 $ cargo run -p ou-combat --bin ou-combat-demo
 === Hit chance (1000 shots) ===
@@ -362,7 +362,7 @@ VWAP = 26 · Trades in the log: 2</code></pre>
           <p class="dl-desc" data-i18n="dl.devDesc">The project is open: the core is Rust, the client is Unreal Engine 5. Build from source.</p>
           <pre class="codeblock"><code>git clone https://github.com/andreyshpak2016-lgtm/open-universe
 cd open-universe/server
-cargo build --release        # core (223 tests)
+cargo build --release        # core (246 tests)
 
 # UE5 client (needs UE 5.5+, VS 2022 and the .NET Framework SDK)
 powershell -File tools/build-client.ps1
@@ -373,7 +373,7 @@ powershell -File tools/make-map.ps1</code></pre>
         <aside class="panel dl-side">
           <h3 data-i18n="dl.checkTitle">Verify everything works</h3>
           <pre class="codeblock"><code>cd server
-cargo test --workspace        # 223 Rust tests
+cargo test --workspace        # 246 Rust tests
 
 # check the C++ client against a real server packet
 powershell -File tools/test-client.ps1</code></pre>
