@@ -145,6 +145,34 @@ struct FOUOrderLevel
 	int64 Qty = 0;
 };
 
+/** Предмет-вход рецепта (id и количество). */
+USTRUCT(BlueprintType)
+struct FOURecipeItem
+{
+	GENERATED_BODY()
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Economy")
+	int32 Item = 0;
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Economy")
+	int64 Qty = 0;
+};
+
+/** Рецепт производства (для окна «Производство»). */
+USTRUCT(BlueprintType)
+struct FOURecipe
+{
+	GENERATED_BODY()
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Economy")
+	int32 Id = 0;
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Economy")
+	FString Name;
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Economy")
+	TArray<FOURecipeItem> Inputs;
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Economy")
+	int32 OutItem = 0;
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Economy")
+	int64 OutQty = 0;
+};
+
 /** Воронка (яма) на планете, применённая сервером. */USTRUCT(BlueprintType)
 struct FOUTerrainDent
 {
@@ -341,6 +369,33 @@ public:
 	/** Всего добыто за сессию по каждому слою (0 руда,1 лёд,2 кристалл,3 металл). */
 	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Economy")
 	TArray<int64> DigTotalByLayer;
+
+	// --- Производство (крафт) ---
+
+	/** Рецепты производства, присланные сервером (для окна «Производство»). */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Economy")
+	TArray<FOURecipe> Recipes;
+
+	/** Приходил ли каталог рецептов. */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Economy")
+	bool bRecipesReceived = false;
+
+	/** Последний результат крафта. */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Economy")
+	bool bLastCraftOk = false;
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Economy")
+	int32 LastCraftItem = 0;
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Economy")
+	int64 LastCraftQty = 0;
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Economy")
+	FString LastCraftReason;
+
+	/** Время последнего крафта (мир) — для всплывающей подсказки. */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Economy")
+	float LastCraftTime = -100.f;
+
+	/** Отправить запрос на выполнение рецепта. */
+	void SendCraft(int32 RecipeId);
 
 	/** Последний результат команды строительства: принята ли. */
 	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Build")

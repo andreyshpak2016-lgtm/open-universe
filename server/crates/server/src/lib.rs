@@ -10,7 +10,7 @@
 
 use ou_build::{BuildError, Color as BuildColor, VoxelGrid};
 use ou_combat::{weapon, ShipHull, Weapon};
-use ou_economy::{Inventory, ItemRegistry, Market, MatchingEngine, Side};
+use ou_economy::{Inventory, ItemRegistry, Market, MatchingEngine, Production, Side};
 use ou_protocol::{
     BuildAction, BuildCommand, BuildEdit, BuildReason, EntityState, InputFrame, Message, NetId,
     ShotEvent, Snapshot, Vec3,
@@ -144,6 +144,8 @@ pub struct Economy {
     pub registry: ItemRegistry,
     /// Движок рынка: стакан ордеров + инвентарь (по владельцу и системе).
     pub engine: MatchingEngine,
+    /// Каталог рецептов производства (руда → металл → сплав → детали → корабль).
+    pub production: Production,
     /// Кредиты каждого игрока.
     pub credits: BTreeMap<NetId, u64>,
     /// Звёздная система домашней планеты (рынки изолированы по системам).
@@ -164,6 +166,7 @@ impl Economy {
         let registry = ItemRegistry::default_universe();
         let find = |n: &str| -> u32 { (1..=registry.len() as u32).find(|i| registry.name(*i) == n).unwrap_or(0) };
         let engine = MatchingEngine::new(Market::new(), Inventory::new());
+        let production = Production::default_chain(&registry);
         Economy {
             ore_item: find("руда"),
             fuel_item: find("топливо"),
@@ -172,6 +175,7 @@ impl Economy {
             metal_item: find("металл"),
             registry,
             engine,
+            production,
             credits: BTreeMap::new(),
             system: 1,
         }
@@ -358,6 +362,33 @@ impl Server {
             }
         }
         (credits, items, bids, asks)
+    }
+
+    /// Список рецептов производства (id, имя, входы, выход, тики) для UI.
+    pub fn recipe_list(&self) -> Vec<(u32, String, Vec<(u32, u64)>, (u32, u64), u64)> {
+        let sys = self.economy.system;
+        let _ = sys;
+        self.economy
+            .production
+            .iter()
+            .map(|r| (r.id, r.name.clone(), r.inputs.clone(), r.output, r.ticks))
+            .collect()
+    }
+
+    /// Выполнить рецепт производства для игрока (авторитетно).
+    ///
+    /// Списывает входы из инвентаря и начисляет выход. Возвращает (id, кол-во)
+    /// выходного предмета или строку-ошибку.
+    pub fn craft_as(&mut self, player: NetId, recipe: u32) -> Result<(u32, u64), String> {
+        let sys = self.economy.system;
+        let inv = &mut self.economy.engine.inventory;
+        match self.economy.production.craft(recipe, inv, player, sys) {
+            Ok(out) => {
+                self.market_dirty = true;
+                Ok(out)
+            }
+            Err(e) => Err(e.to_string()),
+        }
     }
 
     /// Создать пустую конструкцию для сущности.
@@ -1597,6 +1628,31 @@ mod tests {
         assert_eq!(*s.economy.credits.get(&2).unwrap(), c2_start - mined * 10);
         assert_eq!(s.economy.engine.inventory.amount(2, 1, ore), mined);
         assert_eq!(s.economy.engine.inventory.amount(1, 1, ore), 0);
+    }
+
+    #[test]
+    fn craft_uses_production_chain_in_game() {
+        // Копаем руду, затем плавим металл в окне производства — вживую.
+        let mut s = Server::new();
+        s.connect_on_planet(1);
+        let dir = ou_sim::home_spawn_direction();
+        let ore = s.economy.ore_item;
+        // Накопить руды (у поверхности — руда).
+        for i in 0..6 { s.dig_as(1, i, dir, 0.9995, 10.0); }
+        assert!(s.economy.engine.inventory.amount(1, 1, ore) >= 2, "нужно ≥2 руды");
+        // Первый рецепт — «выплавка металла» (2 руды → 1 металл).
+        let recipes = s.recipe_list();
+        assert!(!recipes.is_empty(), "каталог рецептов не пуст");
+        // Первый рецепт цепочки — «выплавка металла» (2 руды → 1 металл).
+        let (recipe_id, ref _name, ref _inputs, (out_item, _), _) = recipes[0];
+        let before = s.economy.engine.inventory.amount(1, 1, out_item);
+        let res = s.craft_as(1, recipe_id);
+        assert!(res.is_ok(), "крафт должен пройти: {:?}", res);
+        assert_eq!(s.economy.engine.inventory.amount(1, 1, out_item), before + 1);
+
+        // Крафт без входов — отказ (без падения).
+        let bad = s.craft_as(1, 9999);
+        assert!(bad.is_err(), "несуществующий рецепт должен быть отклонён");
     }
 
     #[test]

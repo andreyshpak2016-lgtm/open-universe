@@ -337,6 +337,18 @@ void AOUPlayerMenuController::OnLeftClick()
 				}
 				return;
 			}
+			// Производство (крафт): строки рецептов с id 200+ в окне рынка.
+			if (bMarketOpen && B.Id >= 200)
+			{
+				ResolveNet();
+				const int32 Index = B.Id - 200;
+				if (Net && Net->Recipes.IsValidIndex(Index))
+				{
+					Net->SendCraft(Net->Recipes[Index].Id);
+					UE_LOG(LogOUMenu, Log, TEXT("Крафт: запрошен рецепт %d"), Net->Recipes[Index].Id);
+				}
+				return;
+			}
 			if (Screen == EOUMenuScreen::Character)
 			{
 				if (B.Id == 1)
@@ -1043,6 +1055,50 @@ void AOUPlayerMenuController::DrawMarket(UCanvas* InCanvas)
 	DrawText(InCanvas, Small,
 		TEXT("1 — продать 1 руду по 20   ·   2 — купить 1 руду по 20   ·   (позже: выбор цены)"),
 		P + FVector2D(24, PH - 52), Dim);
+
+	// --- Производство (крафт): рецепты с сервера ---
+	// Панель внизу слева, ВНУТРИ окна рынка (чтобы не уходила за экран).
+	const float CPW = PW * 0.5f - 36.f;
+	const float CPH = 150.f;
+	const FVector2D CP(P.X + 24, P.Y + PH - CPH - 20.f);
+	GlassPanel(InCanvas, CP, FVector2D(CPW, CPH), PanelB, ColAccent);
+	DrawText(InCanvas, Small, TEXT("ПРОИЗВОДСТВО"), CP + FVector2D(12, 8), ColAccent);
+	DrawText(InCanvas, Tiny, TEXT("ЛКМ — изготовить"), CP + FVector2D(CPW - 150, 10), Dim);
+
+	const TArray<FOURecipe>& Recipes = Net ? Net->Recipes : TArray<FOURecipe>();
+	if (Recipes.Num() == 0)
+	{
+		DrawText(InCanvas, Small, TEXT("(каталог ещё не получен)"), CP + FVector2D(12, 34), Dim);
+	}
+	for (int32 i = 0; i < Recipes.Num() && i < 6; ++i)
+	{
+		const FOURecipe& R = Recipes[i];
+		FString Ins;
+		for (int32 k = 0; k < R.Inputs.Num(); ++k)
+		{
+			const FOURecipeItem& In = R.Inputs[k];
+			Ins += FString::Printf(TEXT("%s%s ×%lld"), k ? TEXT(", ") : TEXT(""),
+				*ItemName(In.Item), In.Qty);
+		}
+		bool bCan = true;
+		if (Net)
+		{
+			for (const FOURecipeItem& In : R.Inputs)
+			{
+				int64 Have = 0;
+				for (const FOUInventoryItem& Iv : Net->InventoryItems)
+				{
+					if (Iv.Item == In.Item) { Have = Iv.Qty; break; }
+				}
+				if (Have < In.Qty) { bCan = false; break; }
+			}
+		}
+		const FLinearColor RowC = bCan ? ColOk : Dim;
+		const FString Row = FString::Printf(TEXT("%-20s  %s → %s ×%lld"),
+			*R.Name, *Ins, *ItemName(R.OutItem), R.OutQty);
+		DrawText(InCanvas, Tiny, Row, CP + FVector2D(12, 30 + i * 18.f), RowC);
+		Buttons.Add({ FVector2D(CP.X + 8, CP.Y + 26 + i * 18.f), FVector2D(CPW - 16, 18.f), 200 + i });
+	}
 }
 
 FString AOUPlayerMenuController::ItemName(int32 Item)

@@ -1432,6 +1432,31 @@ void AOUCharacterPawn::Tick(float DeltaSeconds)
 		}
 	}
 
+	// Тестовый крафт (`-OUAutoCraft`): открыть рынок, накопить руду, изготовить
+	// металл и показать результат — проверка производства вживую.
+	if (FParse::Param(FCommandLine::Get(), TEXT("OUAutoCraft")))
+	{
+		CraftTimer += DeltaSeconds;
+		if (CraftTimer >= 1.4f)
+		{
+			CraftTimer = 0.f;
+			++CraftCount;
+			if (CraftCount == 1)
+			{
+				ToggleMarket();
+			}
+			if (CraftCount <= 6)
+			{
+				DigTerrain();   // накопить руду для рецепта «выплавка металла» (2 руды → 1 металл)
+			}
+			else if (CraftCount >= 8 && Net && Net->Recipes.Num() > 0)
+			{
+				// Рецепт с выходом «металл» (обычно первый в цепочке).
+				Net->SendCraft(Net->Recipes[0].Id);
+			}
+		}
+	}
+
 	// Тестовое строительство: открыть меню, поставить блоки и проверить
 	// удаление/покраску (всё через сервер — правки авторитетные).
 	if (bAutoBuild)

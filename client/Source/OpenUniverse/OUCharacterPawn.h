@@ -189,6 +189,10 @@ public:
 	float TradeTimer = 0.f;
 	int32 TradeCount = 0;
 
+	/** Таймер/счётчик тестового крафта (`-OUAutoCraft`). */
+	float CraftTimer = 0.f;
+	int32 CraftCount = 0;
+
 	/** Название типа блока (для меню). */
 	static FString BuildPartName(int32 Index);
 

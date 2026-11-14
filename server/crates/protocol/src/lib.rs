@@ -249,6 +249,15 @@ pub enum Message {
     ClientPing { nonce: u32 },
     /// Сервер: ответ на `ClientPing` — эхо `nonce`.
     ServerPong { nonce: u32 },
+    /// Сервер: список рецептов производства (для окна «Производство»).
+    ///
+    /// Каждый рецепт: id, имя, входы (id, количество), выход (id, количество),
+    /// время в тиках.
+    ServerRecipes { recipes: Vec<(u32, String, Vec<(u32, u64)>, (u32, u64), u64)> },
+    /// Клиент: выполнить рецепт производства.
+    ClientCraft { recipe: u32 },
+    /// Сервер: результат крафта — что получилось, или причина отказа.
+    ServerCraftResult { ok: bool, item: u32, qty: u64, reason: String },
 }
 
 /// Тело системы в сообщении.
@@ -553,6 +562,9 @@ mod wire {
     const TAG_DIG_YIELD: u8 = 23;
     const TAG_PING: u8 = 24;
     const TAG_PONG: u8 = 25;
+    const TAG_RECIPES: u8 = 26;
+    const TAG_CRAFT: u8 = 27;
+    const TAG_CRAFT_RESULT: u8 = 28;
 
     pub fn encode(msg: &Message) -> Vec<u8> {
         let mut w = Writer::new();
@@ -779,6 +791,33 @@ mod wire {
                 w.u8(TAG_PONG);
                 w.u32(*nonce);
             }
+            Message::ServerRecipes { recipes } => {
+                w.u8(TAG_RECIPES);
+                w.varint(recipes.len() as u64);
+                for (id, name, inputs, (oitem, oqty), ticks) in recipes {
+                    w.varint(*id as u64);
+                    w.str(name);
+                    w.varint(inputs.len() as u64);
+                    for (item, qty) in inputs {
+                        w.varint(*item as u64);
+                        w.varint(*qty);
+                    }
+                    w.varint(*oitem as u64);
+                    w.varint(*oqty);
+                    w.varint(*ticks);
+                }
+            }
+            Message::ClientCraft { recipe } => {
+                w.u8(TAG_CRAFT);
+                w.varint(*recipe as u64);
+            }
+            Message::ServerCraftResult { ok, item, qty, reason } => {
+                w.u8(TAG_CRAFT_RESULT);
+                w.bool(*ok);
+                w.varint(*item as u64);
+                w.varint(*qty);
+                w.str(reason);
+            }
         }
         w.buf
     }
@@ -988,6 +1027,32 @@ mod wire {
             }
             TAG_PING => Ok(Message::ClientPing { nonce: r.u32()? }),
             TAG_PONG => Ok(Message::ServerPong { nonce: r.u32()? }),
+            TAG_RECIPES => {
+                let n = r.varint()? as usize;
+                let mut recipes = Vec::with_capacity(n);
+                for _ in 0..n {
+                    let id = r.varint()? as u32;
+                    let name = r.str()?;
+                    let ni = r.varint()? as usize;
+                    let mut inputs = Vec::with_capacity(ni);
+                    for _ in 0..ni {
+                        inputs.push((r.varint()? as u32, r.varint()?));
+                    }
+                    let oitem = r.varint()? as u32;
+                    let oqty = r.varint()?;
+                    let ticks = r.varint()?;
+                    recipes.push((id, name, inputs, (oitem, oqty), ticks));
+                }
+                Ok(Message::ServerRecipes { recipes })
+            }
+            TAG_CRAFT => Ok(Message::ClientCraft { recipe: r.varint()? as u32 }),
+            TAG_CRAFT_RESULT => {
+                let ok = r.bool()?;
+                let item = r.varint()? as u32;
+                let qty = r.varint()?;
+                let reason = r.str()?;
+                Ok(Message::ServerCraftResult { ok, item, qty, reason })
+            }
             other => Err(WireError::BadTag(other)),
         }
     }
@@ -1071,6 +1136,17 @@ mod tests {
         assert_eq!(decode(&encode(&ping)).unwrap(), ping);
         let pong = Message::ServerPong { nonce: 12345 };
         assert_eq!(decode(&encode(&pong)).unwrap(), pong);
+        let recipes = Message::ServerRecipes {
+            recipes: vec![
+                (1, "выплавка металла".into(), vec![(1, 2)], (4, 1), 5),
+                (7, "сборка корабля".into(), vec![(8, 1), (9, 2), (7, 2)], (10, 1), 30),
+            ],
+        };
+        assert_eq!(decode(&encode(&recipes)).unwrap(), recipes);
+        let craft = Message::ClientCraft { recipe: 3 };
+        assert_eq!(decode(&encode(&craft)).unwrap(), craft);
+        let res = Message::ServerCraftResult { ok: false, item: 0, qty: 0, reason: "не хватает входов".into() };
+        assert_eq!(decode(&encode(&res)).unwrap(), res);
     }
 
     #[test]

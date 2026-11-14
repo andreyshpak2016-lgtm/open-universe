@@ -236,6 +236,18 @@ void UOUClientNet::SendDig(int32 Slot, double X, double Y, double Z, double CosR
 	SendPacket(Arr);
 }
 
+void UOUClientNet::SendCraft(int32 RecipeId)
+{
+	if (!IsConnected())
+	{
+		return;
+	}
+	const std::vector<uint8_t> Body = OUWire::EncodeCraft(static_cast<uint32_t>(FMath::Max(0, RecipeId)));
+	TArray<uint8> Arr;
+	Arr.Append(Body.data(), static_cast<int32>(Body.size()));
+	SendPacket(Arr);
+}
+
 void UOUClientNet::SendMarketOrder(int32 Side, int32 Item, int64 Price, int64 Qty)
 {
 	if (!IsConnected())
@@ -562,6 +574,50 @@ void UOUClientNet::Poll()
 					}
 					PingSentTime.Remove(static_cast<int32>(Nonce));
 				}
+			}
+		}
+		else if (Body[0] == OUWire::TagRecipes) // каталог рецептов производства
+		{
+			std::vector<OUWire::Recipe> Rp;
+			if (OUWire::DecodeRecipes(Body.GetData(), static_cast<size_t>(Body.Num()), Rp))
+			{
+				Recipes.Reset(static_cast<int32>(Rp.size()));
+				for (const OUWire::Recipe& R : Rp)
+				{
+					FOURecipe E;
+					E.Id = static_cast<int32>(R.Id);
+					E.Name = FString(UTF8_TO_TCHAR(R.Name.c_str()));
+					for (const auto& In : R.Inputs)
+					{
+						FOURecipeItem It;
+						It.Item = static_cast<int32>(In.first);
+						It.Qty = static_cast<int64>(In.second);
+						E.Inputs.Add(It);
+					}
+					E.OutItem = static_cast<int32>(R.OutItem);
+					E.OutQty = static_cast<int64>(R.OutQty);
+					Recipes.Add(E);
+				}
+				bRecipesReceived = true;
+				UE_LOG(LogOUClient, Log, TEXT("Каталог рецептов: %d"), Recipes.Num());
+			}
+		}
+		else if (Body[0] == OUWire::TagCraftResult) // результат крафта
+		{
+			OUWire::CraftResult C;
+			if (OUWire::DecodeCraftResult(Body.GetData(), static_cast<size_t>(Body.Num()), C))
+			{
+				bLastCraftOk = C.Ok;
+				LastCraftItem = static_cast<int32>(C.Item);
+				LastCraftQty = static_cast<int64>(C.Qty);
+				LastCraftReason = FString(UTF8_TO_TCHAR(C.Reason.c_str()));
+				if (UWorld* W = GetWorld())
+				{
+					LastCraftTime = W->GetTimeSeconds();
+				}
+				UE_LOG(LogOUClient, Log, TEXT("Крафт: %s, предмет %d ×%lld %s"),
+					C.Ok ? TEXT("ок") : TEXT("отказ"), LastCraftItem, LastCraftQty,
+					C.Ok ? TEXT("") : *LastCraftReason);
 			}
 		}
 		else if (Body[0] == OUWire::TagMarketState) // состояние экономики

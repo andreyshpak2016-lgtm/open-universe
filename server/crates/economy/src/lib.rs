@@ -619,6 +619,11 @@ impl Production {
         self.recipes.len()
     }
 
+    /// Перебрать все рецепты (для UI: показать доступные крафты).
+    pub fn iter(&self) -> impl Iterator<Item = &Recipe> {
+        self.recipes.values()
+    }
+
     pub fn is_empty(&self) -> bool {
         self.recipes.is_empty()
     }

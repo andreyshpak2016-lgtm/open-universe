@@ -131,6 +131,13 @@ fn main() {
                                 &Message::ServerSystem { id: sid, name: sname, bodies },
                             )
                             .ok();
+                            // И каталог рецептов производства (окно «Производство»).
+                            net.send_to(
+                                token,
+                                from,
+                                &Message::ServerRecipes { recipes: server.recipe_list() },
+                            )
+                            .ok();
                             next_player += 1;
                         }
                     }
@@ -190,6 +197,25 @@ fn main() {
                     Message::ClientPing { nonce } => {
                         // Эхо пинга: клиент по нему считает реальный RTT.
                         net.send_to(token, from, &Message::ServerPong { nonce }).ok();
+                    }
+                    Message::ClientCraft { recipe } => {
+                        if let Some(pid) = clients.get(&from) {
+                            let msg = match server.craft_as(*pid, recipe) {
+                                Ok((item, qty)) => Message::ServerCraftResult {
+                                    ok: true,
+                                    item,
+                                    qty,
+                                    reason: String::new(),
+                                },
+                                Err(e) => Message::ServerCraftResult {
+                                    ok: false,
+                                    item: 0,
+                                    qty: 0,
+                                    reason: e,
+                                },
+                            };
+                            net.send_to(token, from, &msg).ok();
+                        }
                     }
                     _ => {}
                 },

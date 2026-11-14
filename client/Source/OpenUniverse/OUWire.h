@@ -64,6 +64,9 @@ namespace OUWire
         TagDigYield = 23,
         TagPing = 24,
         TagPong = 25,
+        TagRecipes = 26,
+        TagCraft = 27,
+        TagCraftResult = 28,
     };
 
     /// Действия редактора конструкций.
@@ -303,6 +306,26 @@ namespace OUWire
             uint64_t zz = 0;
             if (!Varint(zz)) return false;
             v = static_cast<int64_t>(zz >> 1) ^ -static_cast<int64_t>(zz & 1);
+            return true;
+        }
+
+        bool Bool(bool& v)
+        {
+            uint8_t b = 0;
+            if (!U8(b)) return false;
+            v = (b != 0);
+            return true;
+        }
+
+        /// Строка: u16 длины + UTF-8 байты (как пишет Rust `Writer::str`).
+        bool Str(std::string& v)
+        {
+            const uint8_t* p = nullptr;
+            if (!Take(2, p)) return false;
+            const uint16_t n = static_cast<uint16_t>(p[0]) | (static_cast<uint16_t>(p[1]) << 8);
+            if (Pos + n > Len) return false;
+            v.assign(reinterpret_cast<const char*>(Data + Pos), static_cast<size_t>(n));
+            Pos += static_cast<size_t>(n);
             return true;
         }
     };
@@ -762,6 +785,83 @@ namespace OUWire
         uint8_t tag = 0;
         if (!r.U8(tag) || tag != TagPong) return false;
         return r.U32(OutNonce);
+    }
+
+    /// Рецепт производства (для окна крафта).
+    struct Recipe
+    {
+        uint32_t Id = 0;
+        std::string Name;
+        std::vector<std::pair<uint32_t, uint64_t>> Inputs;
+        uint32_t OutItem = 0;
+        uint64_t OutQty = 0;
+        uint64_t Ticks = 0;
+    };
+
+    /// Разобрать каталог рецептов (сервер → клиент, тег 26).
+    inline bool DecodeRecipes(const uint8_t* body, size_t len, std::vector<Recipe>& Out)
+    {
+        Reader r{body, len, 0};
+        uint8_t tag = 0;
+        if (!r.U8(tag) || tag != TagRecipes) return false;
+        uint64_t n = 0;
+        if (!r.Varint(n)) return false;
+        Out.clear();
+        Out.reserve(static_cast<size_t>(n));
+        for (uint64_t k = 0; k < n; ++k)
+        {
+            Recipe Rc;
+            uint64_t id = 0;
+            if (!r.Varint(id)) return false;
+            Rc.Id = static_cast<uint32_t>(id);
+            if (!r.Str(Rc.Name)) return false;
+            uint64_t ni = 0;
+            if (!r.Varint(ni)) return false;
+            for (uint64_t i = 0; i < ni; ++i)
+            {
+                uint64_t item = 0, qty = 0;
+                if (!r.Varint(item) || !r.Varint(qty)) return false;
+                Rc.Inputs.emplace_back(static_cast<uint32_t>(item), qty);
+            }
+            uint64_t oi = 0, oq = 0, tk = 0;
+            if (!r.Varint(oi) || !r.Varint(oq) || !r.Varint(tk)) return false;
+            Rc.OutItem = static_cast<uint32_t>(oi);
+            Rc.OutQty = oq;
+            Rc.Ticks = tk;
+            Out.push_back(std::move(Rc));
+        }
+        return true;
+    }
+
+    /// Результат крафта (сервер → клиент, тег 28).
+    struct CraftResult
+    {
+        bool Ok = false;
+        uint32_t Item = 0;
+        uint64_t Qty = 0;
+        std::string Reason;
+    };
+
+    inline bool DecodeCraftResult(const uint8_t* body, size_t len, CraftResult& Out)
+    {
+        Reader r{body, len, 0};
+        uint8_t tag = 0;
+        if (!r.U8(tag) || tag != TagCraftResult) return false;
+        if (!r.Bool(Out.Ok)) return false;
+        uint64_t item = 0, qty = 0;
+        if (!r.Varint(item) || !r.Varint(qty)) return false;
+        Out.Item = static_cast<uint32_t>(item);
+        Out.Qty = qty;
+        return r.Str(Out.Reason);
+    }
+
+    /// Собрать запрос крафта (клиент → сервер, тег 27): [tag][recipe varint].
+    inline std::vector<uint8_t> EncodeCraft(uint32_t Recipe)
+    {
+        std::vector<uint8_t> out;
+        out.push_back(TagCraft);
+        push_varint(out, Recipe);
+        return out;
     }
 
     /// Собрать кадр ввода (клиент → сервер, тег 2).
