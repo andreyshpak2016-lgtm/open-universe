@@ -262,6 +262,41 @@ void AOUSurfaceBase::BuildBase()
 		AddOnDeck(BX, BY, FVector(500, 500, 500.f), Cyan, TEXT("BigLight"));
 	}
 
+	// --- Лестницы на площадку (твёрдые ступени) ---
+	// С каждой из четырёх сторон — короткая лестница из твёрдых блоков, чтобы на
+	// ровную площадку можно было подняться ступенями (а не только по террасам по
+	// краю). Ступени — твёрдые: сквозь них не пройти, но по ним поднимаешься.
+	{
+		const float StepW = 600.f;    // ширина ступени
+		const float StepD = 260.f;    // глубина (вылет) ступени
+		const float StepH = 60.f;     // высота ступени
+		const float Edge = PadR + StepD * 0.5f;
+		// Уровень земли у края площадки и уровень пола.
+		auto Stairs = [&](float DirX, float DirY)
+		{
+			// Вдоль выбранной оси — от края наружу; ступени вниз до земли.
+			const float G0 = GroundZ(DirX * Edge, DirY * Edge);
+			const float TopGap = DeckTop - G0;                 // перепад от пола до земли
+			const int32 N = FMath::Clamp(FMath::CeilToInt(TopGap / StepH), 1, 12);
+			for (int32 I = 0; I < N; ++I)
+			{
+				// I=0 — верхняя ступень (у края поля), дальше наружу и ниже.
+				const float Out = Edge + I * StepD;
+				const float CX = DirX * Out;
+				const float CY = DirY * Out;
+				const float Top = DeckTop - I * StepH;         // верх ступени
+				const float Bottom = Top - 400.f;              // фундамент вниз
+				AddBlock(FVector(CX, CY, (Top + Bottom) * 0.5f),
+					FVector(DirX != 0.f ? StepD : StepW, DirY != 0.f ? StepD : StepW, Top - Bottom),
+					Steel, FString::Printf(TEXT("Stair_%d_%d"), (int32)DirX, I), /*bSolid=*/true);
+			}
+		};
+		Stairs(1.f, 0.f);    // восточная
+		Stairs(-1.f, 0.f);   // западная
+		Stairs(0.f, 1.f);    // северная
+		Stairs(0.f, -1.f);   // южная
+	}
+
 	UE_LOG(LogOUBase, Log, TEXT("Комплекс построен: поле %.0f м, %d элементов"), PadR * 2.f / 100.f,
 		GetComponents().Num());
 }

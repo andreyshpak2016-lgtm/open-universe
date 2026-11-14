@@ -349,6 +349,9 @@ protected:
 	/** Цвет поверхности по высоте и типу планеты. */
 	FLinearColor SurfaceColor(float Height) const;
 
+	/** Цвет поверхности с учётом наклона (землеподобный: камень на склонах). */
+	FLinearColor SurfaceColorSlope(float Height, const FVector& Normal) const;
+
 	/**
 	 * Цвет вершины с запечённым простым освещением.
 	 *

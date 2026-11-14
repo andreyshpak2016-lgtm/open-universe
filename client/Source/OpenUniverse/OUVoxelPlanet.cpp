@@ -505,18 +505,43 @@ FLinearColor AOUVoxelPlanet::SurfaceColor(float Height) const
 	{
 		if (bWater)
 		{
-			return FLinearColor(0.03f, 0.12f, 0.42f); // океан
+			// Океан: от бирюзового на мелководье к тёмно-синему в глубине.
+			return FLinearColor(0.05f, 0.20f, 0.45f);
 		}
-		const FLinearColor Beach(0.80f, 0.72f, 0.45f);
-		const FLinearColor Grass(0.13f, 0.40f, 0.13f);
-		const FLinearColor Snow(0.95f, 0.96f, 0.99f);
-		if (T < 0.35f)
-		{
-			return FLinearColor::LerpUsingHSV(Beach, Grass, T / 0.35f);
-		}
-		return FLinearColor::LerpUsingHSV(Grass, Snow, (T - 0.35f) / 0.65f);
+		// Землеподобные зоны по высоте: песок → луг → трава → лес → скалы → снег.
+		const FLinearColor Sand(0.82f, 0.74f, 0.50f);
+		const FLinearColor Meadow(0.42f, 0.58f, 0.24f);
+		const FLinearColor Grass(0.20f, 0.45f, 0.16f);
+		const FLinearColor Forest(0.12f, 0.32f, 0.12f);
+		const FLinearColor Rock(0.42f, 0.40f, 0.36f);
+		const FLinearColor Snow(0.97f, 0.98f, 1.00f);
+		if (T < 0.06f) { return FLinearColor::LerpUsingHSV(Sand, Meadow, T / 0.06f); }
+		if (T < 0.30f) { return FLinearColor::LerpUsingHSV(Meadow, Grass, (T - 0.06f) / 0.24f); }
+		if (T < 0.55f) { return FLinearColor::LerpUsingHSV(Grass, Forest, (T - 0.30f) / 0.25f); }
+		if (T < 0.78f) { return FLinearColor::LerpUsingHSV(Forest, Rock, (T - 0.55f) / 0.23f); }
+		return FLinearColor::LerpUsingHSV(Rock, Snow, (T - 0.78f) / 0.22f);
 	}
 	}
+}
+
+FLinearColor AOUVoxelPlanet::SurfaceColorSlope(float Height, const FVector& Normal) const
+{
+	// База — по высоте. Плюс «каменистость» на крутых склонах: там трава не
+	// держится, проступает камень. Это делает рельеф похожим на земной.
+	FLinearColor C = SurfaceColor(Height);
+	if (PlanetType != EOUPlanetType::Terran || Height <= 0.f)
+	{
+		return C;
+	}
+	const FVector Up = (Normal.IsNearlyZero() ? FVector::UpVector : Normal.GetSafeNormal());
+	const float Steep = FMath::Clamp(1.f - Up.Z, 0.f, 1.f);   // 0 ровно, ↑ круче
+	const float RockK = FMath::Clamp((Steep - 0.18f) / 0.42f, 0.f, 1.f);
+	if (RockK <= 0.f)
+	{
+		return C;
+	}
+	const FLinearColor Rock(0.40f, 0.37f, 0.33f);
+	return FLinearColor::LerpUsingHSV(C, Rock, RockK * 0.8f);
 }
 
 float AOUVoxelPlanet::LocalDetailFade(float DistCm) const
@@ -571,7 +596,7 @@ FVector AOUVoxelPlanet::SmoothSurfaceNormal(const FVector& DirUE, int32 Detail) 
 
 FLinearColor AOUVoxelPlanet::ShadedVertexColor(float Height, const FVector& SmoothNormal) const
 {
-	FLinearColor Base = SurfaceColor(Height);
+	FLinearColor Base = SurfaceColorSlope(Height, SmoothNormal);
 	// Вода — гладкая и блестящая: ровный цвет без резких теней рельефа.
 	if (Height <= 0.f)
 	{

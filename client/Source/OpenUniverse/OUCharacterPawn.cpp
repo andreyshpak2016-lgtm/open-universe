@@ -283,6 +283,20 @@ void AOUCharacterPawn::BeginPlay()
 		LookYaw = FMath::Atan2(-T2.Y, -T2.X);
 	}
 	PlaceAt(CharPos, LookYaw);
+	// Якорь сетки строительства — в нескольких метрах ПЕРЕД точкой появления
+	// (после привязки к поверхности). Точка детерминирована (её же видит любой
+	// клиент), поэтому один серверный воксель кладётся в одно место у всех.
+	{
+		const FVector Spawn = GetActorLocation();
+		const FVector UpS = Spawn.GetSafeNormal();
+		FVector FwdS = FVector::VectorPlaneProject(FVector(1.f, 0.f, 0.f), UpS).GetSafeNormal();
+		if (FwdS.IsNearlyZero())
+		{
+			FwdS = FVector::VectorPlaneProject(FVector::ForwardVector, UpS).GetSafeNormal();
+		}
+		// +5 вокселей вперёд (7.5 м) — стройка начинается перед игроком, а не в ногах.
+		BuildAnchorUE = Spawn + FwdS * 750.f;
+	}
 	// Смотрим чуть вверх: в кадр попадают и земля, и небо с облаками.
 	ViewPitch = 0.10f;
 	// Диагностика: `-OULookDown` смотрит вниз — видно рельеф у ног.
@@ -635,24 +649,21 @@ bool AOUCharacterPawn::TraceBuildTarget(FIntVector& OutCoord, FVector& OutHit, F
 
 FIntVector AOUCharacterPawn::WorldToVoxel(const FVector& WorldPos) const
 {
-	// Обратное к VoxelWorld: мировая точка → координата сетки.
+	// Обратное к VoxelWorld: мировая точка → координата сетки (общий якорь).
 	const double VoxelCm = 150.0;
-	const FVector BaseUE = AOUVoxelPlanet::HomeSpawn(2.0f);
-	const FVector UpUE = BaseUE.GetSafeNormal();
+	const FVector AnchorUE = BuildAnchorUE;
+	const FVector UpUE = AnchorUE.GetSafeNormal();
 	FVector FwdUE = FVector::VectorPlaneProject(FVector(1.f, 0.f, 0.f), UpUE).GetSafeNormal();
 	if (FwdUE.IsNearlyZero())
 	{
 		FwdUE = FVector::VectorPlaneProject(FVector::ForwardVector, UpUE).GetSafeNormal();
 	}
 	const FVector RightUE = FVector::CrossProduct(UpUE, FwdUE).GetSafeNormal();
-	const FVector CharUE = BaseUE + FwdUE * 2200.f;
-	const FVector AnchorUE = CharUE + FwdUE * (6.0 * VoxelCm);
 
 	const FVector Rel = WorldPos - AnchorUE;
 	const double FX = FVector::DotProduct(Rel, FwdUE) / VoxelCm;
 	const double FY = (FVector::DotProduct(Rel, UpUE) - VoxelCm * 0.5) / VoxelCm;
 	const double FZ = FVector::DotProduct(Rel, RightUE) / VoxelCm;
-	// Округляем к ближайшей ячейке (допуск — половина шага).
 	return FIntVector(
 		FMath::RoundToInt(FX),
 		FMath::RoundToInt(FY),
@@ -702,22 +713,17 @@ void AOUCharacterPawn::OnBuildPaint() { PaintBuildBlock(); }
 
 FVector AOUCharacterPawn::VoxelWorld(const FVector& ServerCoord) const
 {
-	// ВАЖНО: базис считаем в ОСЯХ UE (как и «вперёд» персонажа), иначе сетка
-	// окажется повёрнутой относительно игрока: серверные оси (y — вверх) и
-	// UE-оси (z — вверх) не совпадают, и проекция «мирового +X» даёт разное.
+	// Мировая точка вокселя сетки: общий (детерминированный) якорь + координаты.
+	// Оси — в мировых осях UE (z — вверх). Базис якоря — от направления «вверх».
 	const double VoxelCm = 150.0;   // 1.5 м на воксель в см UE
-	const FVector BaseUE = AOUVoxelPlanet::HomeSpawn(2.0f);   // UE-см
-	const FVector UpUE = BaseUE.GetSafeNormal();
+	const FVector AnchorUE = BuildAnchorUE;
+	const FVector UpUE = AnchorUE.GetSafeNormal();
 	FVector FwdUE = FVector::VectorPlaneProject(FVector(1.f, 0.f, 0.f), UpUE).GetSafeNormal();
 	if (FwdUE.IsNearlyZero())
 	{
 		FwdUE = FVector::VectorPlaneProject(FVector::ForwardVector, UpUE).GetSafeNormal();
 	}
 	const FVector RightUE = FVector::CrossProduct(UpUE, FwdUE).GetSafeNormal();
-	// Якорь — на несколько метров перед персонажем: блоки ставим «перед собой»,
-	// а не в лицо (иначе первый блок закрывает обзор).
-	const FVector CharUE = BaseUE + FwdUE * 2200.f;
-	const FVector AnchorUE = CharUE + FwdUE * (6.0 * VoxelCm);
 	return AnchorUE
 		+ FwdUE * (ServerCoord.X * VoxelCm)
 		+ UpUE * (ServerCoord.Y * VoxelCm + VoxelCm * 0.5)
@@ -755,7 +761,9 @@ void AOUCharacterPawn::ApplyServerBuildEdits()
 					Block->ApplyLook();
 					ServerBlocks.Add(Key, Block);
 					BlockCoords.Add(Block, Key);
-					UE_LOG(LogOUChar, Log, TEXT("Авторитетный блок (%d,%d,%d) от сервера"), E.X, E.Y, E.Z);
+					UE_LOG(LogOUChar, Log, TEXT("Авторитетный блок (%d,%d,%d) от сервера: мир %s, игрок %s, дист %.0f см"),
+						E.X, E.Y, E.Z, *Pos.ToCompactString(), *GetActorLocation().ToCompactString(),
+						FVector::Dist(Pos, GetActorLocation()));
 				}
 			}
 		}
