@@ -578,8 +578,9 @@ void UOUClientNet::Poll()
 					S.Phase = B.Phase;
 					S.Omega = B.Omega;
 					S.Radius = static_cast<float>(B.Radius);
-					SystemBodies.Add(S);
-				}
+					S.Amplitude = B.Amplitude;
+					S.Seed = static_cast<int64>(B.Seed);
+					SystemBodies.Add(S);				}
 				bSystemReceived = true;
 			}
 		}

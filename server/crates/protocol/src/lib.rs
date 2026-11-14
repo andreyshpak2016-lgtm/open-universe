@@ -340,8 +340,12 @@ pub struct SystemBodyDto {
     pub phase: f32,
     /// Угловая скорость орбиты, рад/с.
     pub omega: f32,
+    /// Амплитуда рельефа, серверные единицы (0 — гладкая сфера).
+    /// Клиент строит поверхность по той же формуле, что сервер (бит-в-бит).
+    pub amplitude: f64,
+    /// Сид рельефа тела (для детерминированной формулы высоты).
+    pub seed: u64,
 }
-
 /// Состоявшийся выстрел (сервер → клиенты).
 ///
 /// Авторитетный: сервер сам решает, попал ли выстрел и какой урон прошёл,
@@ -795,6 +799,8 @@ mod wire {
                     w.f32(b.phase);
                     w.f32(b.omega);
                     w.f64(b.radius);
+                    w.f64(b.amplitude);
+                    w.u64(b.seed);
                 }
             }
             Message::ClientDig { slot, dir, cos_radius, depth } => {
@@ -1109,6 +1115,8 @@ mod wire {
                         phase: r.f32()?,
                         omega: r.f32()?,
                         radius: r.f64()?,
+                        amplitude: r.f64()?,
+                        seed: r.u64()?,
                     });
                 }
                 Ok(Message::ServerSystem { id, name, bodies })
@@ -1583,6 +1591,8 @@ mod tests {
                     phase: 0.0,
                     omega: 0.0,
                     radius: 500.0,
+                    amplitude: 0.0,
+                    seed: 0,
                 },
                 SystemBodyDto {
                     id: 1,
@@ -1593,6 +1603,8 @@ mod tests {
                     phase: 0.5,
                     omega: 0.02,
                     radius: 120.5,
+                    amplitude: 2.4,
+                    seed: 0xDEADBEEF,
                 },
             ],
         };

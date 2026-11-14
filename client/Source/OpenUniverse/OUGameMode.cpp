@@ -365,6 +365,9 @@ void AOUGameMode::BuildSystemBodies()
 		}
 		Body->Kind = (B.Kind == 0) ? EOUSolarKind::Star : EOUSolarKind::Planet;
 		Body->BodyRadiusCm = B.Radius * OUInterop::ServerUnitToCm;   // радиус в см
+		// Рельеф: амплитуда/сид с сервера (общая формула высоты). У звёзд — гладко.
+		Body->Amplitude = B.Amplitude;
+		Body->TerrainSeed = B.Seed;
 		// Цвет/поверхность по типу.
 		switch (B.Surface)
 		{
@@ -376,6 +379,5 @@ void AOUGameMode::BuildSystemBodies()
 		Body->BuildBody();
 		++Spawned;
 	}
-	UE_LOG(LogOUGameMode, Log, TEXT("Тела системы построены: %d (кроме домашней планеты)"), Spawned);
-}
+	UE_LOG(LogOUGameMode, Log, TEXT("Тела системы построены: %d (кроме домашней планеты)"), Spawned);}
 

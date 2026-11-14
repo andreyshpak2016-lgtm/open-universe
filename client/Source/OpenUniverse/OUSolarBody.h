@@ -7,6 +7,7 @@
 #include "OUSolarBody.generated.h"
 
 class UStaticMeshComponent;
+class UProceduralMeshComponent;
 class UStaticMesh;
 class UMaterialInterface;
 
@@ -41,6 +42,14 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Open Universe|System")
 	float BodyRadiusCm = 60000.f;
 
+	/** Амплитуда рельефа, СЕРВЕРНЫЕ единицы (0 — гладкая сфера). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Open Universe|System")
+	double Amplitude = 0.0;
+
+	/** Сид рельефа (общая формула высоты с сервером). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Open Universe|System")
+	int64 TerrainSeed = 0;
+
 	/** Цвет тела. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Open Universe|System")
 	FLinearColor BodyColor = FLinearColor(0.6f, 0.6f, 0.7f, 1.f);
@@ -52,12 +61,21 @@ public:
 protected:
 	virtual void OnConstruction(const FTransform& Transform) override;
 
+	/** Процедурный меш рельефа (общая с сервером формула высоты). */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Open Universe|System")
+	UProceduralMeshComponent* TerrainMesh = nullptr;
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Open Universe|System")
 	UStaticMeshComponent* Mesh = nullptr;
 
 private:
+	/** Построить процедурную поверхность тела по рельефу. */
+	void BuildTerrain();
+
 	UPROPERTY(Transient)
 	TObjectPtr<UStaticMesh> SphereMesh = nullptr;
 	UPROPERTY(Transient)
 	TObjectPtr<UMaterialInterface> BodyMaterial = nullptr;
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInterface> TerrainMaterial = nullptr;
 };

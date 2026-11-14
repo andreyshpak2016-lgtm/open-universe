@@ -142,7 +142,20 @@ void AOUShipPawn::BeginPlay()
 	// Точка появления — на домашней планете (совпадает с сервером).
 	// Если корабль уже поставлен снаружи (его создал персонаж рядом), не
 	// переносим его снова; иначе ставим на сушу у поверхности.
-	if (GetActorLocation().IsNearlyZero())
+	if (FParse::Param(FCommandLine::Get(), TEXT("OUMoonOrbit")))
+	{
+		// Диагностика: корабль над луной — видно её процедурный рельеф.
+		// Луна (тело id 2) в (+560000,0,0) серверных единиц, радиус 60000.
+		const FVector MoonCenterUE = OUInterop::ServerToUE(FVector(560000.f, 0.f, 0.f));
+		const float MoonRadiusCm = 60000.f * OUInterop::ServerUnitToCm;
+		// Близко к поверхности (15 км над ней) — рельеф в кадре.
+		const FVector SpawnUE = MoonCenterUE + FVector(25000.f, 0.f, MoonRadiusCm + 15000.f);
+		State.Position = OUInterop::UEToServer(SpawnUE);
+		SetActorLocation(SpawnUE);
+		// Тангаж вниз (в серверных осях Y — вверх, отрицательный — к поверхности).
+		State.Pitch = -0.9f;
+	}
+	else if (GetActorLocation().IsNearlyZero())
 	{
 		const FVector SpawnUE = AOUVoxelPlanet::HomeSpawn(2.0f);
 		State.Position = OUInterop::UEToServer(SpawnUE);
@@ -656,7 +669,20 @@ void AOUShipPawn::StepPrediction(const FOUInputFrame& Input, float Dt)
 					continue;
 				}
 				const FVector UpB = RelB / DB;
-				State.Position = B.Center + UpB * B.Radius;
+				// Поверхность тела с рельефом: радиус + высота общей формулы.
+				// Оси тела на клиенте — серверные (как у планетного меша).
+				double SurfaceR_B = B.Radius;
+				if (B.Amplitude > 0.0)
+				{
+					const double HB = OULT::HeightDir(
+						UpB.X, UpB.Y, UpB.Z, B.Amplitude, 0.545, static_cast<uint64_t>(B.Seed), 1);
+					SurfaceR_B = B.Radius + HB;
+				}
+				if (DB >= SurfaceR_B)
+				{
+					continue;
+				}
+				State.Position = B.Center + UpB * SurfaceR_B;
 				const double VN = State.Velocity.Dot(UpB);
 				if (VN < 0.0)
 				{
@@ -873,14 +899,19 @@ void AOUShipPawn::Tick(float DeltaSeconds)
 			}
 			// Какая территория под кораблём (для HUD и клавиши захвата T).
 			Net->UpdateTerritoryAt(State.Position.X, State.Position.Y, State.Position.Z);
-			// Реконсиляция: принимаем авторитетное состояние своей сущности
-			// и переигрываем ещё не подтверждённые кадры.
-			for (const FOUEntityState& E : Net->LatestSnapshot.Entities)
+			// Диагностика `-OUMoonOrbit`: не реконсилимся — держим корабль у луны,
+			// чтобы её процедурный рельеф попал в кадр.
+			if (!FParse::Param(FCommandLine::Get(), TEXT("OUMoonOrbit")))
 			{
-				if (E.Id == State.Id)
+				// Реконсиляция: принимаем авторитетное состояние своей сущности
+				// и переигрываем ещё не подтверждённые кадры.
+				for (const FOUEntityState& E : Net->LatestSnapshot.Entities)
 				{
-					ReconcileTo(E, Net->LatestSnapshot.AckInputSeq);
-					break;
+					if (E.Id == State.Id)
+					{
+						ReconcileTo(E, Net->LatestSnapshot.AckInputSeq);
+						break;
+					}
 				}
 			}
 			// Рисуем чужие корабли из последнего снимка.

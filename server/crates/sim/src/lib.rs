@@ -254,6 +254,16 @@ pub fn home_planet() -> Terrain {
     )
 }
 
+/// Параметры рельефа соседнего тела (амплитуда, сид) — сервер и клиент считают
+/// по ним одну и ту же форму. Амплитуда пропорциональна радиусу тела (мельче
+/// тело — мельче рельеф), сид свой (детерминированно от id). У газовых гигантов
+/// и звёзд рельефа нет (амплитуда 0 — гладкая сфера).
+pub fn neighbour_terrain_params(id: u32, radius: f64, solid: bool) -> (f64, u64) {
+    let amplitude = if solid { radius * 0.02 } else { 0.0 };
+    let seed = HOME_PLANET_SEED ^ (id as u64).wrapping_mul(0x9E3779B97F4A7C15);
+    (amplitude, seed)
+}
+
 /// Реалистичная домашняя система (в серверных единицах; 1 ед = 1 м).
 ///
 /// Домашняя планета — 500 км радиусом (тело `home_body_id`). Вокруг неё —
@@ -444,16 +454,18 @@ impl World {
             if b.radius <= 0.0 {
                 continue; // звезда/пояс — не садимся
             }
-            // Соседнее тело — гладкая сфера: амплитуда 0 → высота 0, поверхность
-            // ровно на радиусе. Сид — свой (детерминированно), чтобы параметры
-            // совпадали у сервера и клиента.
+            // Соседнее тело — с рельефом (если твёрдое): амплитуда и сид из общей
+            // функции `neighbour_terrain_params`, чтобы сервер (физика) и клиент
+            // (картинка) считали одну и ту же поверхность.
+            let solid = matches!(b.kind, BodyKind::Planet | BodyKind::Moon);
+            let (amplitude, seed) = neighbour_terrain_params(b.id, b.radius, solid);
             self.bodies.push(Terrain::new(
                 b.pos,
                 TerrainParams {
                     radius: b.radius,
-                    amplitude: 0.0,
+                    amplitude,
                     sea_level: DEFAULT_SEA_LEVEL,
-                    seed: HOME_PLANET_SEED ^ (b.id as u64).wrapping_mul(0x9E3779B97F4A7C15),
+                    seed,
                 },
             ));
         }
@@ -987,30 +999,63 @@ mod tests {
 
     #[test]
     fn ship_lands_on_neighbour_body() {
-        // Соседнее тело (луна) — гладкая сфера: корабль рядом с ним падает и
-        // садится на поверхность, а не проваливается.
+        // Соседнее тело (луна) — со своим рельефом: корабль рядом с ним падает
+        // и садится на поверхность (не проваливается сквозь).
         let mut w = World::new();
         w.build_system();
         // Луна из системы (не домашняя планета) — берём первое соседнее тело.
         let moon = w.bodies.iter().find(|b| b.center.length() > 1.0).cloned().unwrap();
         let dir = normalize(Vec3::new(1.0, 0.0, 0.0));
-        let start = moon.center.add(dir.scale(moon.params.radius + 300.0));
+        // Старт над поверхностью с запасом на рельеф (амплитуда).
+        let start = moon.center.add(dir.scale(moon.params.radius + moon.params.amplitude + 300.0));
         w.spawn(1, start);
         let empty = BTreeMap::new();
         for _ in 0..300 {
             w.step(&empty);
         }
         let e = w.entities.get(&1).unwrap();
-        // Корабль опустился к поверхности луны (не провалился сквозь).
+        // Корабль опустился к поверхности луны (не провалился сквозь неё).
         let dist = e.state.pos.sub(moon.center).length();
-        assert!(dist >= moon.params.radius - 1.0, "корабль не под поверхностью луны: {dist}");
-        assert!(dist < moon.params.radius + 50.0, "корабль сел на луну: {dist}");
+        assert!(
+            dist >= moon.params.radius - 1.0,
+            "корабль не под поверхностью луны: {dist}"
+        );
+        assert!(
+            dist < moon.params.radius + moon.params.amplitude + 50.0,
+            "корабль сел на луну: {dist}"
+        );
+    }
+
+    #[test]
+    fn neighbour_bodies_have_terrain_but_stars_do_not() {
+        // Луна и соседняя планета — с рельефом; газовый гигант и звезда — гладкие.
+        let mut w = World::new();
+        w.build_system();
+        // Находим тело по центру.
+        let moon = w.bodies.iter().find(|b| (b.center.x - 560_000.0).abs() < 1.0).cloned();
+        let planet = w.bodies.iter().find(|b| (b.center.x + 900_000.0).abs() < 1.0).cloned();
+        let giant = w.bodies.iter().find(|b| (b.center.x - 20_000_000.0).abs() < 1.0).cloned();
+        let moon = moon.expect("луна в системе");
+        let planet = planet.expect("соседняя планета в системе");
+        let giant = giant.expect("газовый гигант в системе");
+        assert!(moon.params.amplitude > 0.0, "луна с рельефом");
+        assert!(planet.params.amplitude > 0.0, "планета с рельефом");
+        assert_eq!(giant.params.amplitude, 0.0, "газовый гигант — гладкая сфера");
+        // Высота на луне реально меняется (рельеф не вырожден).
+        let mut lo = f64::MAX;
+        let mut hi = f64::MIN;
+        for k in 0..32 {
+            let a = 2.0 * PI * (k as f64) / 32.0;
+            let d = normalize(Vec3::new(det_cos(a), det_sin(a), 0.5));
+            let h = moon.height(d);
+            lo = lo.min(h);
+            hi = hi.max(h);
+        }
+        assert!(hi - lo > 1.0, "у луны есть перепад высот: {lo}..{hi}");
     }
 
     #[test]
     fn space_flight_is_inertial_without_gravity() {
-        // Без планеты (terrain = None) полёт инерционный: тяга разгоняет,
-        // затем корабль летит по прямой.
         let mut w = World::new();
         w.spawn(1, Vec3::ZERO);
         let mut inputs = BTreeMap::new();

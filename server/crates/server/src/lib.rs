@@ -1131,6 +1131,8 @@ impl Server {
             orbit: 0.0,
             phase: 0.0,
             omega: 0.0,
+            amplitude: ou_sim::HOME_PLANET_AMPLITUDE,
+            seed: ou_sim::HOME_PLANET_SEED,
         });
         for b in &sys.bodies {
             let (kind, surface) = match b.kind {
@@ -1141,6 +1143,10 @@ impl Server {
                 ou_sim::BodyKind::AsteroidBelt => (4, 5),
                 ou_sim::BodyKind::BlackHole => (5, 5),
             };
+            // Рельеф соседних тел: амплитуда/сид — как в физике (`build_system`).
+            // У газовых гигантов/звёзд рельефа нет (гладкая сфера).
+            let solid = matches!(b.kind, ou_sim::BodyKind::Planet | ou_sim::BodyKind::Moon);
+            let (amplitude, seed) = ou_sim::neighbour_terrain_params(b.id, b.radius, solid);
             bodies.push(ou_protocol::SystemBodyDto {
                 id: b.id,
                 kind,
@@ -1150,6 +1156,8 @@ impl Server {
                 orbit: b.orbit as f32,
                 phase: b.phase as f32,
                 omega: 0.0,
+                amplitude,
+                seed,
             });
         }
         (sys.id, sys.name, bodies)

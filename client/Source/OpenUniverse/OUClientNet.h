@@ -251,6 +251,14 @@ struct FOUSystemBody
 	/** Радиус, в СЕРВЕРНЫХ единицах. */
 	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|System")
 	float Radius = 0.f;
+
+	/** Амплитуда рельефа, СЕРВЕРНЫЕ единицы (0 — гладкая сфера). */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|System")
+	double Amplitude = 0.0;
+
+	/** Сид рельефа тела (общая формула высоты с сервером). */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|System")
+	int64 Seed = 0;
 };
 
 /** Шаблон постройки (blueprint) для редактора в игре. */

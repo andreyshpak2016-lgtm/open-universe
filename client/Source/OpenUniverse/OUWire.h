@@ -211,6 +211,8 @@ namespace OUWire
         float Phase = 0.f;                 // начальная фаза, рад
         float Omega = 0.f;                 // угловая скорость, рад/с
         double Radius = 0.0;               // радиус тела, серверные единицы
+        double Amplitude = 0.0;            // амплитуда рельефа, серверные единицы
+        uint64_t Seed = 0;                 // сид рельефа (общая формула с сервером)
     };
 
     /// Описание звёздной системы (сервер → клиент, тег 19).
@@ -600,6 +602,18 @@ namespace OUWire
             uint64_t rbits = 0;
             for (int k = 0; k < 8; ++k) { rbits |= static_cast<uint64_t>(rb[k]) << (8 * k); }
             std::memcpy(&b.Radius, &rbits, 8);
+            // f64 LE — амплитуда рельефа тела.
+            const uint8_t* ab = nullptr;
+            if (!r.Take(8, ab)) return false;
+            uint64_t abits = 0;
+            for (int k = 0; k < 8; ++k) { abits |= static_cast<uint64_t>(ab[k]) << (8 * k); }
+            std::memcpy(&b.Amplitude, &abits, 8);
+            // Сид рельефа (u64 LE).
+            const uint8_t* sb = nullptr;
+            if (!r.Take(8, sb)) return false;
+            uint64_t sd = 0;
+            for (int k = 0; k < 8; ++k) { sd |= static_cast<uint64_t>(sb[k]) << (8 * k); }
+            b.Seed = sd;
             out.Bodies.push_back(b);
         }
         return true;

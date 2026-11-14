@@ -568,6 +568,12 @@ int main(int argc, char** argv)
         double rad = 120.0;
         uint64_t radBits = 0; std::memcpy(&radBits, &rad, 8);
         for (int k = 0; k < 8; ++k) sysb.push_back((radBits >> (8 * k)) & 0xFF);
+        // Амплитуда рельефа (f64) и сид (u64) — новые поля DTO тела.
+        double amp = 2.4;
+        uint64_t ampBits = 0; std::memcpy(&ampBits, &amp, 8);
+        for (int k = 0; k < 8; ++k) sysb.push_back((ampBits >> (8 * k)) & 0xFF);
+        uint64_t seed = 0xDEADBEEFCAFEull;
+        for (int k = 0; k < 8; ++k) sysb.push_back((seed >> (8 * k)) & 0xFF);
         OUWire::SystemInfo si;
         Check(OUWire::DecodeSystem(sysb.data(), sysb.size(), si), "система разобрана");
         Check(si.Id == 7 && si.Name == "Alra-7" && si.Bodies.size() == 1, "id/имя/число тел совпали");
@@ -576,8 +582,10 @@ int main(int argc, char** argv)
               std::fabs(si.Bodies[0].Orbit - 2500.0f) < 0.01f &&
               std::fabs(si.Bodies[0].Phase - 0.5f) < 1e-6f &&
               std::fabs(si.Bodies[0].Omega - 0.02f) < 1e-6f &&
-              std::fabs(si.Bodies[0].Radius - 120.0) < 1e-9,
-              "тело системы совпало (тип поверхности + параметры орбиты, f64 радиус)");
+              std::fabs(si.Bodies[0].Radius - 120.0) < 1e-9 &&
+              std::fabs(si.Bodies[0].Amplitude - 2.4) < 1e-9 &&
+              si.Bodies[0].Seed == 0xDEADBEEFCAFEull,
+              "тело системы совпало (тип поверхности, орбита, радиус/амплитуда/сид)");
     }
 
     std::printf("\n=== Итог ===\n");
