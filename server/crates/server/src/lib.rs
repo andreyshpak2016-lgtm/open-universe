@@ -48,10 +48,40 @@ pub const EXPLOSION_SLOTS: u32 = 24;
 /// Награда (bounty) в кредитах за уничтожение боевой цели — для HUD и экономики.
 pub const DESTROY_BOUNTY: u64 = 250;
 
+/// Ранг участника организации.
+pub const RANK_MEMBER: u8 = 0;
+/// Офицер: может назначать ранги участникам.
+pub const RANK_OFFICER: u8 = 1;
+/// Лидер: полный контроль (назначения, дипломатия).
+pub const RANK_LEADER: u8 = 2;
+
+/// Организация (гильдия): имя, тег, состав с рангами и дипломатия.
+#[derive(Clone, Debug)]
+pub struct Org {
+    pub name: String,
+    pub tag: String,
+    /// Участники: игрок → ранг (0 участник, 1 офицер, 2 лидер).
+    pub members: BTreeMap<NetId, u8>,
+    /// Дипломатия: id другой организации → стойка (0 нейтралитет, 1 союз, 2 война).
+    pub diplomacy: BTreeMap<u32, u8>,
+}
+
+impl Org {
+    pub fn new(name: String, tag: String, leader: NetId) -> Self {
+        let mut members = BTreeMap::new();
+        members.insert(leader, RANK_LEADER);
+        Org { name, tag, members, diplomacy: BTreeMap::new() }
+    }
+
+    /// Ранг игрока в организации (None — не участник).
+    pub fn rank_of(&self, player: NetId) -> Option<u8> {
+        self.members.get(&player).copied()
+    }
+}
+
 /// Конструкция: воксельная сетка плюс права и ревизии (совместная стройка).
 #[derive(Clone, Debug)]
-pub struct Construction {
-    pub grid: VoxelGrid,
+pub struct Construction {    pub grid: VoxelGrid,
     /// Кто владеет конструкцией (может разрешать стройку другим).
     pub owner: NetId,
     /// Кому владелец разрешил строить (кроме него самого).
@@ -143,6 +173,14 @@ pub struct Server {
     next_workshop_id: u32,
     /// Игроки, которым надо обновить витрину мастерской.
     pub workshop_dirty: BTreeSet<NetId>,
+    /// Организации: id → (имя, тег, участники (игрок, ранг 0/1/2), дипломатия).
+    pub orgs: BTreeMap<u32, Org>,
+    /// Следующий id организации.
+    next_org_id: u32,
+    /// Игрок → id его организации (отсутствие = без организации).
+    pub player_org: BTreeMap<NetId, u32>,
+    /// Игроки, которым надо обновить состояние организации.
+    pub org_dirty: BTreeSet<NetId>,
     /// Конструкции сущностей: что игроки построили (права + ревизии).
     pub constructions: BTreeMap<NetId, Construction>,
     /// Корпус каждой сущности: щит, броня, критические повреждения.
@@ -287,6 +325,10 @@ impl Server {
             own_blueprints: BTreeMap::new(),
             next_workshop_id: 1,
             workshop_dirty: BTreeSet::new(),
+            orgs: BTreeMap::new(),
+            next_org_id: 1,
+            player_org: BTreeMap::new(),
+            org_dirty: BTreeSet::new(),
             constructions: BTreeMap::new(),
             hulls: BTreeMap::new(),
             weapons: BTreeMap::new(),
@@ -1192,6 +1234,158 @@ impl Server {
         Ok(placed)
     }
 
+    // --- Организации, ранги и дипломатия ---
+
+    /// Создать организацию. Создатель становится лидером. Нельзя, если игрок
+    /// уже в организации.
+    pub fn create_org(&mut self, player: NetId, name: String, tag: String) -> Result<u32, String> {
+        if self.player_org.contains_key(&player) {
+            return Err("вы уже в организации".to_string());
+        }
+        let name = if name.trim().is_empty() { "Без названия".to_string() } else { name };
+        let tag = if tag.trim().is_empty() { "ORG".to_string() } else { tag };
+        let id = self.next_org_id;
+        self.next_org_id += 1;
+        self.orgs.insert(id, Org::new(name, tag, player));
+        self.player_org.insert(player, id);
+        self.org_dirty.insert(player);
+        Ok(id)
+    }
+
+    /// Вступить в организацию (если игрок не состоит в другой).
+    pub fn join_org(&mut self, player: NetId, id: u32) -> Result<(), String> {
+        if self.player_org.contains_key(&player) {
+            return Err("вы уже в организации".to_string());
+        }
+        let org = self.orgs.get_mut(&id).ok_or_else(|| format!("организация {id} не найдена"))?;
+        org.members.insert(player, RANK_MEMBER);
+        self.player_org.insert(player, id);
+        // Обновить всех участников организации.
+        for p in self.orgs[&id].members.keys() {
+            self.org_dirty.insert(*p);
+        }
+        Ok(())
+    }
+
+    /// Покинуть организацию. Если лидер уходит — лидерство переходит старшему.
+    pub fn leave_org(&mut self, player: NetId) -> Result<(), String> {
+        let id = self.player_org.get(&player).copied().ok_or_else(|| "вы не в организации".to_string())?;
+        self.remove_from_org(player, id);
+        self.org_dirty.insert(player);
+        Ok(())
+    }
+
+    /// Убрать игрока из организации по id (внутренняя).
+    fn remove_from_org(&mut self, player: NetId, id: u32) {
+        let mut remaining: Vec<NetId> = Vec::new();
+        if let Some(org) = self.orgs.get_mut(&id) {
+            org.members.remove(&player);
+            // Если ушёл лидер — назначаем лидером старшего по рангу.
+            if !org.members.values().any(|r| *r == RANK_LEADER) {
+                if let Some(next) = org
+                    .members
+                    .iter()
+                    .max_by_key(|(_, r)| **r)
+                    .map(|(p, _)| *p)
+                {
+                    org.members.insert(next, RANK_LEADER);
+                }
+            }
+            remaining = org.members.keys().copied().collect();
+        }
+        self.player_org.remove(&player);
+        // Распускаем пустую организацию.
+        if self.orgs.get(&id).map(|o| o.members.is_empty()).unwrap_or(false) {
+            self.orgs.remove(&id);
+        }
+        for p in remaining {
+            self.org_dirty.insert(p);
+        }
+    }
+
+    /// Назначить ранг участнику. Лидер может любые ранги; офицер — только
+    /// повышать участников до офицера (но не менять лидера).
+    pub fn set_org_rank(&mut self, actor: NetId, target: NetId, rank: u8) -> Result<(), String> {
+        let id = self
+            .player_org
+            .get(&actor)
+            .copied()
+            .ok_or_else(|| "вы не в организации".to_string())?;
+        let actor_rank = self.orgs[&id].rank_of(actor).unwrap_or(RANK_MEMBER);
+        let target_rank = self.orgs[&id].rank_of(target).ok_or_else(|| "игрок не в организации".to_string())?;
+        if rank > RANK_LEADER {
+            return Err("неизвестный ранг".to_string());
+        }
+        // Лидер может всё; офицер — только назначать участников офицерами.
+        if actor_rank == RANK_LEADER {
+            // Ок.
+        } else if actor_rank == RANK_OFFICER && rank == RANK_OFFICER && target_rank == RANK_MEMBER {
+            // Ок.
+        } else {
+            return Err("недостаточно прав".to_string());
+        }
+        let org = self.orgs.get_mut(&id).unwrap();
+        org.members.insert(target, rank);
+        let members: Vec<NetId> = org.members.keys().copied().collect();
+        for p in members {
+            self.org_dirty.insert(p);
+        }
+        Ok(())
+    }
+
+    /// Объявить дипломатию к другой организации (только лидер).
+    pub fn declare_diplomacy(&mut self, actor: NetId, org: u32, stance: u8) -> Result<(), String> {
+        if stance > 2 {
+            return Err("неизвестная стойка дипломатии".to_string());
+        }
+        let id = self
+            .player_org
+            .get(&actor)
+            .copied()
+            .ok_or_else(|| "вы не в организации".to_string())?;
+        let rank = self.orgs[&id].rank_of(actor).unwrap_or(RANK_MEMBER);
+        if rank != RANK_LEADER {
+            return Err("дипломатию объявляет только лидер".to_string());
+        }
+        if self.orgs.get(&org).is_none() {
+            return Err(format!("организация {org} не найдена"));
+        }
+        if org == id {
+            return Err("нельзя объявлять дипломатию себе".to_string());
+        }
+        self.orgs.get_mut(&id).unwrap().diplomacy.insert(org, stance);
+        // Обе стороны должны увидеть изменение.
+        let members: Vec<NetId> = self.orgs[&id].members.keys().copied().collect();
+        for p in members {
+            self.org_dirty.insert(p);
+        }
+        let other: Vec<NetId> = self.orgs[&org].members.keys().copied().collect();
+        for p in other {
+            self.org_dirty.insert(p);
+        }
+        Ok(())
+    }
+
+    /// Состояние организации игрока (для окна «Организация»).
+    pub fn org_state(&self, player: NetId) -> Message {
+        let id = self.player_org.get(&player).copied().unwrap_or(0);
+        let (name, tag, members, diplomacy) = match self.orgs.get(&id) {
+            Some(o) => (
+                o.name.clone(),
+                o.tag.clone(),
+                o.members.iter().map(|(p, r)| (*p, *r)).collect::<Vec<_>>(),
+                o.diplomacy.iter().map(|(o2, s)| (*o2, *s)).collect::<Vec<_>>(),
+            ),
+            None => (String::new(), String::new(), Vec::new(), Vec::new()),
+        };
+        let all: Vec<(u32, String, String, u32)> = self
+            .orgs
+            .iter()
+            .map(|(oid, o)| (*oid, o.name.clone(), o.tag.clone(), o.members.len() as u32))
+            .collect();
+        Message::ServerOrg { id, name, tag, members, diplomacy, all }
+    }
+
     /// Привязать к сущности скрипт-шаблон по id игрока (авторитетно).
     ///
     /// Только владелец может управлять скриптом своего объекта. `template = 0`
@@ -1649,6 +1843,13 @@ impl Server {
             .map(|p| (*p, self.workshop_state(*p)))
             .collect();
 
+        // 3e. Состояние организации изменившимся игрокам.
+        let org_msgs: BTreeMap<NetId, Message> = self
+            .org_dirty
+            .iter()
+            .map(|p| (*p, self.org_state(*p)))
+            .collect();
+
         // 4. Для каждого клиента — интерес‑менеджмент и дельта.
         let mut plan = SendPlan::default();
         let all_states: BTreeMap<NetId, EntityState> = self.world.snapshot_map();
@@ -1837,6 +2038,11 @@ impl Server {
                 msgs.push(m.clone());
             }
 
+            // Состояние организации — при изменении.
+            if let Some(m) = org_msgs.get(player_id) {
+                msgs.push(m.clone());
+            }
+
             plan.messages.insert(*player_id, msgs);
         }
         if self.market_dirty {
@@ -1848,6 +2054,7 @@ impl Server {
         self.script_urgent.clear();
         self.combat_dirty.clear();
         self.workshop_dirty.clear();
+        self.org_dirty.clear();
 
         plan
     }
@@ -2918,5 +3125,92 @@ mod tests {
             .iter()
             .any(|m| matches!(m, Message::ServerWorkshop { .. }));
         assert!(seen, "витрина мастерской рассылается автору");
+    }
+
+    // --- организации, ранги и дипломатия ---
+
+    #[test]
+    fn create_and_join_org() {
+        let mut s = Server::new();
+        s.connect_on_planet(1);
+        s.connect_on_planet(2);
+        let id = s.create_org(1, "Легион".to_string(), "LEG".to_string()).unwrap();
+        assert_eq!(s.player_org.get(&1).copied(), Some(id));
+        // Второй игрок вступает.
+        s.join_org(2, id).unwrap();
+        assert_eq!(s.orgs[&id].members.len(), 2);
+        assert_eq!(s.orgs[&id].rank_of(1), Some(RANK_LEADER), "создатель — лидер");
+        assert_eq!(s.orgs[&id].rank_of(2), Some(RANK_MEMBER), "вошедший — участник");
+        // Уже в организации — повторно нельзя.
+        assert!(s.create_org(1, "Ещё".to_string(), "X".to_string()).is_err());
+        assert!(s.join_org(2, id).is_err());
+    }
+
+    #[test]
+    fn rank_changes_respect_authority() {
+        let mut s = Server::new();
+        s.connect_on_planet(1);
+        s.connect_on_planet(2);
+        s.connect_on_planet(3);
+        let id = s.create_org(1, "Легион".to_string(), "LEG".to_string()).unwrap();
+        s.join_org(2, id).unwrap();
+        s.join_org(3, id).unwrap();
+        // Лидер повышает игрока 2 до офицера.
+        s.set_org_rank(1, 2, RANK_OFFICER).unwrap();
+        assert_eq!(s.orgs[&id].rank_of(2), Some(RANK_OFFICER));
+        // Офицер повышает игрока 3 до офицера — можно.
+        s.set_org_rank(2, 3, RANK_OFFICER).unwrap();
+        // Офицер не может назначить лидера.
+        assert!(s.set_org_rank(2, 3, RANK_LEADER).is_err());
+        // Участник не может назначать ранги.
+        s.set_org_rank(1, 2, RANK_MEMBER).unwrap();   // 2 снова участник
+        assert!(s.set_org_rank(2, 3, RANK_OFFICER).is_err(), "участник не назначает");
+    }
+
+    #[test]
+    fn leader_leaving_promotes_next() {
+        let mut s = Server::new();
+        s.connect_on_planet(1);
+        s.connect_on_planet(2);
+        let id = s.create_org(1, "Легион".to_string(), "LEG".to_string()).unwrap();
+        s.join_org(2, id).unwrap();
+        // Лидер уходит — лидером становится оставшийся.
+        s.leave_org(1).unwrap();
+        assert_eq!(s.orgs[&id].rank_of(2), Some(RANK_LEADER), "новый лидер");
+        // Последний уходит — организация распускается.
+        s.leave_org(2).unwrap();
+        assert!(!s.orgs.contains_key(&id), "пустая организация удалена");
+    }
+
+    #[test]
+    fn diplomacy_declared_by_leader_only() {
+        let mut s = Server::new();
+        s.connect_on_planet(1);
+        s.connect_on_planet(2);
+        s.connect_on_planet(3);
+        let a = s.create_org(1, "Альфа".to_string(), "A".to_string()).unwrap();
+        let b = s.create_org(2, "Бета".to_string(), "B".to_string()).unwrap();
+        s.join_org(3, a).unwrap();
+        // Лидер объявляет войну — ок.
+        s.declare_diplomacy(1, b, 2).unwrap();
+        assert_eq!(s.orgs[&a].diplomacy.get(&b), Some(&2));
+        // Участник не может.
+        assert!(s.declare_diplomacy(3, b, 1).is_err(), "участник не объявляет дипломатию");
+        // Себе — нельзя.
+        assert!(s.declare_diplomacy(1, a, 1).is_err());
+    }
+
+    #[test]
+    fn org_state_is_broadcast_on_change() {
+        let mut s = Server::new();
+        s.connect_on_planet(1);
+        s.connect_on_planet(2);
+        let id = s.create_org(1, "Легион".to_string(), "LEG".to_string()).unwrap();
+        // После тика лидер получает состояние организации.
+        let plan = s.tick();
+        let seen = plan.messages[&1]
+            .iter()
+            .any(|m| matches!(m, Message::ServerOrg { id: oid, .. } if *oid == id));
+        assert!(seen, "состояние организации рассылается");
     }
 }

@@ -80,6 +80,13 @@ namespace OUWire
         TagPlaceOwnBlueprint = 39,
         TagWorkshop = 40,
         TagWorkshopResult = 41,
+        TagCreateOrg = 42,
+        TagJoinOrg = 43,
+        TagLeaveOrg = 44,
+        TagSetOrgRank = 45,
+        TagDeclareDiplomacy = 46,
+        TagOrg = 47,
+        TagOrgResult = 48,
     };
 
     /// Действия редактора конструкций.
@@ -1187,6 +1194,147 @@ namespace OUWire
         if (!r.U8(tag) || tag != TagWorkshopResult) return false;
         if (!r.Bool(Out.Ok)) return false;
         return r.Str(Out.Message);
+    }
+
+    /// Создать организацию (клиент → сервер, тег 42): [tag][name][tag-строка].
+    inline std::vector<uint8_t> EncodeCreateOrg(const std::string& Name, const std::string& Tag)
+    {
+        std::vector<uint8_t> out;
+        out.push_back(TagCreateOrg);
+        auto push_str = [&out](const std::string& s) {
+            out.push_back(static_cast<uint8_t>(s.size() & 0xFF));
+            out.push_back(static_cast<uint8_t>((s.size() >> 8) & 0xFF));
+            out.insert(out.end(), s.begin(), s.end());
+        };
+        push_str(Name);
+        push_str(Tag);
+        return out;
+    }
+
+    /// Вступить в организацию (клиент → сервер, тег 43).
+    inline std::vector<uint8_t> EncodeJoinOrg(uint32_t Id)
+    {
+        std::vector<uint8_t> out;
+        out.push_back(TagJoinOrg);
+        push_varint(out, Id);
+        return out;
+    }
+
+    /// Покинуть организацию (клиент → сервер, тег 44).
+    inline std::vector<uint8_t> EncodeLeaveOrg()
+    {
+        return std::vector<uint8_t>{TagLeaveOrg};
+    }
+
+    /// Назначить ранг (клиент → сервер, тег 45): [tag][player varint][rank u8].
+    inline std::vector<uint8_t> EncodeSetOrgRank(uint32_t Player, uint8_t Rank)
+    {
+        std::vector<uint8_t> out;
+        out.push_back(TagSetOrgRank);
+        push_varint(out, Player);
+        out.push_back(Rank);
+        return out;
+    }
+
+    /// Объявить дипломатию (клиент → сервер, тег 46): [tag][org varint][stance u8].
+    inline std::vector<uint8_t> EncodeDeclareDiplomacy(uint32_t Org, uint8_t Stance)
+    {
+        std::vector<uint8_t> out;
+        out.push_back(TagDeclareDiplomacy);
+        push_varint(out, Org);
+        out.push_back(Stance);
+        return out;
+    }
+
+    /// Состояние организации (сервер → клиент, тег 47).
+    struct OrgMember
+    {
+        uint32_t Player = 0;
+        uint8_t Rank = 0;
+    };
+    struct OrgDiplomacy
+    {
+        uint32_t Org = 0;
+        uint8_t Stance = 0;
+    };
+    struct OrgBrief
+    {
+        uint32_t Id = 0;
+        std::string Name;
+        std::string Tag;
+        uint32_t Members = 0;
+    };
+    struct OrgState
+    {
+        uint32_t Id = 0;         // 0 — игрок без организации
+        std::string Name;
+        std::string Tag;
+        std::vector<OrgMember> Members;
+        std::vector<OrgDiplomacy> Diplomacy;
+        std::vector<OrgBrief> All;
+    };
+
+    inline bool DecodeOrg(const uint8_t* body, size_t len, OrgState& Out)
+    {
+        Reader r{body, len, 0};
+        uint8_t tag = 0;
+        if (!r.U8(tag) || tag != TagOrg) return false;
+        uint64_t id = 0;
+        if (!r.Varint(id)) return false;
+        Out.Id = static_cast<uint32_t>(id);
+        if (!r.Str(Out.Name) || !r.Str(Out.Tag)) return false;
+        uint64_t nm = 0;
+        if (!r.Varint(nm)) return false;
+        Out.Members.clear();
+        Out.Members.reserve(static_cast<size_t>(nm));
+        for (uint64_t i = 0; i < nm; ++i)
+        {
+            OrgMember M;
+            uint64_t p = 0;
+            if (!r.Varint(p)) return false;
+            M.Player = static_cast<uint32_t>(p);
+            if (!r.U8(M.Rank)) return false;
+            Out.Members.push_back(M);
+        }
+        uint64_t nd = 0;
+        if (!r.Varint(nd)) return false;
+        Out.Diplomacy.clear();
+        Out.Diplomacy.reserve(static_cast<size_t>(nd));
+        for (uint64_t i = 0; i < nd; ++i)
+        {
+            OrgDiplomacy D;
+            uint64_t o = 0;
+            if (!r.Varint(o)) return false;
+            D.Org = static_cast<uint32_t>(o);
+            if (!r.U8(D.Stance)) return false;
+            Out.Diplomacy.push_back(D);
+        }
+        uint64_t na = 0;
+        if (!r.Varint(na)) return false;
+        Out.All.clear();
+        Out.All.reserve(static_cast<size_t>(na));
+        for (uint64_t i = 0; i < na; ++i)
+        {
+            OrgBrief B;
+            uint64_t oid = 0, c = 0;
+            if (!r.Varint(oid)) return false;
+            B.Id = static_cast<uint32_t>(oid);
+            if (!r.Str(B.Name) || !r.Str(B.Tag)) return false;
+            if (!r.Varint(c)) return false;
+            B.Members = static_cast<uint32_t>(c);
+            Out.All.push_back(std::move(B));
+        }
+        return true;
+    }
+
+    /// Результат операции организации (сервер → клиент, тег 48).
+    inline bool DecodeOrgResult(const uint8_t* body, size_t len, bool& Ok, std::string& Message)
+    {
+        Reader r{body, len, 0};
+        uint8_t tag = 0;
+        if (!r.U8(tag) || tag != TagOrgResult) return false;
+        if (!r.Bool(Ok)) return false;
+        return r.Str(Message);
     }
 
     /// Собрать кадр ввода (клиент → сервер, тег 2).

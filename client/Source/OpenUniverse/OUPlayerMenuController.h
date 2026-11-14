@@ -227,6 +227,18 @@ public:
 	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Workshop")
 	bool bWorkshopOpen = false;
 
+	/**
+	 * Окно организации (клавиша O): состав, ранги, дипломатия и список гильдий.
+	 *
+	 * Создание/вступление/выход, повышение рангов (лидер/офицер) и объявление
+	 * дипломатии (союз/война) — сервер проверяет права.
+	 */
+	void DrawOrg(class UCanvas* InCanvas);
+
+	/** Открыто ли окно организации. */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Org")
+	bool bOrgOpen = false;
+
 	/** Имя предмета по id (дублирует серверный реестр). */
 	static FString ItemName(int32 Item);
 

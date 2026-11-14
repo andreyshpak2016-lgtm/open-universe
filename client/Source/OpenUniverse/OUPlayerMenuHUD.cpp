@@ -25,6 +25,8 @@ void AOUPlayerMenuHUD::DrawHUD()
 		Menu->DrawScripts(Canvas);
 		// Окно мастерской (K).
 		Menu->DrawWorkshop(Canvas);
+		// Окно организации (O).
+		Menu->DrawOrg(Canvas);
 		// Пауза-меню (ESC) — поверх всего.
 		Menu->DrawPauseMenu(Canvas);
 	}

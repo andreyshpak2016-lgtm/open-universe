@@ -340,6 +340,45 @@ void UOUClientNet::SendPlaceOwnBlueprint(int32 Id, int32 X, int32 Y, int32 Z, in
 	SendPacket(Arr);
 }
 
+void UOUClientNet::SendCreateOrg(const FString& Name, const FString& Tag)
+{
+	if (!IsConnected()) { return; }
+	const std::string N(TCHAR_TO_UTF8(*Name));
+	const std::string T(TCHAR_TO_UTF8(*Tag));
+	const std::vector<uint8_t> Body = OUWire::EncodeCreateOrg(N, T);
+	TArray<uint8> Arr; Arr.Append(Body.data(), static_cast<int32>(Body.size())); SendPacket(Arr);
+}
+
+void UOUClientNet::SendJoinOrg(int32 Id)
+{
+	if (!IsConnected()) { return; }
+	const std::vector<uint8_t> Body = OUWire::EncodeJoinOrg(static_cast<uint32_t>(FMath::Max(0, Id)));
+	TArray<uint8> Arr; Arr.Append(Body.data(), static_cast<int32>(Body.size())); SendPacket(Arr);
+}
+
+void UOUClientNet::SendLeaveOrg()
+{
+	if (!IsConnected()) { return; }
+	const std::vector<uint8_t> Body = OUWire::EncodeLeaveOrg();
+	TArray<uint8> Arr; Arr.Append(Body.data(), static_cast<int32>(Body.size())); SendPacket(Arr);
+}
+
+void UOUClientNet::SendSetOrgRank(int32 Player, int32 Rank)
+{
+	if (!IsConnected()) { return; }
+	const std::vector<uint8_t> Body = OUWire::EncodeSetOrgRank(
+		static_cast<uint32_t>(FMath::Max(0, Player)), static_cast<uint8_t>(FMath::Clamp(Rank, 0, 2)));
+	TArray<uint8> Arr; Arr.Append(Body.data(), static_cast<int32>(Body.size())); SendPacket(Arr);
+}
+
+void UOUClientNet::SendDeclareDiplomacy(int32 Org, int32 Stance)
+{
+	if (!IsConnected()) { return; }
+	const std::vector<uint8_t> Body = OUWire::EncodeDeclareDiplomacy(
+		static_cast<uint32_t>(FMath::Max(0, Org)), static_cast<uint8_t>(FMath::Clamp(Stance, 0, 2)));
+	TArray<uint8> Arr; Arr.Append(Body.data(), static_cast<int32>(Body.size())); SendPacket(Arr);
+}
+
 void UOUClientNet::UpdateTerritoryAt(double ServerX, double ServerY, double ServerZ)
 {
 	// Точка игрока в серверных единицах; зоны тоже в серверных.
@@ -851,6 +890,56 @@ void UOUClientNet::Poll()
 				bWorkshopReceived = true;
 				UE_LOG(LogOUClient, Log, TEXT("Мастерская: %d объявлений, %d своих"),
 					WorkshopListings.Num(), OwnBlueprints.Num());
+			}
+		}
+		else if (Body[0] == OUWire::TagOrgResult) // результат организации
+		{
+			bool Ok = false;
+			std::string Msg;
+			if (OUWire::DecodeOrgResult(Body.GetData(), static_cast<size_t>(Body.Num()), Ok, Msg))
+			{
+				OrgMessage = FString(UTF8_TO_TCHAR(Msg.c_str()));
+				UE_LOG(LogOUClient, Log, TEXT("Организация: %s — %s"),
+					Ok ? TEXT("ок") : TEXT("отказ"), *OrgMessage);
+			}
+		}
+		else if (Body[0] == OUWire::TagOrg) // состояние организации
+		{
+			OUWire::OrgState O;
+			if (OUWire::DecodeOrg(Body.GetData(), static_cast<size_t>(Body.Num()), O))
+			{
+				OrgId = static_cast<int32>(O.Id);
+				OrgName = FString(UTF8_TO_TCHAR(O.Name.c_str()));
+				OrgTag = FString(UTF8_TO_TCHAR(O.Tag.c_str()));
+				OrgMembers.Reset();
+				for (const OUWire::OrgMember& M : O.Members)
+				{
+					FOUOrgMember E;
+					E.Player = static_cast<int32>(M.Player);
+					E.Rank = static_cast<int32>(M.Rank);
+					OrgMembers.Add(E);
+				}
+				OrgDiplomacy.Reset();
+				for (const OUWire::OrgDiplomacy& D : O.Diplomacy)
+				{
+					FOUOrgDiplo E;
+					E.Org = static_cast<int32>(D.Org);
+					E.Stance = static_cast<int32>(D.Stance);
+					OrgDiplomacy.Add(E);
+				}
+				AllOrgs.Reset();
+				for (const OUWire::OrgBrief& B : O.All)
+				{
+					FOUOrgBrief E;
+					E.Id = static_cast<int32>(B.Id);
+					E.Name = FString(UTF8_TO_TCHAR(B.Name.c_str()));
+					E.Tag = FString(UTF8_TO_TCHAR(B.Tag.c_str()));
+					E.Members = static_cast<int32>(B.Members);
+					AllOrgs.Add(E);
+				}
+				bOrgReceived = true;
+				UE_LOG(LogOUClient, Log, TEXT("Организация: id %d «%s» (%d участников, всего %d)"),
+					OrgId, *OrgName, OrgMembers.Num(), AllOrgs.Num());
 			}
 		}
 		else if (Body[0] == OUWire::TagMarketState) // состояние экономики

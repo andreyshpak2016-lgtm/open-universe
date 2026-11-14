@@ -261,6 +261,51 @@ struct FOUSystemBody
 	int64 Seed = 0;
 };
 
+/** Участник организации (игрок и ранг). */
+USTRUCT(BlueprintType)
+struct FOUOrgMember
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Org")
+	int32 Player = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Org")
+	int32 Rank = 0;
+};
+
+/** Дипломатия к другой организации: id и стойка (0/1/2). */
+USTRUCT(BlueprintType)
+struct FOUOrgDiplo
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Org")
+	int32 Org = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Org")
+	int32 Stance = 0;
+};
+
+/** Краткая карточка организации (для списка). */
+USTRUCT(BlueprintType)
+struct FOUOrgBrief
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Org")
+	int32 Id = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Org")
+	FString Name;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Org")
+	FString Tag;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Org")
+	int32 Members = 0;
+};
+
 /** Объявление мастерской: шаблон игрока на продажу. */
 USTRUCT(BlueprintType)
 struct FOUWorkshopListing
@@ -687,6 +732,49 @@ public:
 
 	/** Поставить свой шаблон по id с якорем (X,Y,Z) в конструкцию Entity. */
 	void SendPlaceOwnBlueprint(int32 Id, int32 X, int32 Y, int32 Z, int32 Entity);
+
+	// --- Организации (гильдии), ранги и дипломатия ---
+
+	/** Id организации игрока (0 — без организации). */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Org")
+	int32 OrgId = 0;
+
+	/** Имя и тег организации игрока. */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Org")
+	FString OrgName;
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Org")
+	FString OrgTag;
+
+	/** Состав организации игрока (игрок, ранг). */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Org")
+	TArray<FOUOrgMember> OrgMembers;
+
+	/** Дипломатия организации игрока: (org id, стойка). */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Org")
+	TArray<FOUOrgDiplo> OrgDiplomacy;
+
+	/** Все организации (для списка и вступления). */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Org")
+	TArray<FOUOrgBrief> AllOrgs;
+
+	/** Последний результат операции организации (для подсказки). */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Org")
+	FString OrgMessage;
+
+	/** Приходило ли состояние организации. */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Org")
+	bool bOrgReceived = false;
+
+	/** Создать организацию (имя, тег). */
+	void SendCreateOrg(const FString& Name, const FString& Tag);
+	/** Вступить в организацию по id. */
+	void SendJoinOrg(int32 Id);
+	/** Покинуть организацию. */
+	void SendLeaveOrg();
+	/** Назначить ранг участнику. */
+	void SendSetOrgRank(int32 Player, int32 Rank);
+	/** Объявить дипломатию к организации (org, стойка 0/1/2). */
+	void SendDeclareDiplomacy(int32 Org, int32 Stance);
 
 	/** Подключиться к серверу. */
 	UFUNCTION(BlueprintCallable, Category = "Open Universe|Net")

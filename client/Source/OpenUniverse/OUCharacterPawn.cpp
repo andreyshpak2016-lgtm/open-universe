@@ -455,6 +455,8 @@ void AOUCharacterPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputCom
 	PlayerInputComponent->BindAction(TEXT("ScriptMenu"), IE_Pressed, this, &AOUCharacterPawn::ToggleScripts);
 	// Мастерская: K — обмен шаблонами.
 	PlayerInputComponent->BindAction(TEXT("WorkshopMenu"), IE_Pressed, this, &AOUCharacterPawn::ToggleWorkshop);
+	// Организация: O — окно гильдии.
+	PlayerInputComponent->BindAction(TEXT("OrgMenu"), IE_Pressed, this, &AOUCharacterPawn::ToggleOrg);
 	// Alt — отпустить/вернуть курсор (обзор мышью / работа с интерфейсом).
 	PlayerInputComponent->BindAction(TEXT("CursorToggle"), IE_Pressed, this, &AOUCharacterPawn::OnCursorToggle);
 }
@@ -1165,6 +1167,7 @@ void AOUCharacterPawn::ToggleScripts()
 		{
 			Menu->bMarketOpen = false;
 			Menu->bWorkshopOpen = false;
+			Menu->bOrgOpen = false;
 		}
 		Menu->SetMenuCursor(Menu->bScriptsOpen);
 		UE_LOG(LogOUChar, Log, TEXT("Скрипты: %s"), Menu->bScriptsOpen ? TEXT("открыто") : TEXT("закрыто"));
@@ -1190,9 +1193,36 @@ void AOUCharacterPawn::ToggleWorkshop()
 		{
 			Menu->bMarketOpen = false;
 			Menu->bScriptsOpen = false;
+			Menu->bOrgOpen = false;
 		}
 		Menu->SetMenuCursor(Menu->bWorkshopOpen);
 		UE_LOG(LogOUChar, Log, TEXT("Мастерская: %s"), Menu->bWorkshopOpen ? TEXT("открыто") : TEXT("закрыто"));
+	}
+}
+
+void AOUCharacterPawn::ToggleOrg()
+{
+	// Окно организации (клавиша O): состав, ранги, дипломатия.
+	if (bBuildMenuOpen)
+	{
+		return;
+	}
+	AOUPlayerMenuController* Menu = Cast<AOUPlayerMenuController>(GetController());
+	if (!Menu)
+	{
+		Menu = Cast<AOUPlayerMenuController>(GetWorld() ? GetWorld()->GetFirstPlayerController() : nullptr);
+	}
+	if (Menu)
+	{
+		Menu->bOrgOpen = !Menu->bOrgOpen;
+		if (Menu->bOrgOpen)
+		{
+			Menu->bMarketOpen = false;
+			Menu->bScriptsOpen = false;
+			Menu->bWorkshopOpen = false;
+		}
+		Menu->SetMenuCursor(Menu->bOrgOpen);
+		UE_LOG(LogOUChar, Log, TEXT("Организация: %s"), Menu->bOrgOpen ? TEXT("открыто") : TEXT("закрыто"));
 	}
 }
 
@@ -1677,6 +1707,26 @@ void AOUCharacterPawn::Tick(float DeltaSeconds)
 			{
 				Net->SendPublishBlueprint(TEXT("Шаблон TestPilot"), 600);
 				UE_LOG(LogOUChar, Log, TEXT("Мастерская: публикую постройку"));
+			}
+		}
+	}
+
+	// Тест организации (`-OUAutoOrg`): открыть окно и создать гильдию.
+	if (FParse::Param(FCommandLine::Get(), TEXT("OUAutoOrg")))
+	{
+		OrgTimer += DeltaSeconds;
+		if (OrgTimer >= 1.5f && OrgCount < 8)
+		{
+			OrgTimer = 0.f;
+			++OrgCount;
+			if (OrgCount == 1)
+			{
+				ToggleOrg();
+			}
+			if (OrgCount == 3 && Net && Net->OwnEntityId != 0 && Net->OrgId == 0)
+			{
+				Net->SendCreateOrg(TEXT("Легион TestPilot"), TEXT("LEG"));
+				UE_LOG(LogOUChar, Log, TEXT("Организация: создаю"));
 			}
 		}
 	}

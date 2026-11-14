@@ -178,6 +178,9 @@ public:
 	/** Открыть/закрыть окно мастерской (клавиша K). */
 	void ToggleWorkshop();
 
+	/** Открыть/закрыть окно организации (клавиша O). */
+	void ToggleOrg();
+
 	/** Поставить шаблон постройки (blueprint) по id у точки под прицелом. */
 	UFUNCTION(BlueprintCallable, Category = "Open Universe|Build")
 	void PlaceBlueprint(int32 BlueprintId);
@@ -225,6 +228,10 @@ public:
 	/** Таймер/счётчик теста мастерской (`-OUAutoWorkshop`). */
 	float WorkshopTimer = 0.f;
 	int32 WorkshopCount = 0;
+
+	/** Таймер/счётчик теста организации (`-OUAutoOrg`). */
+	float OrgTimer = 0.f;
+	int32 OrgCount = 0;
 
 	/** Таймер/счётчик тестового крафта (`-OUAutoCraft`). */
 	float CraftTimer = 0.f;

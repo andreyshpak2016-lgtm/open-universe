@@ -455,6 +455,51 @@ int main(int argc, char** argv)
         Check(OUWire::DecodeWorkshopResult(rb.data(), rb.size(), wr) && wr.Ok, "результат разобран");
     }
 
+    // --- 6j. Организации (теги 42–48) ---
+    std::printf("\n=== 6j. Организации ===\n");
+    {
+        auto push_str = [](std::vector<uint8_t>& out, const std::string& s) {
+            out.push_back(static_cast<uint8_t>(s.size() & 0xFF));
+            out.push_back(static_cast<uint8_t>((s.size() >> 8) & 0xFF));
+            out.insert(out.end(), s.begin(), s.end());
+        };
+        const std::vector<uint8_t> cb = OUWire::EncodeCreateOrg("Легион", "LEG");
+        Check(cb[0] == OUWire::TagCreateOrg, "тег создания орг = 42");
+        Check(OUWire::EncodeJoinOrg(3)[0] == OUWire::TagJoinOrg, "тег вступления = 43");
+        Check(OUWire::EncodeLeaveOrg()[0] == OUWire::TagLeaveOrg, "тег выхода = 44");
+        Check(OUWire::EncodeSetOrgRank(7, 1)[0] == OUWire::TagSetOrgRank, "тег ранга = 45");
+        Check(OUWire::EncodeDeclareDiplomacy(3, 2)[0] == OUWire::TagDeclareDiplomacy, "тег дипломатии = 46");
+        // Состояние: [tag47][id][name][tag][members]{(p,rank)}[diplo]{(org,stance)}[all]{(id,name,tag,c)}.
+        std::vector<uint8_t> ob;
+        ob.push_back(OUWire::TagOrg);
+        OUWire::push_varint(ob, 3);
+        push_str(ob, "Легион");
+        push_str(ob, "LEG");
+        OUWire::push_varint(ob, 2);
+        OUWire::push_varint(ob, 1); ob.push_back(2);
+        OUWire::push_varint(ob, 7); ob.push_back(1);
+        OUWire::push_varint(ob, 1);
+        OUWire::push_varint(ob, 4); ob.push_back(2);
+        OUWire::push_varint(ob, 1);
+        OUWire::push_varint(ob, 3); push_str(ob, "Легион"); push_str(ob, "LEG"); OUWire::push_varint(ob, 2);
+        OUWire::OrgState os;
+        Check(OUWire::DecodeOrg(ob.data(), ob.size(), os), "состояние орг разобрано");
+        Check(os.Id == 3 && os.Name == "Легион" && os.Tag == "LEG", "орг: id/имя/тег");
+        Check(os.Members.size() == 2 && os.Members[0].Player == 1 && os.Members[0].Rank == 2,
+            "орг: состав и ранги");
+        Check(os.Diplomacy.size() == 1 && os.Diplomacy[0].Org == 4 && os.Diplomacy[0].Stance == 2,
+            "орг: дипломатия");
+        Check(os.All.size() == 1 && os.All[0].Members == 2, "орг: список всех");
+        // Результат.
+        std::vector<uint8_t> orb;
+        orb.push_back(OUWire::TagOrgResult);
+        orb.push_back(1);
+        push_str(orb, "вы вступили");
+        bool ok = false;
+        std::string om;
+        Check(OUWire::DecodeOrgResult(orb.data(), orb.size(), ok, om) && ok, "результат орг разобран");
+    }
+
     // --- 7. Приветствие сервера (какой сущностью управляем) ---
     std::printf("\n=== 7. Приветствие сервера (welcome) ===\n");
     {

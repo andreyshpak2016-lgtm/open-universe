@@ -385,6 +385,8 @@ void AOUShipPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 	PlayerInputComponent->BindAction(TEXT("ScriptMenu"), IE_Pressed, this, &AOUShipPawn::ToggleScripts);
 	// Мастерская: K — обмен шаблонами.
 	PlayerInputComponent->BindAction(TEXT("WorkshopMenu"), IE_Pressed, this, &AOUShipPawn::ToggleWorkshop);
+	// Организация: O — окно гильдии.
+	PlayerInputComponent->BindAction(TEXT("OrgMenu"), IE_Pressed, this, &AOUShipPawn::ToggleOrg);
 	// Захват территории: T — объявить текущую зону своей (и в корабле).
 	PlayerInputComponent->BindAction(TEXT("TerritoryCapture"), IE_Pressed, this, &AOUShipPawn::CaptureTerritory);
 	// Сверхсвет: удержание Shift — сверхскоростной перелёт между телами системы.
@@ -507,9 +509,32 @@ void AOUShipPawn::ToggleWorkshop()
 		{
 			Menu->bMarketOpen = false;
 			Menu->bScriptsOpen = false;
+			Menu->bOrgOpen = false;
 		}
 		Menu->SetMenuCursor(Menu->bWorkshopOpen);
 		UE_LOG(LogOUShip, Log, TEXT("Мастерская: %s"), Menu->bWorkshopOpen ? TEXT("открыто") : TEXT("закрыто"));
+	}
+}
+
+void AOUShipPawn::ToggleOrg()
+{
+	// Окно организации (клавиша O) — работает и из корабля.
+	AOUPlayerMenuController* Menu = Cast<AOUPlayerMenuController>(GetController());
+	if (!Menu)
+	{
+		Menu = Cast<AOUPlayerMenuController>(GetWorld() ? GetWorld()->GetFirstPlayerController() : nullptr);
+	}
+	if (Menu)
+	{
+		Menu->bOrgOpen = !Menu->bOrgOpen;
+		if (Menu->bOrgOpen)
+		{
+			Menu->bMarketOpen = false;
+			Menu->bScriptsOpen = false;
+			Menu->bWorkshopOpen = false;
+		}
+		Menu->SetMenuCursor(Menu->bOrgOpen);
+		UE_LOG(LogOUShip, Log, TEXT("Организация: %s"), Menu->bOrgOpen ? TEXT("открыто") : TEXT("закрыто"));
 	}
 }
 

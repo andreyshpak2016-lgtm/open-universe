@@ -172,6 +172,8 @@ fn main() {
                             .ok();
                             // И витрина мастерской (шаблоны игроков).
                             net.send_to(token, from, &server.workshop_state(next_player)).ok();
+                            // И состояние организации игрока.
+                            net.send_to(token, from, &server.org_state(next_player)).ok();
                             next_player += 1;
                         }
                     }
@@ -306,6 +308,54 @@ fn main() {
                                 Ok(n) => println!("мастерская: игрок {pid} поставил свой шаблон {id} ({n} блоков)"),
                                 Err(e) => println!("мастерская: игрок {pid}: {e}"),
                             }
+                        }
+                    }
+                    Message::ClientCreateOrg { name, tag } => {
+                        if let Some(pid) = clients.get(&from) {
+                            let msg = match server.create_org(*pid, name, tag) {
+                                Ok(id) => Message::ServerOrgResult {
+                                    ok: true,
+                                    message: format!("организация создана (id {id})"),
+                                },
+                                Err(e) => Message::ServerOrgResult { ok: false, message: e },
+                            };
+                            net.send_to(token, from, &msg).ok();
+                        }
+                    }
+                    Message::ClientJoinOrg { id } => {
+                        if let Some(pid) = clients.get(&from) {
+                            let msg = match server.join_org(*pid, id) {
+                                Ok(()) => Message::ServerOrgResult { ok: true, message: "вы вступили".to_string() },
+                                Err(e) => Message::ServerOrgResult { ok: false, message: e },
+                            };
+                            net.send_to(token, from, &msg).ok();
+                        }
+                    }
+                    Message::ClientLeaveOrg => {
+                        if let Some(pid) = clients.get(&from) {
+                            let msg = match server.leave_org(*pid) {
+                                Ok(()) => Message::ServerOrgResult { ok: true, message: "вы вышли".to_string() },
+                                Err(e) => Message::ServerOrgResult { ok: false, message: e },
+                            };
+                            net.send_to(token, from, &msg).ok();
+                        }
+                    }
+                    Message::ClientSetOrgRank { player, rank } => {
+                        if let Some(pid) = clients.get(&from) {
+                            let msg = match server.set_org_rank(*pid, player, rank) {
+                                Ok(()) => Message::ServerOrgResult { ok: true, message: "ранг изменён".to_string() },
+                                Err(e) => Message::ServerOrgResult { ok: false, message: e },
+                            };
+                            net.send_to(token, from, &msg).ok();
+                        }
+                    }
+                    Message::ClientDeclareDiplomacy { org, stance } => {
+                        if let Some(pid) = clients.get(&from) {
+                            let msg = match server.declare_diplomacy(*pid, org, stance) {
+                                Ok(()) => Message::ServerOrgResult { ok: true, message: "дипломатия объявлена".to_string() },
+                                Err(e) => Message::ServerOrgResult { ok: false, message: e },
+                            };
+                            net.send_to(token, from, &msg).ok();
                         }
                     }
                     _ => {}

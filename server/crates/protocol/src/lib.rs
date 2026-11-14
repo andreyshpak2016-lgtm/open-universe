@@ -322,6 +322,32 @@ pub enum Message {
     ServerWorkshop { listings: Vec<(u32, String, u32, u32, u64)>, owned: Vec<(u32, String)> },
     /// Сервер: результат операции мастерской (публикация/покупка).
     ServerWorkshopResult { ok: bool, message: String },
+    /// Клиент: создать организацию (имя и короткий тег).
+    ClientCreateOrg { name: String, tag: String },
+    /// Клиент: вступить в организацию по id.
+    ClientJoinOrg { id: u32 },
+    /// Клиент: покинуть свою организацию.
+    ClientLeaveOrg,
+    /// Клиент: назначить ранг участнику (только лидер/офицер).
+    ///
+    /// `rank`: 0 участник, 1 офицер, 2 лидер. Сервер проверяет права.
+    ClientSetOrgRank { player: NetId, rank: u8 },
+    /// Клиент: объявить дипломатию к организации (0 нейтралитет, 1 союз, 2 война).
+    ClientDeclareDiplomacy { org: u32, stance: u8 },
+    /// Сервер: состояние организации игрока (состав, ранги, дипломатия) и список всех.
+    ///
+    /// `id` 0 — игрок без организации. `members` — (игрок, ранг). `diplomacy` —
+    /// (org, стойка). `all` — (id, имя, тег, участников) по всем организациям.
+    ServerOrg {
+        id: u32,
+        name: String,
+        tag: String,
+        members: Vec<(NetId, u8)>,
+        diplomacy: Vec<(u32, u8)>,
+        all: Vec<(u32, String, String, u32)>,
+    },
+    /// Сервер: результат операции с организацией (для подсказки игроку).
+    ServerOrgResult { ok: bool, message: String },
 }
 
 /// Территория в сообщении (для HUD).
@@ -664,6 +690,13 @@ mod wire {
     const TAG_PLACE_OWN_BP: u8 = 39;
     const TAG_WORKSHOP: u8 = 40;
     const TAG_WORKSHOP_RESULT: u8 = 41;
+    const TAG_CREATE_ORG: u8 = 42;
+    const TAG_JOIN_ORG: u8 = 43;
+    const TAG_LEAVE_ORG: u8 = 44;
+    const TAG_SET_ORG_RANK: u8 = 45;
+    const TAG_DECLARE_DIPLOMACY: u8 = 46;
+    const TAG_ORG: u8 = 47;
+    const TAG_ORG_RESULT: u8 = 48;
 
     pub fn encode(msg: &Message) -> Vec<u8> {
         let mut w = Writer::new();
@@ -1025,6 +1058,56 @@ mod wire {
                 w.bool(*ok);
                 w.str(message);
             }
+            Message::ClientCreateOrg { name, tag } => {
+                w.u8(TAG_CREATE_ORG);
+                w.str(name);
+                w.str(tag);
+            }
+            Message::ClientJoinOrg { id } => {
+                w.u8(TAG_JOIN_ORG);
+                w.varint(*id as u64);
+            }
+            Message::ClientLeaveOrg => {
+                w.u8(TAG_LEAVE_ORG);
+            }
+            Message::ClientSetOrgRank { player, rank } => {
+                w.u8(TAG_SET_ORG_RANK);
+                w.varint(*player as u64);
+                w.u8(*rank);
+            }
+            Message::ClientDeclareDiplomacy { org, stance } => {
+                w.u8(TAG_DECLARE_DIPLOMACY);
+                w.varint(*org as u64);
+                w.u8(*stance);
+            }
+            Message::ServerOrg { id, name, tag, members, diplomacy, all } => {
+                w.u8(TAG_ORG);
+                w.varint(*id as u64);
+                w.str(name);
+                w.str(tag);
+                w.varint(members.len() as u64);
+                for (p, r) in members {
+                    w.varint(*p as u64);
+                    w.u8(*r);
+                }
+                w.varint(diplomacy.len() as u64);
+                for (o, s) in diplomacy {
+                    w.varint(*o as u64);
+                    w.u8(*s);
+                }
+                w.varint(all.len() as u64);
+                for (oid, n, t, c) in all {
+                    w.varint(*oid as u64);
+                    w.str(n);
+                    w.str(t);
+                    w.varint(*c as u64);
+                }
+            }
+            Message::ServerOrgResult { ok, message } => {
+                w.u8(TAG_ORG_RESULT);
+                w.bool(*ok);
+                w.str(message);
+            }
         }
         w.buf
     }
@@ -1362,6 +1445,46 @@ mod wire {
                 ok: r.bool()?,
                 message: r.str()?,
             }),
+            TAG_CREATE_ORG => Ok(Message::ClientCreateOrg { name: r.str()?, tag: r.str()? }),
+            TAG_JOIN_ORG => Ok(Message::ClientJoinOrg { id: r.varint()? as u32 }),
+            TAG_LEAVE_ORG => Ok(Message::ClientLeaveOrg),
+            TAG_SET_ORG_RANK => Ok(Message::ClientSetOrgRank {
+                player: r.varint()? as NetId,
+                rank: r.u8()?,
+            }),
+            TAG_DECLARE_DIPLOMACY => Ok(Message::ClientDeclareDiplomacy {
+                org: r.varint()? as u32,
+                stance: r.u8()?,
+            }),
+            TAG_ORG => {
+                let id = r.varint()? as u32;
+                let name = r.str()?;
+                let tag = r.str()?;
+                let nm = r.varint()? as usize;
+                let mut members = Vec::with_capacity(nm.min(1024));
+                for _ in 0..nm {
+                    members.push((r.varint()? as NetId, r.u8()?));
+                }
+                let nd = r.varint()? as usize;
+                let mut diplomacy = Vec::with_capacity(nd.min(1024));
+                for _ in 0..nd {
+                    diplomacy.push((r.varint()? as u32, r.u8()?));
+                }
+                let na = r.varint()? as usize;
+                let mut all = Vec::with_capacity(na.min(1024));
+                for _ in 0..na {
+                    let oid = r.varint()? as u32;
+                    let n = r.str()?;
+                    let t = r.str()?;
+                    let c = r.varint()? as u32;
+                    all.push((oid, n, t, c));
+                }
+                Ok(Message::ServerOrg { id, name, tag, members, diplomacy, all })
+            }
+            TAG_ORG_RESULT => Ok(Message::ServerOrgResult {
+                ok: r.bool()?,
+                message: r.str()?,
+            }),
             other => Err(WireError::BadTag(other)),
         }
     }
@@ -1541,6 +1664,31 @@ mod tests {
         assert_eq!(decode(&encode(&shop)).unwrap(), shop);
         let res = Message::ServerWorkshopResult { ok: true, message: "готово".into() };
         assert_eq!(decode(&encode(&res)).unwrap(), res);
+    }
+
+    #[test]
+    fn org_roundtrip() {
+        let c = Message::ClientCreateOrg { name: "Легион".into(), tag: "LEG".into() };
+        assert_eq!(decode(&encode(&c)).unwrap(), c);
+        let j = Message::ClientJoinOrg { id: 3 };
+        assert_eq!(decode(&encode(&j)).unwrap(), j);
+        let l = Message::ClientLeaveOrg;
+        assert_eq!(decode(&encode(&l)).unwrap(), l);
+        let sr = Message::ClientSetOrgRank { player: 7, rank: 1 };
+        assert_eq!(decode(&encode(&sr)).unwrap(), sr);
+        let d = Message::ClientDeclareDiplomacy { org: 3, stance: 2 };
+        assert_eq!(decode(&encode(&d)).unwrap(), d);
+        let st = Message::ServerOrg {
+            id: 3,
+            name: "Легион".into(),
+            tag: "LEG".into(),
+            members: vec![(1, 2), (7, 1), (9, 0)],
+            diplomacy: vec![(4, 1), (5, 2)],
+            all: vec![(3, "Легион".into(), "LEG".into(), 3)],
+        };
+        assert_eq!(decode(&encode(&st)).unwrap(), st);
+        let rr = Message::ServerOrgResult { ok: false, message: "нет прав".into() };
+        assert_eq!(decode(&encode(&rr)).unwrap(), rr);
     }
 
     #[test]

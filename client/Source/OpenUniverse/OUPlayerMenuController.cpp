@@ -413,6 +413,67 @@ void AOUPlayerMenuController::OnLeftClick()
 				}
 				return;
 			}
+			// Организация: 700 — создать, 701 — выйти, 710+ вступить,
+			// 720+ повысить участника, 750+ дипломатия.
+			if (bOrgOpen && B.Id >= 700)
+			{
+				ResolveNet();
+				if (!Net)
+				{
+					return;
+				}
+				if (B.Id == 700)
+				{
+					const FString OName = Profile.Name.Len() > 0
+						? FString::Printf(TEXT("Организация %s"), *Profile.Name) : TEXT("Организация");
+					const FString OTag = Profile.Name.Len() >= 3
+						? Profile.Name.Left(3).ToUpper() : TEXT("ORG");
+					Net->SendCreateOrg(OName, OTag);
+				}
+				else if (B.Id == 701)
+				{
+					Net->SendLeaveOrg();
+				}
+				else if (B.Id >= 710 && B.Id < 720)
+				{
+					const int32 Index = B.Id - 710;
+					if (Net->AllOrgs.IsValidIndex(Index))
+					{
+						Net->SendJoinOrg(Net->AllOrgs[Index].Id);
+					}
+				}
+				else if (B.Id >= 720 && B.Id < 750)
+				{
+					const int32 Index = B.Id - 720;
+					if (Net->OrgMembers.IsValidIndex(Index))
+					{
+						const FOUOrgMember& M = Net->OrgMembers[Index];
+						// Циклически повышаем ранг (участник → офицер → лидер).
+						Net->SendSetOrgRank(M.Player, (M.Rank + 1) % 3);
+					}
+				}
+				else if (B.Id >= 750)
+				{
+					// Дипломатия: индекс по списку без себя.
+					int32 Row = 0;
+					for (int32 i = 0; i < Net->AllOrgs.Num(); ++i)
+					{
+						if (Net->AllOrgs[i].Id == Net->OrgId) { continue; }
+						if (B.Id == 750 + Row)
+						{
+							int32 Stance = 0;
+							for (const FOUOrgDiplo& D : Net->OrgDiplomacy)
+							{
+								if (D.Org == Net->AllOrgs[i].Id) { Stance = D.Stance; break; }
+							}
+							Net->SendDeclareDiplomacy(Net->AllOrgs[i].Id, (Stance + 1) % 3);
+							break;
+						}
+						++Row;
+					}
+				}
+				return;
+			}
 			if (Screen == EOUMenuScreen::Character)
 			{
 				if (B.Id == 1)
@@ -1280,6 +1341,123 @@ void AOUPlayerMenuController::DrawScripts(UCanvas* InCanvas)
 	}
 }
 
+void AOUPlayerMenuController::DrawOrg(UCanvas* InCanvas)
+{
+	if (!bOrgOpen || !InCanvas || bMenuOpen)
+	{
+		return;
+	}
+	ResolveNet();
+
+	const float W = InCanvas->SizeX;
+	const float H = InCanvas->SizeY;
+	UFont* Font = GEngine->GetLargeFont();
+	UFont* Small = GEngine->GetMediumFont();
+	UFont* Tiny = GEngine->GetSmallFont();
+	const FLinearColor PanelB(0.34f, 0.44f, 0.85f, 0.9f);
+	const FLinearColor Dim(0.66f, 0.72f, 0.86f, 1.f);
+
+	const float PW = FMath::Min(920.f, W - 80.f);
+	const float PH = FMath::Min(600.f, H - 100.f);
+	const FVector2D P((W - PW) * 0.5f, (H - PH) * 0.5f);
+	GlassPanel(InCanvas, P, FVector2D(PW, PH), PanelB, ColAccent2);
+	DrawText(InCanvas, Font, TEXT("ОРГАНИЗАЦИЯ  ·  ГИЛЬДИЯ"), P + FVector2D(24, 16), ColAccent);
+	DrawText(InCanvas, Small, TEXT("O — закрыть"), P + FVector2D(PW - 130, 24), Dim);
+
+	const int32 MyOrg = Net ? Net->OrgId : 0;
+	if (MyOrg == 0)
+	{
+		// Без организации: создать свою или вступить в существующую.
+		DrawText(InCanvas, Small, TEXT("Вы без организации. Создайте свою:"), P + FVector2D(24, 56), ColText);
+		const FVector2D CreatePos(P.X + 24, P.Y + 80);
+		const FVector2D CreateSize(280, 30);
+		FillBox(InCanvas, CreatePos, CreateSize, ColAccent2);
+		DrawText(InCanvas, Small, TEXT("Создать организацию"), CreatePos + FVector2D(12, 7),
+			FLinearColor(0.02f, 0.06f, 0.1f, 1.f));
+		Buttons.Add({ CreatePos, CreateSize, 700 });
+		if (Net && Net->OrgMessage.Len() > 0)
+		{
+			DrawText(InCanvas, Tiny, Net->OrgMessage, P + FVector2D(320, 88), Dim);
+		}
+		// Список организаций для вступления.
+		DrawText(InCanvas, Small, TEXT("Вступить (ЛКМ):"), P + FVector2D(24, 126), ColAccent);
+		const TArray<FOUOrgBrief>& All = Net ? Net->AllOrgs : TArray<FOUOrgBrief>();
+		if (All.Num() == 0)
+		{
+			DrawText(InCanvas, Tiny, TEXT("(организаций пока нет)"), P + FVector2D(24, 150), Dim);
+		}
+		for (int32 i = 0; i < All.Num() && i < 12; ++i)
+		{
+			const FOUOrgBrief& B = All[i];
+			const float RY = P.Y + 148 + i * 26.f;
+			FillBox(InCanvas, FVector2D(P.X + 20, RY - 2), FVector2D(PW - 40, 24.f),
+				FLinearColor(0.06f, 0.09f, 0.16f, 0.8f));
+			StrokeBox(InCanvas, FVector2D(P.X + 20, RY - 2), FVector2D(PW - 40, 24.f), ColPanelBorder, 1.f);
+			DrawText(InCanvas, Small, FString::Printf(TEXT("[%s] %s  ·  %d участников"),
+				*B.Tag, *B.Name, B.Members), FVector2D(P.X + 28, RY + 3), ColText);
+			Buttons.Add({ FVector2D(P.X + 20, RY - 2), FVector2D(PW - 40, 24.f), 710 + i });
+		}
+		return;
+	}
+
+	// В организации: имя, состав, ранги, дипломатия, кнопки выхода.
+	DrawText(InCanvas, Font, FString::Printf(TEXT("[%s]  %s"), *Net->OrgTag, *Net->OrgName),
+		P + FVector2D(24, 56), ColOk);
+	DrawText(InCanvas, Tiny, FString::Printf(TEXT("id организации: %d"), MyOrg),
+		P + FVector2D(24, 88), Dim);
+
+	// Состав (левая колонка).
+	DrawText(InCanvas, Small, TEXT("Состав (ЛКМ по участнику — повысить)"), P + FVector2D(24, 116), ColAccent);
+	static const TCHAR* RankName[3] = { TEXT("участник"), TEXT("офицер"), TEXT("лидер") };
+	const TArray<FOUOrgMember>& Members = Net->OrgMembers;
+	for (int32 i = 0; i < Members.Num() && i < 14; ++i)
+	{
+		const FOUOrgMember& M = Members[i];
+		const int32 Ri = FMath::Clamp(M.Rank, 0, 2);
+		const float RY = P.Y + 140 + i * 24.f;
+		DrawText(InCanvas, Small, FString::Printf(TEXT("игрок #%-3d  ·  %s"), M.Player, RankName[Ri]),
+			FVector2D(P.X + 24, RY), Ri == 2 ? ColOk : (Ri == 1 ? ColAccent : Dim));
+		Buttons.Add({ FVector2D(P.X + 20, RY - 2), FVector2D(PW * 0.44f, 22.f), 720 + i });
+	}
+
+	// Дипломатия (правая колонка).
+	const float RX = P.X + PW * 0.52f;
+	DrawText(InCanvas, Small, TEXT("Дипломатия (клик — цикл: нейтр. → союз → война)"),
+		FVector2D(RX, P.Y + 116), ColAccent);
+	static const TCHAR* StanceName[3] = { TEXT("нейтралитет"), TEXT("союз"), TEXT("война") };
+	const TArray<FOUOrgBrief>& All2 = Net->AllOrgs;
+	int32 Row = 0;
+	for (int32 i = 0; i < All2.Num() && Row < 12; ++i)
+	{
+		const FOUOrgBrief& B = All2[i];
+		if (B.Id == MyOrg) { continue; }   // себя пропускаем
+		int32 Stance = 0;
+		for (const FOUOrgDiplo& D : Net->OrgDiplomacy)
+		{
+			if (D.Org == B.Id) { Stance = FMath::Clamp(D.Stance, 0, 2); break; }
+		}
+		const float RY = P.Y + 140 + Row * 24.f;
+		const FLinearColor C = (Stance == 1) ? ColOk : ((Stance == 2) ? ColErr : Dim);
+		DrawText(InCanvas, Small, FString::Printf(TEXT("[%s] %s  ·  %s"), *B.Tag, *B.Name, StanceName[Stance]),
+			FVector2D(RX, RY), C);
+		Buttons.Add({ FVector2D(RX - 4, RY - 2), FVector2D(PW * 0.44f, 22.f), 750 + Row });
+		++Row;
+	}
+
+	// Выход из организации.
+	const FVector2D LeavePos(P.X + 24, P.Y + PH - 44);
+	const FVector2D LeaveSize(200, 28);
+	FillBox(InCanvas, LeavePos, LeaveSize, FLinearColor(0.2f, 0.07f, 0.09f, 0.9f));
+	StrokeBox(InCanvas, LeavePos, LeaveSize, ColErr, 1.f);
+	DrawText(InCanvas, Small, TEXT("Покинуть организацию"), LeavePos + FVector2D(10, 6), ColErr);
+	Buttons.Add({ LeavePos, LeaveSize, 701 });
+
+	if (Net->OrgMessage.Len() > 0)
+	{
+		DrawText(InCanvas, Tiny, Net->OrgMessage, P + FVector2D(240, PH - 40), Dim);
+	}
+}
+
 void AOUPlayerMenuController::DrawWorkshop(UCanvas* InCanvas)
 {
 	if (!bWorkshopOpen || !InCanvas || bMenuOpen)
@@ -1636,7 +1814,7 @@ void AOUPlayerMenuController::DrawGameHud(UCanvas* InCanvas)
 		const bool bInShip = ShipPawn != nullptr;
 		const FString Hint = bInShip
 			? TEXT("Мышь — обзор   ·   W/S — тяга   ·   A/D — стрейф   ·   Пробел/Ctrl — вверх/вниз   ·   ЛКМ — огонь   ·   L — скрипты   ·   F — выход")
-			: TEXT("Мышь — обзор   ·   W/A/S/D — ходьба   ·   ЛКМ — копать   ·   M — рынок   ·   B — строительство   ·   T — захват зоны   ·   L — скрипты   ·   K — мастерская");
+			: TEXT("Мышь — обзор   ·   W/A/S/D — ходьба   ·   ЛКМ — копать   ·   M — рынок   ·   B — строительство   ·   T — захват зоны   ·   L — скрипты   ·   K — мастерская   ·   O — организация");
 		DrawText(InCanvas, Tiny, Hint, FVector2D(18, H - 22), Dim);
 	}
 
