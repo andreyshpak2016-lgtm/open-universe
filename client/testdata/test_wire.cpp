@@ -564,6 +564,28 @@ int main(int argc, char** argv)
         Check(sr.Item == 5 && sr.Qty == 10, "поля результата совпали");
     }
 
+    // --- 6m. Прогресс и таланты (теги 55/56) ---
+    std::printf("\n=== 6m. Прогресс и таланты ===\n");
+    {
+        // Прогресс: [tag55][xp][level][points][count]{(id,points)}.
+        std::vector<uint8_t> pb;
+        pb.push_back(OUWire::TagProgress);
+        OUWire::push_varint(pb, 1240);
+        OUWire::push_varint(pb, 3);
+        OUWire::push_varint(pb, 2);
+        OUWire::push_varint(pb, 2);
+        pb.push_back(1);
+        OUWire::push_varint(pb, 2);
+        pb.push_back(2);
+        OUWire::push_varint(pb, 1);
+        OUWire::Progress pg;
+        Check(OUWire::DecodeProgress(pb.data(), pb.size(), pg), "прогресс разобран");
+        Check(pg.Xp == 1240 && pg.Level == 3 && pg.Points == 2, "поля прогресса совпали");
+        Check(pg.Talents.size() == 2 && pg.Talents[0].first == 1 && pg.Talents[0].second == 2,
+            "навыки совпали");
+        Check(OUWire::EncodeSpendTalent(3)[0] == OUWire::TagSpendTalent, "тег вложения очка = 56");
+    }
+
     // --- 7. Приветствие сервера (какой сущностью управляем) ---
     std::printf("\n=== 7. Приветствие сервера (welcome) ===\n");
     {

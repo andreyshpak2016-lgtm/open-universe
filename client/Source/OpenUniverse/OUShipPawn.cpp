@@ -387,6 +387,8 @@ void AOUShipPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 	PlayerInputComponent->BindAction(TEXT("WorkshopMenu"), IE_Pressed, this, &AOUShipPawn::ToggleWorkshop);
 	// Организация: O — окно гильдии.
 	PlayerInputComponent->BindAction(TEXT("OrgMenu"), IE_Pressed, this, &AOUShipPawn::ToggleOrg);
+	// Персонаж: P — окно талантов.
+	PlayerInputComponent->BindAction(TEXT("TalentMenu"), IE_Pressed, this, &AOUShipPawn::ToggleTalents);
 	// Захват территории: T — объявить текущую зону своей (и в корабле).
 	PlayerInputComponent->BindAction(TEXT("TerritoryCapture"), IE_Pressed, this, &AOUShipPawn::CaptureTerritory);
 	// Сверхсвет: удержание Shift — сверхскоростной перелёт между телами системы.
@@ -532,9 +534,33 @@ void AOUShipPawn::ToggleOrg()
 			Menu->bMarketOpen = false;
 			Menu->bScriptsOpen = false;
 			Menu->bWorkshopOpen = false;
+			Menu->bTalentsOpen = false;
 		}
 		Menu->SetMenuCursor(Menu->bOrgOpen);
 		UE_LOG(LogOUShip, Log, TEXT("Организация: %s"), Menu->bOrgOpen ? TEXT("открыто") : TEXT("закрыто"));
+	}
+}
+
+void AOUShipPawn::ToggleTalents()
+{
+	// Окно талантов (клавиша P) — работает и из корабля.
+	AOUPlayerMenuController* Menu = Cast<AOUPlayerMenuController>(GetController());
+	if (!Menu)
+	{
+		Menu = Cast<AOUPlayerMenuController>(GetWorld() ? GetWorld()->GetFirstPlayerController() : nullptr);
+	}
+	if (Menu)
+	{
+		Menu->bTalentsOpen = !Menu->bTalentsOpen;
+		if (Menu->bTalentsOpen)
+		{
+			Menu->bMarketOpen = false;
+			Menu->bScriptsOpen = false;
+			Menu->bWorkshopOpen = false;
+			Menu->bOrgOpen = false;
+		}
+		Menu->SetMenuCursor(Menu->bTalentsOpen);
+		UE_LOG(LogOUShip, Log, TEXT("Таланты: %s"), Menu->bTalentsOpen ? TEXT("открыто") : TEXT("закрыто"));
 	}
 }
 

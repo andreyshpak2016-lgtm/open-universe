@@ -67,6 +67,66 @@ pub const SHOP_PACK_QTY: u64 = 10;
 /// Стартовый баланс премиум-валюты у нового игрока (кристаллы).
 pub const START_PREMIUM: u64 = 20;
 
+/// Опыт, необходимый для достижения уровня `level` (уровни с 1).
+///
+/// Квадратичная кривая: 100, 300, 600, 1000… — растёт всё медленнее.
+pub fn xp_for_level(level: u32) -> u64 {
+    let l = level.saturating_sub(1) as u64;
+    50 * l * (l + 1)
+}
+
+/// Сколько опыта даёт одно действие в игре (по видам).
+pub const XP_DIG: u64 = 3;
+/// Опыт за изготовление предмета.
+pub const XP_CRAFT: u64 = 12;
+/// Опыт за уничтожение цели.
+pub const XP_KILL: u64 = 25;
+
+/// Навыки (таланты), в которые можно вкладывать очки.
+///
+/// id и подпись; влияние навыка читается в коде игры (например, бонус добычи).
+pub const TALENTS: &[(u8, &str, &str)] = &[
+    (1, "Добыча", "+20% руды за такт копания на каждое очко"),
+    (2, "Производство", "Крафт даёт больше опыта и +1 к выходу раз в 3 очка"),
+    (3, "Пилот", "+5% максимальной скорости за очко"),
+    (4, "Инженер", "+10% прочности корпуса за очко"),
+];
+
+/// Максимум очков в один навык.
+pub const TALENT_MAX: u32 = 5;
+
+/// Прогресс игрока: опыт, уровень, свободные очки и вложенные таланты.
+#[derive(Clone, Debug, Default)]
+pub struct Progress {
+    pub xp: u64,
+    /// Свободные очки талантов (не вложены).
+    pub points: u32,
+    /// Вложенные очки по навыку (id → очки).
+    pub talents: BTreeMap<u8, u32>,
+}
+
+impl Progress {
+    /// Уровень по текущему опыту (с 1).
+    pub fn level(&self) -> u32 {
+        let mut l = 1;
+        while self.xp >= xp_for_level(l + 1) {
+            l += 1;
+        }
+        l
+    }
+
+    /// Начислить опыт: за каждый пройденный уровень даётся очко таланта.
+    /// Возвращает, сколько очков добавлено.
+    pub fn add_xp(&mut self, amount: u64) -> u32 {
+        let before = self.level();
+        self.xp = self.xp.saturating_add(amount);
+        let after = self.level();
+        let gained = after.saturating_sub(before);
+        self.points += gained;
+        gained
+    }
+}
+
 /// Ранг участника организации.
 pub const RANK_MEMBER: u8 = 0;
 /// Офицер: может назначать ранги участникам.
@@ -205,6 +265,10 @@ pub struct Server {
     pub premium: BTreeMap<NetId, u64>,
     /// Игроки, чей кошелёк изменился (надо обновить интерфейс).
     pub wallet_dirty: BTreeSet<NetId>,
+    /// Прогресс игроков: опыт, уровень, свободные очки, вложенные таланты.
+    pub progress: BTreeMap<NetId, Progress>,
+    /// Игроки, чей прогресс изменился (надо разослать).
+    pub progress_dirty: BTreeSet<NetId>,
     /// Конструкции сущностей: что игроки построили (права + ревизии).
     pub constructions: BTreeMap<NetId, Construction>,
     /// Корпус каждой сущности: щит, броня, критические повреждения.
@@ -355,6 +419,8 @@ impl Server {
             names: BTreeMap::new(),
             premium: BTreeMap::new(),
             wallet_dirty: BTreeSet::new(),
+            progress: BTreeMap::new(),
+            progress_dirty: BTreeSet::new(),
             constructions: BTreeMap::new(),
             hulls: BTreeMap::new(),
             weapons: BTreeMap::new(),
@@ -475,9 +541,13 @@ impl Server {
         let (item, base_qty) = self.economy.ore_at_depth(hole_depth);
         // Бонус за глубину удара: глубже — больше за удар.
         let bonus = (depth / 10.0).clamp(0.0, 20.0) as u64;
-        let qty = base_qty + bonus;
+        // Навык «Добыча»: +20% руды за такт на каждое очко.
+        let dig_lvl = self.talent_level(player, 1);
+        let qty = (base_qty + bonus) * (100 + dig_lvl as u64 * 20) / 100;
         self.economy.engine.inventory.add(player, sys, item, qty);
         self.market_dirty = true;
+        // Опыт за копание.
+        self.award_xp(player, XP_DIG);
         (dent, (item, qty), hole_depth)
     }
 
@@ -675,6 +745,9 @@ impl Server {
         match self.economy.production.craft(recipe, inv, player, sys) {
             Ok(out) => {
                 self.market_dirty = true;
+                // Опыт за крафт: выше с навыком «Производство».
+                let craft_lvl = self.talent_level(player, 2);
+                self.award_xp(player, XP_CRAFT + craft_lvl as u64 * 4);
                 Ok(out)
             }
             Err(e) => Err(e.to_string()),
@@ -897,6 +970,12 @@ impl Server {
                 self.market_dirty = true;
             }
             self.combat_dirty.insert(player);
+        }
+        // Опыт за уничтожение цели (для уровня и очков талантов).
+        if destroyed {
+            if let Some(player) = self.connections.values().find(|c| c.entity_id == attacker).map(|c| c.player_id) {
+                self.award_xp(player, XP_KILL);
+            }
         }
 
         // Уничтоженный дрон-цель убираем из мира и планируем его возрождение
@@ -1512,6 +1591,53 @@ impl Server {
         (credits, premium)
     }
 
+    // --- Таланты и прогрессия персонажа ---
+
+    /// Начислить игроку опыт (за копание/крафт/бой). Опыт даёт уровни и очки.
+    pub fn award_xp(&mut self, player: NetId, amount: u64) {
+        if amount == 0 {
+            return;
+        }
+        let p = self.progress.entry(player).or_default();
+        p.add_xp(amount);
+        self.progress_dirty.insert(player);
+    }
+
+    /// Вложить очко таланта в навык (авторитетно).
+    pub fn spend_talent(&mut self, player: NetId, talent: u8) -> Result<(), String> {
+        if !TALENTS.iter().any(|(id, _, _)| *id == talent) {
+            return Err("неизвестный навык".to_string());
+        }
+        let p = self.progress.entry(player).or_default();
+        if p.points == 0 {
+            return Err("нет свободных очков талантов".to_string());
+        }
+        let cur = p.talents.get(&talent).copied().unwrap_or(0);
+        if cur >= TALENT_MAX {
+            return Err("навык уже максимального уровня".to_string());
+        }
+        p.points -= 1;
+        p.talents.insert(talent, cur + 1);
+        self.progress_dirty.insert(player);
+        Ok(())
+    }
+
+    /// Состояние прогресса игрока для интерфейса.
+    pub fn progress_state(&self, player: NetId) -> Message {
+        let p = self.progress.get(&player).cloned().unwrap_or_default();
+        Message::ServerProgress {
+            xp: p.xp,
+            level: p.level(),
+            points: p.points,
+            talents: p.talents.iter().map(|(k, v)| (*k, *v)).collect(),
+        }
+    }
+
+    /// Вложенные очки в навык (для бонусов игры).
+    pub fn talent_level(&self, player: NetId, talent: u8) -> u32 {
+        self.progress.get(&player).and_then(|p| p.talents.get(&talent).copied()).unwrap_or(0)
+    }
+
     /// Привязать к сущности скрипт-шаблон по id игрока (авторитетно).
     ///
     /// Только владелец может управлять скриптом своего объекта. `template = 0`
@@ -1989,6 +2115,13 @@ impl Server {
             })
             .collect();
 
+        // 3g. Прогресс (опыт/уровень/таланты) изменившимся игрокам.
+        let progress_msgs: BTreeMap<NetId, Message> = self
+            .progress_dirty
+            .iter()
+            .map(|p| (*p, self.progress_state(*p)))
+            .collect();
+
         // 4. Для каждого клиента — интерес‑менеджмент и дельта.
         let mut plan = SendPlan::default();
         let all_states: BTreeMap<NetId, EntityState> = self.world.snapshot_map();
@@ -2187,6 +2320,11 @@ impl Server {
                 msgs.push(m.clone());
             }
 
+            // Прогресс (опыт/уровень/таланты) — при изменении.
+            if let Some(m) = progress_msgs.get(player_id) {
+                msgs.push(m.clone());
+            }
+
             plan.messages.insert(*player_id, msgs);
         }
         if self.market_dirty {
@@ -2200,6 +2338,7 @@ impl Server {
         self.workshop_dirty.clear();
         self.org_dirty.clear();
         self.wallet_dirty.clear();
+        self.progress_dirty.clear();
 
         plan
     }
@@ -3463,5 +3602,80 @@ mod tests {
             .iter()
             .any(|m| matches!(m, Message::ServerWallet { .. }));
         assert!(seen, "кошелёк рассылается игроку");
+    }
+
+    // --- таланты и прогрессия ---
+
+    #[test]
+    fn xp_curve_and_levels() {
+        let mut p = Progress::default();
+        assert_eq!(p.level(), 1);
+        // 100 опыта — уровень 2.
+        p.add_xp(100);
+        assert_eq!(p.level(), 2);
+        assert_eq!(p.points, 1, "за уровень — очко таланта");
+        // Ещё 200 (сумма 300) — уровень 3.
+        p.add_xp(200);
+        assert_eq!(p.level(), 3);
+        assert_eq!(p.points, 2);
+    }
+
+    #[test]
+    fn digging_grants_xp_and_level() {
+        let mut s = Server::new();
+        s.connect_on_planet(1);
+        let dir = ou_sim::home_spawn_direction();
+        // Копаем много — опыт накапливается и даёт уровень.
+        for slot in 0..40u32 {
+            let _ = s.dig_as(1, slot, dir, 0.999, 8.0);
+        }
+        let p = s.progress.get(&1).cloned().unwrap_or_default();
+        assert!(p.xp >= XP_DIG * 40, "опыт за копание накоплен: {}", p.xp);
+    }
+
+    #[test]
+    fn spending_talent_requires_points() {
+        let mut s = Server::new();
+        s.connect_on_planet(1);
+        // Без очков — отказ.
+        assert!(s.spend_talent(1, 1).is_err());
+        // Начислим опыт на уровень и вложим очко в «Добычу».
+        s.award_xp(1, 100);
+        s.spend_talent(1, 1).unwrap();
+        assert_eq!(s.talent_level(1, 1), 1, "очко вложено в навык");
+        // Неизвестный навык — отказ.
+        assert!(s.spend_talent(1, 99).is_err());
+    }
+
+    #[test]
+    fn talent_bonus_increases_dig_yield() {
+        // Игрок с навыком «Добыча» 5 копает больше, чем без него.
+        let mut a = Server::new();
+        let ea = a.connect_on_planet(1);
+        let dir = ou_sim::home_spawn_direction();
+        let (_, (_, qty_a), _) = a.dig_as(1, 0, dir, 0.999, 8.0);
+
+        let mut b = Server::new();
+        b.connect_on_planet(1);
+        // Максимальный навык «Добыча» без копания уровня: вложим напрямую.
+        {
+            let p = b.progress.entry(1).or_default();
+            p.talents.insert(1, TALENT_MAX);
+        }
+        let (_, (_, qty_b), _) = b.dig_as(1, 0, dir, 0.999, 8.0);
+        assert!(qty_b > qty_a, "навык увеличивает добычу: {qty_a} → {qty_b}");
+        let _ = ea;
+    }
+
+    #[test]
+    fn progress_is_broadcast() {
+        let mut s = Server::new();
+        s.connect_on_planet(1);
+        s.award_xp(1, 100);
+        let plan = s.tick();
+        let seen = plan.messages[&1]
+            .iter()
+            .any(|m| matches!(m, Message::ServerProgress { level, .. } if *level == 2));
+        assert!(seen, "прогресс рассылается игроку");
     }
 }

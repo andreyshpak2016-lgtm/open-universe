@@ -424,6 +424,16 @@ void AOUPlayerMenuController::OnLeftClick()
 				}
 				return;
 			}
+			// Таланты: 900+ — вложить очко в навык (id = 900 + навык).
+			if (bTalentsOpen && B.Id >= 900)
+			{
+				ResolveNet();
+				if (Net)
+				{
+					Net->SendSpendTalent(B.Id - 900);
+				}
+				return;
+			}
 			// Организация: 700 — создать, 701 — выйти, 710+ вступить,
 			// 720+ повысить участника, 750+ дипломатия.
 			if (bOrgOpen && B.Id >= 700)
@@ -1431,6 +1441,79 @@ void AOUPlayerMenuController::DrawScripts(UCanvas* InCanvas)
 	}
 }
 
+void AOUPlayerMenuController::DrawTalents(UCanvas* InCanvas)
+{
+	if (!bTalentsOpen || !InCanvas || bMenuOpen)
+	{
+		return;
+	}
+	ResolveNet();
+
+	const float W = InCanvas->SizeX;
+	const float H = InCanvas->SizeY;
+	UFont* Font = GEngine->GetLargeFont();
+	UFont* Small = GEngine->GetMediumFont();
+	UFont* Tiny = GEngine->GetSmallFont();
+	const FLinearColor PanelB(0.34f, 0.44f, 0.85f, 0.9f);
+	const FLinearColor Dim(0.66f, 0.72f, 0.86f, 1.f);
+
+	const float PW = FMath::Min(820.f, W - 80.f);
+	const float PH = FMath::Min(560.f, H - 100.f);
+	const FVector2D P((W - PW) * 0.5f, (H - PH) * 0.5f);
+	GlassPanel(InCanvas, P, FVector2D(PW, PH), PanelB, ColAccent2);
+	DrawText(InCanvas, Font, TEXT("ПЕРСОНАЖ  ·  ТАЛАНТЫ"), P + FVector2D(24, 16), ColAccent);
+	DrawText(InCanvas, Small, TEXT("P — закрыть"), P + FVector2D(PW - 120, 24), Dim);
+
+	if (!Net || !Net->bProgressReceived)
+	{
+		DrawText(InCanvas, Small, TEXT("(прогресс ещё не получен)"), P + FVector2D(24, 60), Dim);
+		return;
+	}
+
+	// Уровень, опыт, свободные очки.
+	DrawText(InCanvas, Font, FString::Printf(TEXT("Уровень %d"), Net->Level), P + FVector2D(24, 56), ColOk);
+	DrawText(InCanvas, Small, FString::Printf(TEXT("Опыт: %lld"), Net->Xp), P + FVector2D(24, 92), ColText);
+	// Полоса до следующего уровня.
+	{
+		// xp_for_level(L) = 50·(L−1)·L — зеркало серверной кривой.
+		auto XpFor = [](int32 Level) -> int64 {
+			const int64 l = FMath::Max(0, Level - 1);
+			return 50 * l * (l + 1);
+		};
+		const int64 Cur = XpFor(Net->Level);
+		const int64 Next = XpFor(Net->Level + 1);
+		const float Frac = (Next > Cur) ? FMath::Clamp((float)((Net->Xp - Cur) / (double)(Next - Cur)), 0.f, 1.f) : 0.f;
+		const FVector2D BarPos(P.X + 24, P.Y + 116);
+		Bar(InCanvas, BarPos, FVector2D(PW - 48.f, 12.f), Frac,
+			ColAccent2, FLinearColor(0.1f, 0.12f, 0.2f, 0.9f));
+		DrawText(InCanvas, Tiny, FString::Printf(TEXT("%lld / %lld до уровня %d"), Net->Xp - Cur, Next - Cur, Net->Level + 1),
+			BarPos + FVector2D(0, 16), Dim);
+	}
+	DrawText(InCanvas, Small, FString::Printf(TEXT("Свободных очков талантов: %d"), Net->TalentPoints),
+		P + FVector2D(24, 160), Net->TalentPoints > 0 ? ColAccent : Dim);
+
+	// Навыки: клик — вложить очко.
+	static const TCHAR* TName[5] = { TEXT(""), TEXT("Добыча"), TEXT("Производство"), TEXT("Пилот"), TEXT("Инженер") };
+	static const TCHAR* TDesc[5] = { TEXT(""), TEXT("+20% руды за такт копания"),
+		TEXT("крафт даёт больше опыта"), TEXT("+5% макс. скорости"), TEXT("+10% прочности корпуса") };
+	DrawText(InCanvas, Small, TEXT("Навыки (ЛКМ — вложить очко)"), P + FVector2D(24, 194), ColAccent);
+	for (uint8 In = 1; In <= 4; ++In)
+	{
+		int32 Points = 0;
+		for (const FOUTalent& T : Net->Talents)
+		{
+			if (T.Id == (int32)In) { Points = T.Points; break; }
+		}
+		const float RY = P.Y + 222 + (In - 1) * 60.f;
+		FillBox(InCanvas, FVector2D(P.X + 20, RY - 4), FVector2D(PW - 40.f, 52.f), FLinearColor(0.06f, 0.09f, 0.16f, 0.8f));
+		StrokeBox(InCanvas, FVector2D(P.X + 20, RY - 4), FVector2D(PW - 40.f, 52.f), Points > 0 ? ColOk : ColPanelBorder, 1.f);
+		DrawText(InCanvas, Small, FString::Printf(TEXT("%s   [%d/5]"), TName[In], Points),
+			FVector2D(P.X + 32, RY + 2), Points > 0 ? ColOk : ColText);
+		DrawText(InCanvas, Tiny, TDesc[In], FVector2D(P.X + 32, RY + 24), Dim);
+		Buttons.Add({ FVector2D(P.X + 20, RY - 4), FVector2D(PW - 40.f, 52.f), 900 + (int32)In });
+	}
+}
+
 void AOUPlayerMenuController::DrawOrg(UCanvas* InCanvas)
 {
 	if (!bOrgOpen || !InCanvas || bMenuOpen)
@@ -1963,7 +2046,7 @@ void AOUPlayerMenuController::DrawGameHud(UCanvas* InCanvas)
 		const bool bInShip = ShipPawn != nullptr;
 		const FString Hint = bInShip
 			? TEXT("Мышь — обзор   ·   W/S — тяга   ·   A/D — стрейф   ·   Пробел/Ctrl — вверх/вниз   ·   ЛКМ — огонь   ·   L — скрипты   ·   F — выход")
-			: TEXT("Мышь — обзор   ·   W/A/S/D — ходьба   ·   ЛКМ — копать   ·   M — рынок   ·   B — строительство   ·   T — захват зоны   ·   L — скрипты   ·   K — мастерская   ·   O — организация");
+			: TEXT("Мышь — обзор   ·   W/A/S/D — ходьба   ·   ЛКМ — копать   ·   M — рынок   ·   B — строительство   ·   T — захват зоны   ·   L — скрипты   ·   K — мастерская   ·   O — организация   ·   P — персонаж");
 		DrawText(InCanvas, Tiny, Hint, FVector2D(18, H - 22), Dim);
 	}
 

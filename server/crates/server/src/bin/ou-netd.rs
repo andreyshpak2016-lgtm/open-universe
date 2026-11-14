@@ -180,6 +180,8 @@ fn main() {
                             let (wc, wp) = server.wallet(next_player);
                             net.send_to(token, from, &Message::ServerWallet { credits: wc, premium: wp }).ok();
                             net.send_to(token, from, &Message::ServerShop { items: server.shop_catalog() }).ok();
+                            // Прогресс персонажа (опыт, уровень, таланты).
+                            net.send_to(token, from, &server.progress_state(next_player)).ok();
                             next_player += 1;
                         }
                     }
@@ -387,6 +389,13 @@ fn main() {
                                 Err(e) => Message::ServerShopResult { ok: false, item, qty: 0, message: e },
                             };
                             net.send_to(token, from, &msg).ok();
+                        }
+                    }
+                    Message::ClientSpendTalent { talent } => {
+                        if let Some(pid) = clients.get(&from) {
+                            if let Err(e) = server.spend_talent(*pid, talent) {
+                                println!("талант: игрок {pid}: {e}");
+                            }
                         }
                     }
                     _ => {}

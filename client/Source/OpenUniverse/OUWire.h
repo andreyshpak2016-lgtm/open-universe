@@ -93,6 +93,8 @@ namespace OUWire
         TagShop = 52,
         TagBuyItem = 53,
         TagShopResult = 54,
+        TagProgress = 55,
+        TagSpendTalent = 56,
     };
 
     /// Действия редактора конструкций.
@@ -1451,6 +1453,49 @@ namespace OUWire
         Out.Item = static_cast<uint32_t>(item);
         Out.Qty = qty;
         return r.Str(Out.Message);
+    }
+
+    /// Прогресс персонажа (сервер → клиент, тег 55).
+    struct Progress
+    {
+        uint64_t Xp = 0;
+        uint32_t Level = 1;
+        uint32_t Points = 0;
+        std::vector<std::pair<uint8_t, uint32_t>> Talents;
+    };
+
+    inline bool DecodeProgress(const uint8_t* body, size_t len, Progress& Out)
+    {
+        Reader r{body, len, 0};
+        uint8_t tag = 0;
+        if (!r.U8(tag) || tag != TagProgress) return false;
+        if (!r.Varint(Out.Xp)) return false;
+        uint64_t lvl = 0, pts = 0;
+        if (!r.Varint(lvl) || !r.Varint(pts)) return false;
+        Out.Level = static_cast<uint32_t>(lvl);
+        Out.Points = static_cast<uint32_t>(pts);
+        uint64_t n = 0;
+        if (!r.Varint(n)) return false;
+        Out.Talents.clear();
+        Out.Talents.reserve(static_cast<size_t>(n));
+        for (uint64_t i = 0; i < n; ++i)
+        {
+            uint8_t id = 0;
+            uint64_t v = 0;
+            if (!r.U8(id)) return false;
+            if (!r.Varint(v)) return false;
+            Out.Talents.emplace_back(id, static_cast<uint32_t>(v));
+        }
+        return true;
+    }
+
+    /// Вложить очко таланта (клиент → сервер, тег 56): [tag][talent u8].
+    inline std::vector<uint8_t> EncodeSpendTalent(uint8_t Talent)
+    {
+        std::vector<uint8_t> out;
+        out.push_back(TagSpendTalent);
+        out.push_back(Talent);
+        return out;
     }
 
     /// Собрать кадр ввода (клиент → сервер, тег 2).

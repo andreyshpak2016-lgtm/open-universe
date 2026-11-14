@@ -181,6 +181,9 @@ public:
 	/** Открыть/закрыть окно организации (клавиша O). */
 	void ToggleOrg();
 
+	/** Открыть/закрыть окно талантов (клавиша P). */
+	void ToggleTalents();
+
 	/** Поставить шаблон постройки (blueprint) по id у точки под прицелом. */
 	UFUNCTION(BlueprintCallable, Category = "Open Universe|Build")
 	void PlaceBlueprint(int32 BlueprintId);
@@ -236,6 +239,10 @@ public:
 	/** Таймер/счётчик теста чата (`-OUAutoChat`). */
 	float ChatTimer = 0.f;
 	int32 ChatCount = 0;
+
+	/** Таймер/счётчик теста талантов (`-OUAutoTalents`). */
+	float TalentTimer = 0.f;
+	int32 TalentCount = 0;
 
 	/** Таймер/счётчик тестового крафта (`-OUAutoCraft`). */
 	float CraftTimer = 0.f;

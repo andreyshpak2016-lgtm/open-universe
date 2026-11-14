@@ -368,6 +368,18 @@ pub enum Message {
     ClientBuyItem { item: u32 },
     /// Сервер: результат покупки (что выдано или причина отказа).
     ServerShopResult { ok: bool, item: u32, qty: u64, message: String },
+    /// Сервер: прогресс игрока (опыт, уровень, очки талантов и вложенные навыки).
+    ///
+    /// `xp` — суммарный опыт, `level` — уровень, `points` — свободные очки
+    /// талантов, `talents` — вложенные очки по навыкам (id, очки).
+    ServerProgress {
+        xp: u64,
+        level: u32,
+        points: u32,
+        talents: Vec<(u8, u32)>,
+    },
+    /// Клиент: вложить очко таланта в навык по id.
+    ClientSpendTalent { talent: u8 },
 }
 
 /// Территория в сообщении (для HUD).
@@ -723,6 +735,8 @@ mod wire {
     const TAG_SHOP: u8 = 52;
     const TAG_BUY_ITEM: u8 = 53;
     const TAG_SHOP_RESULT: u8 = 54;
+    const TAG_PROGRESS: u8 = 55;
+    const TAG_SPEND_TALENT: u8 = 56;
 
     pub fn encode(msg: &Message) -> Vec<u8> {
         let mut w = Writer::new();
@@ -1171,6 +1185,21 @@ mod wire {
                 w.varint(*qty);
                 w.str(message);
             }
+            Message::ServerProgress { xp, level, points, talents } => {
+                w.u8(TAG_PROGRESS);
+                w.varint(*xp);
+                w.varint(*level as u64);
+                w.varint(*points as u64);
+                w.varint(talents.len() as u64);
+                for (id, v) in talents {
+                    w.u8(*id);
+                    w.varint(*v as u64);
+                }
+            }
+            Message::ClientSpendTalent { talent } => {
+                w.u8(TAG_SPEND_TALENT);
+                w.u8(*talent);
+            }
         }
         w.buf
     }
@@ -1580,6 +1609,20 @@ mod wire {
                 qty: r.varint()?,
                 message: r.str()?,
             }),
+            TAG_PROGRESS => {
+                let xp = r.varint()?;
+                let level = r.varint()? as u32;
+                let points = r.varint()? as u32;
+                let n = r.varint()? as usize;
+                let mut talents = Vec::with_capacity(n.min(64));
+                for _ in 0..n {
+                    let id = r.u8()?;
+                    let v = r.varint()? as u32;
+                    talents.push((id, v));
+                }
+                Ok(Message::ServerProgress { xp, level, points, talents })
+            }
+            TAG_SPEND_TALENT => Ok(Message::ClientSpendTalent { talent: r.u8()? }),
             other => Err(WireError::BadTag(other)),
         }
     }
@@ -1816,6 +1859,19 @@ mod tests {
             message: "куплено".into(),
         };
         assert_eq!(decode(&encode(&res)).unwrap(), res);
+    }
+
+    #[test]
+    fn progress_roundtrip() {
+        let p = Message::ServerProgress {
+            xp: 1240,
+            level: 3,
+            points: 2,
+            talents: vec![(1, 2), (2, 1)],
+        };
+        assert_eq!(decode(&encode(&p)).unwrap(), p);
+        let s = Message::ClientSpendTalent { talent: 1 };
+        assert_eq!(decode(&encode(&s)).unwrap(), s);
     }
 
     #[test]

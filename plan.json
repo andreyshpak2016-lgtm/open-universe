@@ -150,7 +150,7 @@
         { "title": "Текстовый чат (каналы локальный/глобальный/организация, Enter — ввод, Tab — канал)", "title_en": "Text chat (local/global/organization channels, Enter to type, Tab for channel)", "status": "done" },
         { "title": "Голосовой чат (голосовая связь)", "title_en": "Voice chat", "status": "todo" },
         { "title": "Внутриигровая валюта и рынок предметов (MTX): премиум-кристаллы и магазин в окне рынка", "status": "done" },
-        { "title": "Таланты/прогрессия персонажа", "status": "todo" },
+        { "title": "Таланты/прогрессия персонажа (опыт за копание/крафт/бой, уровни, очки талантов, окно P)", "status": "done" },
         { "title": "Обучение для новичков (tutorial)", "status": "todo" }
       ]
     },

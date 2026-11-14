@@ -457,6 +457,8 @@ void AOUCharacterPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputCom
 	PlayerInputComponent->BindAction(TEXT("WorkshopMenu"), IE_Pressed, this, &AOUCharacterPawn::ToggleWorkshop);
 	// Организация: O — окно гильдии.
 	PlayerInputComponent->BindAction(TEXT("OrgMenu"), IE_Pressed, this, &AOUCharacterPawn::ToggleOrg);
+	// Персонаж: P — окно талантов.
+	PlayerInputComponent->BindAction(TEXT("TalentMenu"), IE_Pressed, this, &AOUCharacterPawn::ToggleTalents);
 	// Alt — отпустить/вернуть курсор (обзор мышью / работа с интерфейсом).
 	PlayerInputComponent->BindAction(TEXT("CursorToggle"), IE_Pressed, this, &AOUCharacterPawn::OnCursorToggle);
 }
@@ -1226,6 +1228,30 @@ void AOUCharacterPawn::ToggleOrg()
 	}
 }
 
+void AOUCharacterPawn::ToggleTalents()
+{
+	// Окно талантов (клавиша P): опыт, уровень, навыки.
+	if (bBuildMenuOpen) { return; }
+	AOUPlayerMenuController* Menu = Cast<AOUPlayerMenuController>(GetController());
+	if (!Menu)
+	{
+		Menu = Cast<AOUPlayerMenuController>(GetWorld() ? GetWorld()->GetFirstPlayerController() : nullptr);
+	}
+	if (Menu)
+	{
+		Menu->bTalentsOpen = !Menu->bTalentsOpen;
+		if (Menu->bTalentsOpen)
+		{
+			Menu->bMarketOpen = false;
+			Menu->bScriptsOpen = false;
+			Menu->bWorkshopOpen = false;
+			Menu->bOrgOpen = false;
+		}
+		Menu->SetMenuCursor(Menu->bTalentsOpen);
+		UE_LOG(LogOUChar, Log, TEXT("Таланты: %s"), Menu->bTalentsOpen ? TEXT("открыто") : TEXT("закрыто"));
+	}
+}
+
 void AOUCharacterPawn::MarketQuickTrade(bool bSell)
 {
 	Net = Net ? Net : FindComponentByClass<UOUClientNet>();
@@ -1742,6 +1768,25 @@ void AOUCharacterPawn::Tick(float DeltaSeconds)
 			if (Net && Net->IsConnected())
 			{
 				Net->SendChat(1, FString::Printf(TEXT("Привет, мир! Сообщение %d"), ChatCount));
+			}
+		}
+	}
+
+	// Тест талантов (`-OUAutoTalents`): копать (набрать опыт), открыть окно.
+	if (FParse::Param(FCommandLine::Get(), TEXT("OUAutoTalents")))
+	{
+		TalentTimer += DeltaSeconds;
+		if (TalentTimer >= 0.4f && TalentCount < 55)
+		{
+			TalentTimer = 0.f;
+			++TalentCount;
+			if (TalentCount <= 40)
+			{
+				DigTerrain();   // накопить опыт до уровня (100 опыта = ~34 копания)
+			}
+			else if (TalentCount == 45)
+			{
+				ToggleTalents();
 			}
 		}
 	}

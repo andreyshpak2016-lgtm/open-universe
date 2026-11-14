@@ -261,6 +261,19 @@ struct FOUSystemBody
 	int64 Seed = 0;
 };
 
+/** Вложенный навык (талант): id и очки. */
+USTRUCT(BlueprintType)
+struct FOUTalent
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Progress")
+	int32 Id = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Progress")
+	int32 Points = 0;
+};
+
 /** Предмет магазина (премиум-валютa). */
 USTRUCT(BlueprintType)
 struct FOUShopItem
@@ -825,6 +838,31 @@ public:
 
 	/** Купить предмет из магазина за премиум-валюту. */
 	void SendBuyItem(int32 Item);
+
+	// --- Таланты и прогрессия персонажа ---
+
+	/** Суммарный опыт игрока. */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Progress")
+	int64 Xp = 0;
+
+	/** Уровень персонажа (с 1). */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Progress")
+	int32 Level = 1;
+
+	/** Свободные очки талантов. */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Progress")
+	int32 TalentPoints = 0;
+
+	/** Вложенные навыки (id, очки). */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Progress")
+	TArray<FOUTalent> Talents;
+
+	/** Приходил ли прогресс персонажа. */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Progress")
+	bool bProgressReceived = false;
+
+	/** Вложить очко таланта в навык по id. */
+	void SendSpendTalent(int32 Talent);
 
 	/** Подключиться к серверу. */
 	UFUNCTION(BlueprintCallable, Category = "Open Universe|Net")

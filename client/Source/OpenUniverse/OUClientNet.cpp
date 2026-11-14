@@ -395,6 +395,13 @@ void UOUClientNet::SendBuyItem(int32 Item)
 	TArray<uint8> Arr; Arr.Append(Body.data(), static_cast<int32>(Body.size())); SendPacket(Arr);
 }
 
+void UOUClientNet::SendSpendTalent(int32 Talent)
+{
+	if (!IsConnected()) { return; }
+	const std::vector<uint8_t> Body = OUWire::EncodeSpendTalent(static_cast<uint8_t>(FMath::Clamp(Talent, 0, 255)));
+	TArray<uint8> Arr; Arr.Append(Body.data(), static_cast<int32>(Body.size())); SendPacket(Arr);
+}
+
 void UOUClientNet::UpdateTerritoryAt(double ServerX, double ServerY, double ServerZ)
 {
 	// Точка игрока в серверных единицах; зоны тоже в серверных.
@@ -1015,6 +1022,27 @@ void UOUClientNet::Poll()
 				ShopMessage = FString(UTF8_TO_TCHAR(R.Message.c_str()));
 				UE_LOG(LogOUClient, Log, TEXT("Магазин: %s — %s"),
 					R.Ok ? TEXT("ок") : TEXT("отказ"), *ShopMessage);
+			}
+		}
+		else if (Body[0] == OUWire::TagProgress) // прогресс персонажа
+		{
+			OUWire::Progress P;
+			if (OUWire::DecodeProgress(Body.GetData(), static_cast<size_t>(Body.Num()), P))
+			{
+				Xp = static_cast<int64>(P.Xp);
+				Level = static_cast<int32>(P.Level);
+				TalentPoints = static_cast<int32>(P.Points);
+				Talents.Reset();
+				for (const auto& T : P.Talents)
+				{
+					FOUTalent E;
+					E.Id = static_cast<int32>(T.first);
+					E.Points = static_cast<int32>(T.second);
+					Talents.Add(E);
+				}
+				bProgressReceived = true;
+				UE_LOG(LogOUClient, Log, TEXT("Прогресс: уровень %d, опыт %lld, очков %d"),
+					Level, Xp, TalentPoints);
 			}
 		}
 		else if (Body[0] == OUWire::TagMarketState) // состояние экономики

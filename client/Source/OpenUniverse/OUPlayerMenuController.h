@@ -239,6 +239,17 @@ public:
 	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Org")
 	bool bOrgOpen = false;
 
+	/**
+	 * Окно персонажа (клавиша P): опыт, уровень, очки и таланты.
+	 *
+	 * Клик по навыку вкладывает очко таланта (сервер проверяет и применяет).
+	 */
+	void DrawTalents(class UCanvas* InCanvas);
+
+	/** Открыто ли окно талантов. */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Progress")
+	bool bTalentsOpen = false;
+
 	// --- Чат ---
 
 	/** Открыт ли ввод чата (Enter в игре). */
