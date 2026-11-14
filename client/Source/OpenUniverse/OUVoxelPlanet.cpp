@@ -1142,6 +1142,24 @@ void AOUVoxelPlanet::BuildFineMesh(const FVector& AroundUE)
 		const FVector Dir = (Up * Radius + T1 * A + T2 * B).GetSafeNormal();
 		return DugCm(Dir) > 1.0;
 	};
+	// Цвет выкопанной ячейки по слою глубины: руда/лёд/кристалл/металл. Полосы
+	// совпадают с серверной добычей (`Economy::ore_at_depth`), поэтому цвет дна
+	// показывает, что тут залегает.
+	auto DugColor = [&](float DepthM, const FLinearColor& Base) -> FLinearColor
+	{
+		// Глубина в метрах: 1 серверная единица = 1 м, поэтому DepthM как есть.
+		FLinearColor Layer;
+		if (DepthM < 15.f)      Layer = FLinearColor(0.72f, 0.55f, 0.36f);   // руда
+		else if (DepthM < 40.f) Layer = FLinearColor(0.45f, 0.72f, 0.92f);   // лёд
+		else if (DepthM < 80.f) Layer = FLinearColor(0.66f, 0.44f, 0.92f);   // кристалл
+		else                    Layer = FLinearColor(0.82f, 0.82f, 0.86f);   // металл
+		// Смешиваем с базовым цветом (затенением), чтобы слои не были «пластиком».
+		return FLinearColor(
+			FMath::Lerp(Base.R, Layer.R, 0.7f),
+			FMath::Lerp(Base.G, Layer.G, 0.7f),
+			FMath::Lerp(Base.B, Layer.B, 0.7f),
+			Base.A);
+	};
 	auto CornerDir = NodeDir;
 
 	// Верхние плитки ячеек (ровные квадраты на высоте ячейки).
@@ -1159,7 +1177,15 @@ void AOUVoxelPlanet::BuildFineMesh(const FVector& AroundUE)
 			const FVector P11 = CornerDir(I + 1, J + 1) * (Radius + Hc);
 			const FVector P01 = CornerDir(I, J + 1) * (Radius + Hc);
 			const FVector Nrm = (CornerDir(I, J) + CornerDir(I + 1, J + 1)).GetSafeNormal();
-			const FLinearColor Col = ShadedVertexColor(Hc, Nrm);
+			FLinearColor Col = ShadedVertexColor(Hc, Nrm);
+			// Внутри ямы дно показываем цветом слоя (руда/лёд/кристалл/металл).
+			if (CellDug(I, J))
+			{
+				const float A = FineV0 + (I + 0.5f) * SV;
+				const float B = FineW0 + (J + 0.5f) * SW;
+				const FVector DirC2 = (Up * Radius + T1 * A + T2 * B).GetSafeNormal();
+				Col = DugColor(static_cast<float>(DugCm(DirC2)), Col);
+			}
 			const int32 IA = PushVert(P00, Nrm, Col);
 			const int32 IB = PushVert(P10, Nrm, Col);
 			const int32 IC = PushVert(P11, Nrm, Col);

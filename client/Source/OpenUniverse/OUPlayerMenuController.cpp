@@ -1157,9 +1157,15 @@ void AOUPlayerMenuController::DrawGameHud(UCanvas* InCanvas)
 		const FVector2D P(W - 210, 16);
 		GlassPanel(InCanvas, P, FVector2D(194, 34), PanelB, C);
 		DrawText(InCanvas, Small, St, P + FVector2D(12, 8), C);
-		int32 Ping = 0;
-		if (bConnected && Net) { Ping = FMath::RoundToInt(Health.LatencyMs); }
-		DrawText(InCanvas, Tiny, FString::Printf(TEXT("задержка %d мс"), Ping), P + FVector2D(112, 12), Dim);
+		int32 Ping = -1;
+		if (bConnected && Net && Net->SmoothedPingMs >= 0.f)
+		{
+			Ping = FMath::RoundToInt(Net->SmoothedPingMs);
+		}
+		const FString PingText = (Ping >= 0)
+			? FString::Printf(TEXT("пинг %d мс"), Ping)
+			: TEXT("пинг …");
+		DrawText(InCanvas, Tiny, PingText, P + FVector2D(112, 12), Dim);
 	}
 
 	// --- Справа снизу: мини-карта (планета, игрок, база, другие) ---
@@ -1243,6 +1249,48 @@ void AOUPlayerMenuController::DrawGameHud(UCanvas* InCanvas)
 			? TEXT("Мышь — обзор   ·   W/S — тяга   ·   A/D — стрейф   ·   Пробел/Ctrl — вверх/вниз   ·   ЛКМ — огонь   ·   F — выход")
 			: TEXT("Мышь — обзор   ·   W/A/S/D — ходьба   ·   ЛКМ — копать   ·   M — рынок   ·   B — строительство");
 		DrawText(InCanvas, Tiny, Hint, FVector2D(18, H - 22), Dim);
+	}
+
+	// --- Копание: что добыто (всплывающая подсказка у прицела + счётчики) ---
+	if (Char && Net)
+	{
+		// Название предмета и цвет слоя.
+		auto LayerColor = [](int32 Layer) -> FLinearColor
+		{
+			switch (Layer)
+			{
+			case 0: return FLinearColor(0.78f, 0.62f, 0.42f);   // руда — бурый
+			case 1: return FLinearColor(0.60f, 0.85f, 1.00f);   // лёд — голубой
+			case 2: return FLinearColor(0.75f, 0.55f, 1.00f);   // кристалл — сирен.
+			default: return FLinearColor(0.85f, 0.85f, 0.90f);  // металл — стальной
+			}
+		};
+		const float Now = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.f;
+		const float Age = Now - Net->LastDigTime;
+		// Всплывашка живёт ~1.6 с и плавно поднимается вверх.
+		if (Age >= 0.f && Age < 1.6f && Net->LastDigQty > 0)
+		{
+			const float A = FMath::Clamp(1.f - Age / 1.6f, 0.f, 1.f);
+			const FString Txt = FString::Printf(TEXT("+%lld  %s"), Net->LastDigQty, *ItemName(Net->LastDigItem));
+			FLinearColor C = LayerColor(Net->LastDigLayer);
+			C.A = A;
+			const FVector2D Base(W * 0.5f + 18.f, H * 0.5f - 30.f - Age * 24.f);
+			DrawText(InCanvas, Small, Txt, Base, C);
+		}
+
+		// Панель добычи слева внизу: счётчики по слоям + текущая глубина ямы.
+		const FVector2D DP(16, H - 176);
+		GlassPanel(InCanvas, DP, FVector2D(210, 118), PanelB, Line);
+		DrawText(InCanvas, Tiny, TEXT("КОПАНИЕ  ·  HOME"), DP + FVector2D(12, 8), ColAccent);
+		static const TCHAR* LayerName[4] = { TEXT("руда"), TEXT("лёд"), TEXT("кристалл"), TEXT("металл") };
+		for (int32 L = 0; L < 4; ++L)
+		{
+			const int64 Total = Net->DigTotalByLayer.IsValidIndex(L) ? Net->DigTotalByLayer[L] : 0;
+			DrawText(InCanvas, Tiny, FString::Printf(TEXT("%-9s  %lld"), LayerName[L], Total),
+				DP + FVector2D(12, 32 + L * 18), LayerColor(L));
+		}
+		DrawText(InCanvas, Tiny, FString::Printf(TEXT("глубина ямы  %.0f м"), Net->LastDigHoleDepth),
+			DP + FVector2D(12, 106), Dim);
 	}
 }
 

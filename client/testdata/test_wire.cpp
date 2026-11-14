@@ -11,6 +11,7 @@
 
 #include <cstdio>
 #include <cmath>
+#include <cstring>
 #include <vector>
 #include <string>
 
@@ -250,6 +251,32 @@ int main(int argc, char** argv)
         Check(ms.Items.size() == 2 && ms.Items[0].second == 120, "инвентарь совпал");
         Check(ms.Bids.size() == 1 && std::get<1>(ms.Bids[0]) == 30, "стакан покупок совпал");
         Check(ms.Asks.size() == 2 && std::get<2>(ms.Asks[1]) == 10, "стакан продаж совпал");
+    }
+
+    // --- 6d. Добыча при копании (тег 23) и пинг (24/25) ---
+    std::printf("\n=== 6d. Добыча и пинг ===\n");
+    {
+        // [tag23][item varint][qty varint][layer u8][hole_depth f64].
+        std::vector<uint8_t> yb;
+        yb.push_back(OUWire::TagDigYield);
+        OUWire::push_varint(yb, 3);        // кристалл
+        OUWire::push_varint(yb, 7);        // 7 шт
+        yb.push_back(2);                   // слой 2
+        const double depth = 55.5;
+        uint64_t bits = 0; std::memcpy(&bits, &depth, 8);
+        for (int i = 0; i < 8; ++i) { yb.push_back(static_cast<uint8_t>((bits >> (8 * i)) & 0xFF)); }
+        OUWire::DigYield dy;
+        Check(OUWire::DecodeDigYield(yb.data(), yb.size(), dy), "добыча разобрана");
+        Check(dy.Item == 3 && dy.Qty == 7 && dy.Layer == 2, "предмет/кол-во/слой совпали");
+        Check(std::fabs(dy.HoleDepth - 55.5) < 1e-9, "глубина ямы совпала");
+
+        // Пинг/понг.
+        const std::vector<uint8_t> pb = OUWire::EncodePing(0x01020304);
+        Check(pb[0] == OUWire::TagPing, "тег пинга = 24");
+        Check(pb[1] == 0x04 && pb[4] == 0x01, "nonce пинга (LE)");
+        const std::vector<uint8_t> qb = {OUWire::TagPong, 0x04, 0x03, 0x02, 0x01};
+        uint32_t nonce = 0;
+        Check(OUWire::DecodePong(qb.data(), qb.size(), nonce) && nonce == 0x01020304, "понг разобран");
     }
 
     // --- 7. Приветствие сервера (какой сущностью управляем) ---

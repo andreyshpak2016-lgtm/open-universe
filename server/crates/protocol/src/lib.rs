@@ -236,6 +236,19 @@ pub enum Message {
         bids: Vec<(u32, u64, u64)>,
         asks: Vec<(u32, u64, u64)>,
     },
+    /// Сервер: результат копания игроку (что добыто и на какой глубине).
+    ///
+    /// Шлётся автору удара: клиент показывает, что именно он выкопал (`item`),
+    /// сколько (`qty`) и с какого слоя глубины (`layer`: 0 руда, 1 лёд, 2
+    /// кристалл, 3 металл), плюс текущую глубину ямы (`hole_depth`).
+    ServerDigYield { item: u32, qty: u64, layer: u8, hole_depth: f64 },
+    /// Клиент: запрос пинга (эхо). `nonce` клиент выбирает сам.
+    ///
+    /// Сервер немедленно отвечает `ServerPong` с тем же `nonce` — клиент считает
+    /// реальную задержку по кругу (RTT). Нужен и пешком, и в корабле.
+    ClientPing { nonce: u32 },
+    /// Сервер: ответ на `ClientPing` — эхо `nonce`.
+    ServerPong { nonce: u32 },
 }
 
 /// Тело системы в сообщении.
@@ -537,6 +550,9 @@ mod wire {
     const TAG_DIG: u8 = 20;
     const TAG_MARKET_ORDER: u8 = 21;
     const TAG_MARKET_STATE: u8 = 22;
+    const TAG_DIG_YIELD: u8 = 23;
+    const TAG_PING: u8 = 24;
+    const TAG_PONG: u8 = 25;
 
     pub fn encode(msg: &Message) -> Vec<u8> {
         let mut w = Writer::new();
@@ -748,6 +764,21 @@ mod wire {
                     w.varint(*qty);
                 }
             }
+            Message::ServerDigYield { item, qty, layer, hole_depth } => {
+                w.u8(TAG_DIG_YIELD);
+                w.varint(*item as u64);
+                w.varint(*qty);
+                w.u8(*layer);
+                w.f64(*hole_depth);
+            }
+            Message::ClientPing { nonce } => {
+                w.u8(TAG_PING);
+                w.u32(*nonce);
+            }
+            Message::ServerPong { nonce } => {
+                w.u8(TAG_PONG);
+                w.u32(*nonce);
+            }
         }
         w.buf
     }
@@ -948,6 +979,15 @@ mod wire {
                 }
                 Ok(Message::ServerMarket { credits, items, bids, asks })
             }
+            TAG_DIG_YIELD => {
+                let item = r.varint()? as u32;
+                let qty = r.varint()?;
+                let layer = r.u8()?;
+                let hole_depth = r.f64()?;
+                Ok(Message::ServerDigYield { item, qty, layer, hole_depth })
+            }
+            TAG_PING => Ok(Message::ClientPing { nonce: r.u32()? }),
+            TAG_PONG => Ok(Message::ServerPong { nonce: r.u32()? }),
             other => Err(WireError::BadTag(other)),
         }
     }
@@ -1021,6 +1061,16 @@ mod tests {
             asks: vec![(1, 25, 60), (4, 90, 10)],
         };
         assert_eq!(decode(&encode(&state)).unwrap(), state);
+    }
+
+    #[test]
+    fn dig_yield_and_ping_roundtrip() {
+        let y = Message::ServerDigYield { item: 3, qty: 7, layer: 2, hole_depth: 55.5 };
+        assert_eq!(decode(&encode(&y)).unwrap(), y);
+        let ping = Message::ClientPing { nonce: 12345 };
+        assert_eq!(decode(&encode(&ping)).unwrap(), ping);
+        let pong = Message::ServerPong { nonce: 12345 };
+        assert_eq!(decode(&encode(&pong)).unwrap(), pong);
     }
 
     #[test]

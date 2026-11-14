@@ -96,6 +96,7 @@ fn main() {
     let mut saved_bytes: u64 = 0;
     /// Воронки, применённые на этом тике: (слот, воронка) — рассылаем всем.
     let mut pending_digs: Vec<(u32, Dent)> = Vec::new();
+    let mut pending_yields: Vec<(std::net::SocketAddr, Message)> = Vec::new();
 
     while start.elapsed().as_secs_f64() < seconds {
         let loop_start = Instant::now();
@@ -158,8 +159,17 @@ fn main() {
                         if let Some(pid) = clients.get(&from) {
                             // Авторитетно применяем воронку и рассылаем всем;
                             // игроку начисляется руда (источник сырья).
-                            let dent = server.dig_as(*pid, slot, dir, cos_radius, depth);
+                            let (dent, (item, qty), hole_depth) = server.dig_as(*pid, slot, dir, cos_radius, depth);
                             pending_digs.push((slot, dent));
+                            // Автору сообщаем, что и с какой глубины он добыл.
+                            let layer = ou_server::Economy::ore_layer(hole_depth);
+                            let yield_msg = Message::ServerDigYield {
+                                item,
+                                qty,
+                                layer,
+                                hole_depth,
+                            };
+                            pending_yields.push((from, yield_msg));
                         }
                     }
                     Message::ClientMarket { side, item, price, qty } => {
@@ -176,6 +186,10 @@ fn main() {
                         if let Some(pid) = clients.get(&from) {
                             server.grant_build(*pid, entity, player);
                         }
+                    }
+                    Message::ClientPing { nonce } => {
+                        // Эхо пинга: клиент по нему считает реальный RTT.
+                        net.send_to(token, from, &Message::ServerPong { nonce }).ok();
                     }
                     _ => {}
                 },
@@ -201,6 +215,11 @@ fn main() {
             for addr in clients.keys() {
                 net.send_to(token, *addr, &msg).ok();
             }
+        }
+
+        // --- что добыл игрок (только автору удара) ---
+        for (addr, msg) in pending_yields.drain(..) {
+            net.send_to(token, addr, &msg).ok();
         }
 
         // --- шаг симуляции и рассылка ---

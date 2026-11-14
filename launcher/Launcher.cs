@@ -1000,8 +1000,11 @@ namespace OpenUniverseLauncher
             }
             else if (_healthOk)
             {
+                // ВАЖНО: это НЕ пинг игрока — это время рукопожатия health-проверки
+                // (её гоняет CI-раннер на GitHub, ~каждые 30 мин). Настоящий пинг
+                // измеряется в игре и показывается в HUD.
                 healthText = T("health.label") + ": " + T("health.ok") +
-                    string.Format(" (tick {0}, {1:0} ms)", _healthTick, _healthLatencyMs);
+                    string.Format(" (tick {0}, проверка {1:0} ms)", _healthTick, _healthLatencyMs);
                 healthColor = Skin.Ok;
             }
             else

@@ -61,6 +61,9 @@ namespace OUWire
         TagDig = 20,
         TagMarketOrder = 21,
         TagMarketState = 22,
+        TagDigYield = 23,
+        TagPing = 24,
+        TagPong = 25,
     };
 
     /// Действия редактора конструкций.
@@ -232,6 +235,15 @@ namespace OUWire
             const uint8_t* p = nullptr;
             if (!Take(1, p)) return false;
             v = p[0];
+            return true;
+        }
+
+        bool U32(uint32_t& v)
+        {
+            const uint8_t* p = nullptr;
+            if (!Take(4, p)) return false;
+            v = static_cast<uint32_t>(p[0]) | (static_cast<uint32_t>(p[1]) << 8)
+              | (static_cast<uint32_t>(p[2]) << 16) | (static_cast<uint32_t>(p[3]) << 24);
             return true;
         }
 
@@ -706,6 +718,50 @@ namespace OUWire
             return true;
         };
         return read_levels(out.Bids) && read_levels(out.Asks);
+    }
+
+    /// Что добыто при копании (сервер → клиент, тег 23).
+    struct DigYield
+    {
+        uint32_t Item = 0;
+        uint64_t Qty = 0;
+        uint8_t Layer = 0;      // 0 руда, 1 лёд, 2 кристалл, 3 металл
+        double HoleDepth = 0.0; // глубина ямы (м)
+    };
+
+    inline bool DecodeDigYield(const uint8_t* body, size_t len, DigYield& out)
+    {
+        Reader r{body, len, 0};
+        uint8_t tag = 0;
+        if (!r.U8(tag) || tag != TagDigYield) return false;
+        uint64_t item = 0, qty = 0;
+        if (!r.Varint(item) || !r.Varint(qty)) return false;
+        if (!r.U8(out.Layer)) return false;
+        if (!r.F64(out.HoleDepth)) return false;
+        out.Item = static_cast<uint32_t>(item);
+        out.Qty = qty;
+        return true;
+    }
+
+    /// Собрать запрос пинга (клиент → сервер, тег 24): [tag][nonce u32 LE].
+    inline std::vector<uint8_t> EncodePing(uint32_t Nonce)
+    {
+        std::vector<uint8_t> out;
+        out.push_back(TagPing);
+        out.push_back(static_cast<uint8_t>(Nonce & 0xFF));
+        out.push_back(static_cast<uint8_t>((Nonce >> 8) & 0xFF));
+        out.push_back(static_cast<uint8_t>((Nonce >> 16) & 0xFF));
+        out.push_back(static_cast<uint8_t>((Nonce >> 24) & 0xFF));
+        return out;
+    }
+
+    /// Разобрать ответ пинга (сервер → клиент, тег 25): nonce эхом.
+    inline bool DecodePong(const uint8_t* body, size_t len, uint32_t& OutNonce)
+    {
+        Reader r{body, len, 0};
+        uint8_t tag = 0;
+        if (!r.U8(tag) || tag != TagPong) return false;
+        return r.U32(OutNonce);
     }
 
     /// Собрать кадр ввода (клиент → сервер, тег 2).

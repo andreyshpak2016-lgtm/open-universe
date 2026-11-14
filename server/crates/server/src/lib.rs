@@ -152,8 +152,10 @@ pub struct Economy {
     pub ore_item: u32,
     /// Id топлива (покупается у рынка/тратится).
     pub fuel_item: u32,
-    /// Сколько руды даёт один удар копания.
-    pub ore_per_dig: u64,
+    /// Id предметов по «полосам глубины»: лёд, кристалл, металл.
+    pub ice_item: u32,
+    pub crystal_item: u32,
+    pub metal_item: u32,
 }
 
 impl Economy {
@@ -165,12 +167,37 @@ impl Economy {
         Economy {
             ore_item: find("руда"),
             fuel_item: find("топливо"),
+            ice_item: find("лёд"),
+            crystal_item: find("кристалл"),
+            metal_item: find("металл"),
             registry,
             engine,
             credits: BTreeMap::new(),
             system: 1,
-            ore_per_dig: 5,
         }
+    }
+
+    /// Что даёт копание на глубине `depth_m` (метры от поверхности).
+    ///
+    /// Полосы детерминированы: у поверхности — руда, глубже — лёд, кристалл и
+    /// металл. Чем глубже, тем ценнее и реже добыча. Возвращает (id, количество).
+    pub fn ore_at_depth(&self, depth_m: f64) -> (u32, u64) {
+        let d = depth_m.max(0.0);
+        if d < 15.0 {
+            (self.ore_item, 3)       // руда, близко к поверхности
+        } else if d < 40.0 {
+            (self.ice_item, 2)       // лёд
+        } else if d < 80.0 {
+            (self.crystal_item, 1)   // кристалл
+        } else {
+            (self.metal_item, 1)     // металл, глубоко
+        }
+    }
+
+    /// Слой (по глубине) для отрисовки: 0 руда, 1 лёд, 2 кристалл, 3 металл.
+    pub fn ore_layer(depth_m: f64) -> u8 {
+        let d = depth_m.max(0.0);
+        if d < 15.0 { 0 } else if d < 40.0 { 1 } else if d < 80.0 { 2 } else { 3 }
     }
 
     /// Выдать игроку стартовый капитал (один раз при подключении).
@@ -234,21 +261,27 @@ impl Server {
 
     /// Выкопать грунт игроком: рельеф + добыча руды.
     ///
-    /// Возвращает применённую воронку. Руду начисляем игроку (владельцу
-    /// сущности): копание — источник сырья для экономики.
-    pub fn dig_as(&mut self, player: NetId, slot: u32, dir: Vec3, cos_radius: f64, depth: f64) -> Dent {
+    /// Возвращает (применённая воронка, что добыто): (id предмета, количество).
+    /// Руда залегает **слоями по глубине** (см. `Economy::ore_at_depth`): у
+    /// поверхности — руда, глубже — лёд, кристалл, металл.
+    pub fn dig_as(&mut self, player: NetId, slot: u32, dir: Vec3, cos_radius: f64, depth: f64) -> (Dent, (u32, u64), f64) {
         let dent = self.dig(slot, dir, cos_radius, depth);
         let sys = self.economy.system;
-        let ore = self.economy.ore_item;
-        let yield_qty = self.economy.ore_per_dig.max(1);
-        self.economy.engine.inventory.add(player, sys, ore, yield_qty);
-        // Прибавка к добыче за глубину: чем глубже — тем больше руды за удар.
+        // Глубина ямы в ЭТОЙ точке — СУММАРНАЯ по слоту (1 ед = 1 м). Именно она
+        // определяет слой, а не глубина одного удара.
+        let hole_depth = self
+            .planet
+            .dents
+            .get(slot as usize)
+            .map(|d| d.depth)
+            .unwrap_or(dent.depth);
+        let (item, base_qty) = self.economy.ore_at_depth(hole_depth);
+        // Бонус за глубину удара: глубже — больше за удар.
         let bonus = (depth / 10.0).clamp(0.0, 20.0) as u64;
-        if bonus > 0 {
-            self.economy.engine.inventory.add(player, sys, ore, bonus);
-        }
+        let qty = base_qty + bonus;
+        self.economy.engine.inventory.add(player, sys, item, qty);
         self.market_dirty = true;
-        dent
+        (dent, (item, qty), hole_depth)
     }
 
     /// Разместить ордер на рынке от имени игрока.
@@ -1540,9 +1573,11 @@ mod tests {
         let _ = a;
         let dir = ou_sim::home_spawn_direction();
         let ore = s.economy.ore_item;
-        // Игрок 1 копает несколько раз — получает руду.
+        // Игрок 1 копает у поверхности (depth < 15 м) — получает РУДУ.
         for i in 0..5 {
-            s.dig_as(1, i, dir, 0.9995, 30.0);
+            let (dent, (item, _), _) = s.dig_as(1, i, dir, 0.9995, 10.0);
+            assert_eq!(item, ore, "у поверхности должна добываться руда");
+            assert!(dent.depth <= 15.0);
         }
         let mined = s.economy.engine.inventory.amount(1, 1, ore);
         assert!(mined > 0, "копание должно давать руду, получено {mined}");
@@ -1577,6 +1612,43 @@ mod tests {
             msgs.iter().any(|m| matches!(m, Message::ServerMarket { .. })),
             "после копания сервер должен прислать состояние экономики"
         );
+    }
+
+    #[test]
+    fn dig_yield_depends_on_depth_layer() {
+        // Полосы: 0..15 руда, 15..40 лёд, 40..80 кристалл, >80 металл.
+        let mut s = Server::new();
+        s.connect_on_planet(1);
+        let dir = ou_sim::home_spawn_direction();
+        let ore = s.economy.ore_item;
+        let ice = s.economy.ice_item;
+        let crystal = s.economy.crystal_item;
+        let metal = s.economy.metal_item;
+
+        // Один слот, удары всё глубже — слой добычи меняется вместе с глубиной.
+        let (_, (i0, _), _) = s.dig_as(1, 0, dir, 0.9995, 10.0);   // ~10 м → руда
+        assert_eq!(i0, ore);
+        for _ in 0..6 { s.dig_as(1, 0, dir, 0.9995, 15.0); }    // яма глубже 80 м
+        let deep = s.planet.dents[0].depth;
+        assert!(deep > 80.0, "яма должна стать глубокой: {deep}");
+        let (_, (i1, _), hole) = s.dig_as(1, 0, dir, 0.9995, 15.0);
+        assert_eq!(i1, metal, "на большой глубине должна быть металлическая руда");
+        assert!(hole > 80.0, "глубина ямы в ответе должна быть суммарной: {hole}");
+
+        // Прямая проверка полос.
+        assert_eq!(crate::Economy::ore_layer(5.0), 0);
+        assert_eq!(crate::Economy::ore_layer(20.0), 1);
+        assert_eq!(crate::Economy::ore_layer(60.0), 2);
+        assert_eq!(crate::Economy::ore_layer(120.0), 3);
+        // И что слои действительно дают разные предметы.
+        let (a, _) = s.economy.ore_at_depth(5.0);
+        let (b, _) = s.economy.ore_at_depth(20.0);
+        let (c, _) = s.economy.ore_at_depth(60.0);
+        let (d, _) = s.economy.ore_at_depth(120.0);
+        assert_eq!(a, ore);
+        assert_eq!(b, ice);
+        assert_eq!(c, crystal);
+        assert_eq!(d, metal);
     }
 
     #[test]

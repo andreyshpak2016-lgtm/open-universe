@@ -307,6 +307,41 @@ public:
 	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Economy")
 	bool bMarketReceived = false;
 
+	/**
+	 * Реальная задержка игрока до сервера (мс), измеренная по кругу.
+	 *
+	 * Считаем по подтверждениям ввода: сервер в снимке возвращает `ack_input_seq`,
+	 * клиент знает, когда отправил этот кадр, — разница и есть RTT. Это настоящий
+	 * пинг игрока (в отличие от числа из `status.json`, которое мерил CI-раннер).
+	 */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Net")
+	float PingMs = -1.f;
+
+	/** Сглаженный пинг (мс) — для HUD, чтобы число не дёргалось. -1 — нет данных. */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Net")
+	float SmoothedPingMs = -1.f;
+
+	/** Отправить запрос пинга серверу (эхо-ответ даст реальный RTT). */
+	void SendPing();
+
+	/** Последняя добыча при копании (id предмета, количество, слой, глубина ямы). */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Economy")
+	int32 LastDigItem = 0;
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Economy")
+	int64 LastDigQty = 0;
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Economy")
+	int32 LastDigLayer = 0;
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Economy")
+	float LastDigHoleDepth = 0.f;
+
+	/** Время последней добычи (мир, сек) — для всплывающей подсказки в HUD. */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Economy")
+	float LastDigTime = -100.f;
+
+	/** Всего добыто за сессию по каждому слою (0 руда,1 лёд,2 кристалл,3 металл). */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Economy")
+	TArray<int64> DigTotalByLayer;
+
 	/** Последний результат команды строительства: принята ли. */
 	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Build")
 	bool bLastBuildAccepted = false;
@@ -409,6 +444,16 @@ private:
 
 	/** Счётчик отправленных кадров. */
 	int32 InputSeq = 0;
+
+	/** Время отправки кадров по их seq (для измерения RTT). Секунды мира. */
+	TMap<int32, double> InputSentTime;
+
+	/** Время отправки пингов по их nonce (для измерения RTT). */
+	TMap<int32, double> PingSentTime;
+
+	/** Счётчик пингов и время следующего. */
+	int32 PingNonce = 0;
+	double NextPingTime = 0.0;
 
 	/** Разбор пакета; false — пакет не наш или повреждён. */
 	bool ParseSnapshot(const TArray<uint8>& Body, FOUSnapshot& Out);

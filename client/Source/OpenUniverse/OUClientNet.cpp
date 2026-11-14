@@ -15,6 +15,8 @@ UOUClientNet::UOUClientNet()
 {
 	PrimaryComponentTick.bCanEverTick = true;
 	PrimaryComponentTick.bStartWithTickEnabled = true;
+	// Четыре слоя добычи (руда, лёд, кристалл, металл).
+	DigTotalByLayer.Init(0, 4);
 }
 
 void UOUClientNet::BeginPlay()
@@ -153,7 +155,53 @@ void UOUClientNet::SendInput(const FOUInputFrame& Input)
 		Input.Throttle, Input.Yaw, Input.Pitch, Input.Strafe, Input.Up, Input.bFire);
 	TArray<uint8> Arr;
 	Arr.Append(Body.data(), static_cast<int32>(Body.size()));
-	SendPacket(Arr);
+	if (SendPacket(Arr))
+	{
+		// Запоминаем время отправки: сервер вернёт этот seq в снимке, и мы
+		// посчитаем настоящий RTT (пинг игрока до сервера).
+		if (UWorld* W = GetWorld())
+		{
+			InputSentTime.Add(static_cast<int32>(Input.Seq), W->GetTimeSeconds());
+			// Чистим старые записи, чтобы карта не росла.
+			if (InputSentTime.Num() > 256)
+			{
+				double Oldest = 1e30; int32 OldKey = 0;
+				for (const TPair<int32, double>& P : InputSentTime)
+				{
+					if (P.Value < Oldest) { Oldest = P.Value; OldKey = P.Key; }
+				}
+				InputSentTime.Remove(OldKey);
+			}
+		}
+	}
+}
+
+void UOUClientNet::SendPing()
+{
+	if (!IsConnected())
+	{
+		return;
+	}
+	const uint32_t Nonce = static_cast<uint32_t>(++PingNonce);
+	const std::vector<uint8_t> Body = OUWire::EncodePing(Nonce);
+	TArray<uint8> Arr;
+	Arr.Append(Body.data(), static_cast<int32>(Body.size()));
+	if (SendPacket(Arr))
+	{
+		if (UWorld* W = GetWorld())
+		{
+			PingSentTime.Add(static_cast<int32>(Nonce), W->GetTimeSeconds());
+			if (PingSentTime.Num() > 32)
+			{
+				double Oldest = 1e30; int32 OldKey = 0;
+				for (const TPair<int32, double>& P : PingSentTime)
+				{
+					if (P.Value < Oldest) { Oldest = P.Value; OldKey = P.Key; }
+				}
+				PingSentTime.Remove(OldKey);
+			}
+		}
+	}
 }
 
 void UOUClientNet::SendCharacter(const FVector& PositionServer, float Yaw, bool bMoving, bool bActive)
@@ -258,6 +306,21 @@ void UOUClientNet::Poll()
 	if (!Socket)
 	{
 		return;
+	}
+
+	// Периодически шлём пинг — так HUD всегда показывает свежий реальный RTT
+	// (и пешком, и в корабле: пеший не шлёт input с seq).
+	if (IsConnected())
+	{
+		if (UWorld* W = GetWorld())
+		{
+			const double Now = W->GetTimeSeconds();
+			if (Now >= NextPingTime)
+			{
+				NextPingTime = Now + 1.0;
+				SendPing();
+			}
+		}
 	}
 	// Позы чужих персонажей собираются заново каждый кадр (кадровый буфер).
 	RemoteCharacters.Reset();
@@ -463,6 +526,44 @@ void UOUClientNet::Poll()
 				PendingDents.Add(Dent);
 			}
 		}
+		else if (Body[0] == OUWire::TagDigYield) // что добыто при копании
+		{
+			OUWire::DigYield Y;
+			if (OUWire::DecodeDigYield(Body.GetData(), static_cast<size_t>(Body.Num()), Y))
+			{
+				LastDigItem = static_cast<int32>(Y.Item);
+				LastDigQty = static_cast<int64>(Y.Qty);
+				LastDigLayer = FMath::Clamp(static_cast<int32>(Y.Layer), 0, 3);
+				LastDigHoleDepth = static_cast<float>(Y.HoleDepth);
+				DigTotalByLayer[LastDigLayer] += LastDigQty;
+				if (UWorld* W = GetWorld())
+				{
+					LastDigTime = W->GetTimeSeconds();
+				}
+				UE_LOG(LogOUClient, Log, TEXT("Добыто: предмет %d ×%lld со слоя %d (глубина %.0f м)"),
+					LastDigItem, LastDigQty, LastDigLayer, Y.HoleDepth);
+			}
+		}
+		else if (Body[0] == OUWire::TagPong) // ответ на пинг — считаем RTT
+		{
+			uint32_t Nonce = 0;
+			if (OUWire::DecodePong(Body.GetData(), static_cast<size_t>(Body.Num()), Nonce))
+			{
+				if (const double* SentAt = PingSentTime.Find(static_cast<int32>(Nonce)))
+				{
+					if (UWorld* W = GetWorld())
+					{
+						const float Rtt = static_cast<float>((W->GetTimeSeconds() - *SentAt) * 1000.0);
+						if (Rtt >= 0.f && Rtt < 5000.f)
+						{
+							PingMs = Rtt;
+							SmoothedPingMs = (SmoothedPingMs < 0.f) ? Rtt : FMath::Lerp(SmoothedPingMs, Rtt, 0.3f);
+						}
+					}
+					PingSentTime.Remove(static_cast<int32>(Nonce));
+				}
+			}
+		}
 		else if (Body[0] == OUWire::TagMarketState) // состояние экономики
 		{
 			OUWire::MarketState M;
@@ -516,6 +617,24 @@ bool UOUClientNet::ParseSnapshot(const TArray<uint8>& Body, FOUSnapshot& Out)
 	Out.AckInputSeq = Snap.AckInputSeq;
 	Out.bBaseline = Snap.Baseline;
 	LastServerTick = static_cast<int64>(Snap.Tick);
+
+	// --- Реальный пинг: RTT по подтверждённому кадру ввода ---
+	if (Snap.AckInputSeq > 0)
+	{
+		if (const double* SentAt = InputSentTime.Find(static_cast<int32>(Snap.AckInputSeq)))
+		{
+			if (UWorld* W = GetWorld())
+			{
+				const float Rtt = static_cast<float>((W->GetTimeSeconds() - *SentAt) * 1000.0);
+				if (Rtt >= 0.f && Rtt < 5000.f)
+				{
+					PingMs = Rtt;
+					SmoothedPingMs = (SmoothedPingMs < 0.f) ? Rtt : FMath::Lerp(SmoothedPingMs, Rtt, 0.25f);
+				}
+			}
+			InputSentTime.Remove(static_cast<int32>(Snap.AckInputSeq));
+		}
+	}
 	Out.Entities.Reset(static_cast<int32>(Snap.Entities.size()));
 	for (const OUWire::EntityState& E : Snap.Entities)
 	{
