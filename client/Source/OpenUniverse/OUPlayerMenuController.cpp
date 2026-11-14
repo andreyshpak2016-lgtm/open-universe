@@ -254,6 +254,26 @@ void AOUPlayerMenuController::Tick(float DeltaSeconds)
 		}
 		AutoConnectStep();
 	}
+	// --- Ручное подключение: пока меню открыто, сеть нужно опрашивать самим ---
+	// Иначе welcome/снимки не читаются (пешка при открытом меню не тикает), и
+	// игрок «застревает» на экране выбора сервера.
+	else if (bMenuOpen && bConnecting)
+	{
+		ResolveNet();
+		if (Net)
+		{
+			Net->Poll();
+			if (Net->IsConnected())
+			{
+				bMenuOpen = false;
+				Screen = EOUMenuScreen::InGame;
+				bConnecting = false;
+				SetMenuCursor(false);
+				UE_LOG(LogOUMenu, Log, TEXT("Подключение: подключено к %s:%d (сущность %d)"),
+					*Net->ServerAddress, Net->ServerPort, Net->OwnEntityId);
+			}
+		}
+	}
 
 	// Диагностика: `-OUPauseMenu` — открыть пауза-меню (ESC) через пару секунд
 	// после входа в игру, чтобы снять кадр без ручных нажатий.
