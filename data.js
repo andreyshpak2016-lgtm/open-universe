@@ -142,7 +142,7 @@ window.PLAN = {
       "tasks": [
         { "title": "Щиты, броня, урон по секциям; смерть и возрождение (в игре)", "title_en": "Shields, armor, sectional damage; death and respawn (in game)", "status": "done" },
         { "title": "Дроны-цели: спавн, отстрел, возрождение (в игре)", "title_en": "Target drones: spawn, shoot, respawn (in game)", "status": "done" },
-        { "title": "Взрывные воронки от боя (explode) — в коде пока только dig", "title_en": "Blast craters from combat (explode) — the code only has dig so far", "status": "todo" },
+        { "title": "Взрывные воронки от боя: уничтожение у поверхности оставляет кратер", "title_en": "Blast craters from combat: destruction near the surface leaves a crater", "status": "done" },
         { "title": "Захват и удержание территорий (есть в combat, к игре не подключено)", "title_en": "Territory capture and holding (exists in combat, not wired into the game)", "status": "in_progress" },
         { "title": "Право собственности и налоги (есть в библиотеке)", "title_en": "Ownership and taxes (exists in the library)", "status": "in_progress" },
         { "title": "Орбитальные и планетарные сражения", "title_en": "Orbital and planetary battles", "status": "in_progress" },
