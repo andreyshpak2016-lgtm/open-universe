@@ -761,9 +761,7 @@ void AOUCharacterPawn::ApplyServerBuildEdits()
 					Block->ApplyLook();
 					ServerBlocks.Add(Key, Block);
 					BlockCoords.Add(Block, Key);
-					UE_LOG(LogOUChar, Log, TEXT("Авторитетный блок (%d,%d,%d) от сервера: мир %s, игрок %s, дист %.0f см"),
-						E.X, E.Y, E.Z, *Pos.ToCompactString(), *GetActorLocation().ToCompactString(),
-						FVector::Dist(Pos, GetActorLocation()));
+					UE_LOG(LogOUChar, Log, TEXT("Авторитетный блок (%d,%d,%d) от сервера"), E.X, E.Y, E.Z);
 				}
 			}
 		}

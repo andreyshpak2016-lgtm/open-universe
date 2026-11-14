@@ -274,7 +274,44 @@ float AOUVoxelPlanet::HeightAt(const FVector& Direction) const
 		return Base;
 	}
 	// `HeightAtDetail` и `PadFlattenCm` — оба в сантиметрах UE, складываем как есть.
-	return Base + static_cast<float>(PadFlattenCm(Direction));
+	// Плюс клиентские детали рельефа: персонаж ходит по ВИДИМОЙ поверхности.
+	return Base + static_cast<float>(PadFlattenCm(Direction)) + static_cast<float>(ClientReliefCm(Direction));
+}
+
+double AOUVoxelPlanet::ClientReliefCm(const FVector& DirUE) const
+{
+	// Доп. детали рельефа ТОЛЬКО на клиенте (не входит в общую формулу с сервером,
+	// поэтому сверка бит-в-бит сохраняется). Дают «живую» землю: средние бугры и
+	// мелкие неровности. Обнуляются внутри площадки базы (пол должен быть ровным).
+	if (!bHomePlanet)
+	{
+		return 0.0;
+	}
+	// Внутри площадки и её террас — без деталей (ровный пол).
+	if (PadSquareDistCm(DirUE) < static_cast<double>(PadOuterRadiusCm))
+	{
+		return 0.0;
+	}
+	const FVector D = DirUE.GetSafeNormal();
+	// Мягкое включение за краем площадки, чтобы не было обрыва на границе.
+	const double PadR = static_cast<double>(PadFlatRadius);
+	const double Band = static_cast<double>(PadTerraceBandCm);
+	const double Sq = PadSquareDistCm(DirUE);
+	const double Fade = FMath::Clamp((Sq - (PadR + Band)) / Band, 0.0, 1.0);
+	if (Fade <= 0.0)
+	{
+		return 0.0;
+	}
+	// Три октавы value-noise (клиентские, отдельное семя — не задевают сервер).
+	const double Amp = static_cast<double>(Amplitude);   // см размах рельефа
+	auto N = [&](double Freq, uint32 Seed)
+	{
+		return static_cast<double>(ValueNoise(static_cast<float>(D.X * Freq), static_cast<float>(D.Z * Freq + D.Y * Freq * 0.5f), static_cast<int64>(Seed)));
+	};
+	const double H = (N(90.0, 0x51A1) - 0.5) * 0.012
+		+ (N(240.0, 0x77B2) - 0.5) * 0.006
+		+ (N(700.0, 0x9C3D) - 0.5) * 0.003;
+	return H * Amp * Fade;
 }
 
 void AOUVoxelPlanet::PadFrame(FVector& OutCenter, FVector& OutUp, FVector& OutT1, FVector& OutT2)
@@ -409,7 +446,13 @@ float AOUVoxelPlanet::VisualHeightDetail(const FVector& DirUE, int32 Detail) con
 	if (bHomePlanet)
 	{
 		// `Base` и `PadFlattenCm` — в сантиметрах UE, складываем как есть.
-		return Base + static_cast<float>(PadFlattenCm(DirUE));
+		// Плюс клиентские детали рельефа (только плотный участок, вне площадки).
+		float Relief = Base + static_cast<float>(PadFlattenCm(DirUE));
+		if (Detail >= 1)
+		{
+			Relief += static_cast<float>(ClientReliefCm(DirUE));
+		}
+		return Relief;
 	}
 	const FVector D = DirUE.GetSafeNormal();
 	const float T = FMath::Clamp(Base / (Amplitude * 2.f) + 0.5f, 0.f, 1.f);
