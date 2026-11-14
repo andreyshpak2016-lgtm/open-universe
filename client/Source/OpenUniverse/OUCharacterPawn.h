@@ -315,6 +315,24 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Open Universe|Weapon")
 	UPointLightComponent* MuzzleFlash = nullptr;
 
+	// --- Строительство: призрак блока под прицелом ---
+
+	/**
+	 * Полупрозрачный «призрак» блока, куда встанет следующий кубик (как в
+	 * Dual Universe). Обновляется каждый кадр в Tick, виден только в меню B.
+	 */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Open Universe|Build")
+	UStaticMeshComponent* BuildGhost = nullptr;
+
+	/** Обновить положение/видимость призрака блока (зовётся из Tick). */
+	void UpdateBuildGhost();
+
+	/**
+	 * Точка на поверхности планеты под прицелом (направление от центра).
+	 * Марширует луч взгляда до земли. false — не попали (смотрим в небо).
+	 */
+	bool AimTerrainDir(FVector& OutDir) const;
+
 	/** Секунд между выстрелами. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Open Universe|Weapon")
 	float FireCooldown = 0.16f;

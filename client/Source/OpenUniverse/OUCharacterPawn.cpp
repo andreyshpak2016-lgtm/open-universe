@@ -164,6 +164,33 @@ AOUCharacterPawn::AOUCharacterPawn()
 	MuzzleFlash->SetAttenuationRadius(400.f);
 	MuzzleFlash->SetVisibility(false);
 
+	// --- Призрак блока строительства (куда встанет следующий кубик) ---
+	{
+		static ConstructorHelpers::FObjectFinder<UStaticMesh> GhostCube(
+			TEXT("/Engine/BasicShapes/Cube.Cube"));
+		// Полупрозрачный материал — призрак виден как «превью», а не как блок.
+		static ConstructorHelpers::FObjectFinder<UMaterialInterface> GhostMat(
+			TEXT("/Engine/EngineDebugMaterials/M_SimpleUnlitTranslucent.M_SimpleUnlitTranslucent"));
+		BuildGhost = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("BuildGhost"));
+		BuildGhost->SetupAttachment(Capsule);
+		BuildGhost->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		BuildGhost->SetCastShadow(false);
+		BuildGhost->SetGenerateOverlapEvents(false);
+		if (GhostCube.Succeeded())
+		{
+			BuildGhost->SetStaticMesh(GhostCube.Object);
+		}
+		if (GhostMat.Succeeded())
+		{
+			BuildGhost->SetMaterial(0, GhostMat.Object);
+		}
+		else if (Mat.Succeeded())
+		{
+			BuildGhost->SetMaterial(0, Mat.Object);
+		}
+		BuildGhost->SetVisibility(false);
+	}
+
 	// Камера — ВИД ОТ ПЕРВОГО ЛИЦА: камера прямо в голове, без штанги.
 	// Тело фигурки своему игроку не показываем (иначе оно закрывало бы обзор),
 	// но чужой игрок видит фигурку (клиент других игроков рисует её отдельно).
@@ -543,8 +570,17 @@ void AOUCharacterPawn::PlaceBuildBlock()
 		}
 		else
 		{
-			// Пусто впереди — ставим в ряд перед персонажем.
-			Target = FIntVector(BuiltCount + 1, 0, 0);
+			// Блока под прицелом нет — ставим НА ЗЕМЛЮ под прицелом (как в DU).
+			FVector GroundDir;
+			if (AimTerrainDir(GroundDir))
+			{
+				Target = WorldToVoxel(GroundDir * (SurfaceRadius(GroundDir) + 75.f));
+			}
+			else
+			{
+				// Смотрим в небо — ставим в ряд перед персонажем (запасной путь).
+				Target = FIntVector(BuiltCount + 1, 0, 0);
+			}
 		}
 		Net->SendBuild(Net->OwnEntityId, /*Place=*/0, Target.X, Target.Y, Target.Z, R, G, B);
 		BuiltCoords.Add(Target);
@@ -579,6 +615,99 @@ void AOUCharacterPawn::PlaceBuildBlock()
 		UE_LOG(LogOUChar, Log, TEXT("Построен блок «%s» #%d (оффлайн)"),
 			*BuildPartName(BuildSelection), BuiltCount);
 	}
+}
+
+void AOUCharacterPawn::UpdateBuildGhost()
+{
+	if (!BuildGhost)
+	{
+		return;
+	}
+	// Призрак виден только когда открыто меню строительства и мы в сети.
+	if (!bBuildMenuOpen)
+	{
+		BuildGhost->SetVisibility(false);
+		return;
+	}
+
+	// Куда встанет следующий блок: та же логика, что у PlaceBuildBlock.
+	FIntVector Target;
+	FVector Hit, Normal;
+	if (TraceBuildTarget(Target, Hit, Normal))
+	{
+		Target += WorldDirToVoxelShift(Normal);
+	}
+	else
+	{
+		// Блока под прицелом нет — ставим НА ЗЕМЛЮ под прицелом (как в DU):
+		// маршируем луч взгляда до поверхности планеты и берём воксель там.
+		FVector GroundDir;
+		if (AimTerrainDir(GroundDir))
+		{
+			Target = WorldToVoxel(GroundDir * (SurfaceRadius(GroundDir) + 75.f));
+		}
+		else
+		{
+			Target = FIntVector(BuiltCount + 1, 0, 0);
+		}
+	}
+
+	const FVector Pos = VoxelWorld(FVector(Target.X, Target.Y, Target.Z));
+	BuildGhost->SetWorldLocation(Pos);
+	// 1.5 м — шаг сетки: призрак точно совпадает с реальным блоком.
+	const float Scale = 150.f / 100.f;
+	BuildGhost->SetWorldScale3D(FVector(Scale));
+	// Полупрозрачный цвет выбранной детали (ярче — видно поверх земли).
+	const FLinearColor Col = BuildPartColor(BuildSelection);
+	BuildGhost->SetVectorParameterValueOnMaterials(TEXT("Color"),
+		FVector(Col.R * 0.8f + 0.2f, Col.G * 0.8f + 0.2f, Col.B * 0.8f + 0.2f));
+	BuildGhost->SetVisibility(true);
+	// Диагностика `-OUGhostLog`: печатаем позицию призрака раз в ~секунду.
+	if (FParse::Param(FCommandLine::Get(), TEXT("OUGhostLog")))
+	{
+		static double LastLog = 0.0;
+		const double Now = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0;
+		if (Now - LastLog > 1.0)
+		{
+			LastLog = Now;
+			UE_LOG(LogOUChar, Log, TEXT("Призрак блока: coord (%d,%d,%d), мир %s, игрок %s, дист %.0f см, видим=%d"),
+				Target.X, Target.Y, Target.Z, *Pos.ToCompactString(), *GetActorLocation().ToCompactString(),
+				FVector::Dist(Pos, GetActorLocation()), BuildGhost->IsVisible() ? 1 : 0);
+		}
+	}
+}
+
+bool AOUCharacterPawn::AimTerrainDir(FVector& OutDir) const
+{
+	// Марш луча взгляда до поверхности планеты: из точки камеры вперёд, ищем
+	// пересечение с рельефом. Возвращаем направление точки от центра планеты.
+	AOUVoxelPlanet* Planet = AOUVoxelPlanet::FindHomePlanet(GetWorld());
+	if (!Planet)
+	{
+		return false;
+	}
+	const FVector Start = Camera ? Camera->GetComponentLocation() : GetActorLocation();
+	const FVector Dir = (Camera ? Camera->GetForwardVector() : GetActorForwardVector()).GetSafeNormal();
+	if (Dir.IsNearlyZero())
+	{
+		return false;
+	}
+	for (int32 Step = 0; Step < 400; ++Step)
+	{
+		const FVector P = Start + Dir * (40.f * Step);   // шаг 40 см, до 160 м
+		const FVector DirP = P.GetSafeNormal();
+		if (DirP.IsNearlyZero())
+		{
+			break;
+		}
+		const float Surf = Planet->SurfaceRadiusAt(DirP);
+		if (P.Size() <= Surf)
+		{
+			OutDir = DirP;
+			return true;
+		}
+	}
+	return false;
 }
 
 FIntVector AOUCharacterPawn::WorldDirToVoxelShift(const FVector& WorldDir) const
@@ -1232,6 +1361,8 @@ void AOUCharacterPawn::Tick(float DeltaSeconds)
 	// Авторитетное строительство: применяем правки, пришедшие от сервера.
 	ResolveNet();
 	ApplyServerBuildEdits();
+	// Призрак блока под прицелом (меню строительства, как в Dual Universe).
+	UpdateBuildGhost();
 	// Авторитетное копание: применяем воронки, пришедшие от сервера.
 	ApplyServerDigs();
 
