@@ -422,11 +422,41 @@ pub struct World {
     pub tick: u64,
     pub entities: BTreeMap<NetId, Entity>,
     pub params: ShipParams,
+    /// Тела системы: домашняя планета + соседние (гладкие сферы, без рельефа).
+    /// Гравитация и посадка считаются от ВСЕХ тел, поэтому на луну/соседнюю
+    /// планету можно приземлиться и упасть на них.
+    pub bodies: Vec<Terrain>,
 }
 
 impl World {
     pub fn new() -> Self {
-        World { tick: 0, entities: BTreeMap::new(), params: ShipParams::default() }
+        World { tick: 0, entities: BTreeMap::new(), params: ShipParams::default(), bodies: Vec::new() }
+    }
+
+    /// Собрать тела системы: домашняя планета (с рельефом) + соседние гладкие.
+    pub fn build_system(&mut self) {
+        self.bodies.clear();
+        self.bodies.push(home_planet());
+        for b in home_system().bodies {
+            if b.id == home_body_id() {
+                continue;
+            }
+            if b.radius <= 0.0 {
+                continue; // звезда/пояс — не садимся
+            }
+            // Соседнее тело — гладкая сфера: амплитуда 0 → высота 0, поверхность
+            // ровно на радиусе. Сид — свой (детерминированно), чтобы параметры
+            // совпадали у сервера и клиента.
+            self.bodies.push(Terrain::new(
+                b.pos,
+                TerrainParams {
+                    radius: b.radius,
+                    amplitude: 0.0,
+                    sea_level: DEFAULT_SEA_LEVEL,
+                    seed: HOME_PLANET_SEED ^ (b.id as u64).wrapping_mul(0x9E3779B97F4A7C15),
+                },
+            ));
+        }
     }
 
     pub fn spawn(&mut self, id: NetId, pos: Vec3) -> NetId {
@@ -451,11 +481,12 @@ impl World {
     /// Один детерминированный шаг мира.
     pub fn step(&mut self, inputs: &BTreeMap<NetId, InputFrame>) {
         for (id, ent) in self.entities.iter_mut() {
-            // Внешнее ускорение: гравитация планеты, если сущность к ней привязана.
-            let g = match ent.terrain {
-                Some(t) => gravity_at(ent.state.pos, &t),
-                None => Vec3::ZERO,
-            };
+            // Внешнее ускорение: гравитация от ВСЕХ тел системы (домашняя планета
+            // с рельефом + соседние гладкие сферы). Дальние вклады почти нулевые.
+            let mut g = Vec3::ZERO;
+            for body in &self.bodies {
+                g = g.add(gravity_at(ent.state.pos, body));
+            }
             if let Some(input) = inputs.get(id) {
                 integrate_with_accel(&mut ent.state, input, &self.params, TICK_DT, g);
                 ent.last_input_seq = input.seq;
@@ -464,24 +495,30 @@ impl World {
                 let neutral = InputFrame::neutral(ent.last_input_seq);
                 integrate_with_accel(&mut ent.state, &neutral, &self.params, TICK_DT, g);
             }
-            // Столкновение с рельефом: если у сущности есть планета, корабль
-            // не может «провалиться» под поверхность.
-            if let Some(terrain) = ent.terrain {
+            // Столкновение с поверхностью: для КАЖДОГО тела не даём провалиться
+            // под рельеф (у соседних тел — гладкая сфера). Так на луну/планету
+            // можно сесть. Состояние «на земле» берём от ближайшего касания.
+            let mut best_ground = ent.ground;
+            for body in &self.bodies {
                 let state = ent.state;
                 let mut pos = state.pos;
                 let mut vel = state.vel;
                 let res = landing::resolve_ground(
                     &mut pos,
                     &mut vel,
-                    &terrain,
+                    body,
                     self.params.landing_safe_speed,
                     self.params.ground_friction,
                     &self.params,
                 );
                 ent.state.pos = pos;
                 ent.state.vel = vel;
-                ent.ground = res;
+                // Касание/удар важнее «в полёте» — не даём дальнему телу стереть.
+                if res != landing::GroundState::Flying {
+                    best_ground = res;
+                }
             }
+            ent.ground = best_ground;
         }
         self.tick += 1;
     }
@@ -932,6 +969,7 @@ mod tests {
     #[test]
     fn ship_falls_under_gravity_without_input() {
         let mut w = World::new();
+        w.build_system();
         let t = home_planet();
         let dir = normalize(Vec3::new(0.0, 1.0, 0.0));
         let surface = t.surface_radius(dir);
@@ -945,6 +983,28 @@ mod tests {
         let e = w.entities.get(&1).unwrap();
         // Корабль приблизился к центру планеты (упал).
         assert!(e.state.pos.length() < start.length(), "корабль должен падать");
+    }
+
+    #[test]
+    fn ship_lands_on_neighbour_body() {
+        // Соседнее тело (луна) — гладкая сфера: корабль рядом с ним падает и
+        // садится на поверхность, а не проваливается.
+        let mut w = World::new();
+        w.build_system();
+        // Луна из системы (не домашняя планета) — берём первое соседнее тело.
+        let moon = w.bodies.iter().find(|b| b.center.length() > 1.0).cloned().unwrap();
+        let dir = normalize(Vec3::new(1.0, 0.0, 0.0));
+        let start = moon.center.add(dir.scale(moon.params.radius + 300.0));
+        w.spawn(1, start);
+        let empty = BTreeMap::new();
+        for _ in 0..300 {
+            w.step(&empty);
+        }
+        let e = w.entities.get(&1).unwrap();
+        // Корабль опустился к поверхности луны (не провалился сквозь).
+        let dist = e.state.pos.sub(moon.center).length();
+        assert!(dist >= moon.params.radius - 1.0, "корабль не под поверхностью луны: {dist}");
+        assert!(dist < moon.params.radius + 50.0, "корабль сел на луну: {dist}");
     }
 
     #[test]

@@ -122,6 +122,12 @@ protected:
 	void OnExitPressed();
 	void OnExitReleased();
 
+	/**
+	 * Гравитация от всех тел системы (домашняя планета + соседние сферы).
+	 * Точка и результат — в серверных осях/единицах. Сумма совпадает с сервером.
+	 */
+	FVector GravityAtAll(const FVector& Pos) const;
+
 	/** Таймер тестового авто-огня, с. */
 	float FireTimer = 0.f;
 

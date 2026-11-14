@@ -53,6 +53,40 @@ namespace
 	}
 }
 
+FVector AOUShipPawn::GravityAtAll(const FVector& Pos) const
+{
+	// Домашняя планета — в начале координат (как на сервере).
+	FVector G = GravityAt(Pos);
+	// Соседние тела системы: гладкие сферы, гравитация по тем же обратным
+	// квадратам. Позиции серверные (1 ед = 1 м), точка Pos — тоже серверная.
+	if (const UOUClientNet* NetC = FindComponentByClass<UOUClientNet>())
+	{
+		for (const FOUSystemBody& B : NetC->SystemBodies)
+		{
+			// Пропускаем домашнюю планету (она уже учтена как GravityAt).
+			if (B.Center.IsNearlyZero() && B.Radius > 400000.f)
+			{
+				continue;
+			}
+			if (B.Radius <= 0.f)
+			{
+				continue;
+			}
+			const FVector Rel = Pos - B.Center;   // серверные единицы
+			const double Dist = Rel.Size();
+			if (Dist < 1.0)
+			{
+				continue;
+			}
+			const FVector Up = Rel / Dist;
+			const double R = FMath::Max<double>(Dist, B.Radius);
+			const double Ratio = B.Radius / R;
+			G += Up * (-18.0 * Ratio * Ratio);
+		}
+	}
+	return G;
+}
+
 AOUShipPawn::AOUShipPawn()
 {
 	PrimaryActorTick.bCanEverTick = true;
@@ -523,7 +557,9 @@ void AOUShipPawn::StepPrediction(const FOUInputFrame& Input, float Dt)
 	const FVector Side = Right * (Input.Strafe * Flight.MaxStrafeThrust);
 	const FVector Lift = UpLocal * (Input.Up * Flight.MaxStrafeThrust);
 	const FVector Damp = State.Velocity * (-Flight.LinearDamping);
-	const FVector Gravity = GravityAt(State.Position);
+	// Гравитация от ВСЕХ тел системы (домашняя планета + соседние сферы) —
+	// та же сумма, что на сервере, иначе предсказание разойдётся.
+	const FVector Gravity = GravityAtAll(State.Position);
 	State.Velocity += (Thrust + Side + Lift + Damp + Gravity) * Dt;
 
 	// 4. Ограничение скорости (в сверхсвете лимит выше).
@@ -563,6 +599,30 @@ void AOUShipPawn::StepPrediction(const FOUInputFrame& Input, float Dt)
 			if (VNorm < 0.0)
 			{
 				State.Velocity -= UpS * VNorm;
+			}
+		}
+		// Соседние тела: гладкие сферы — прижать, если под поверхностью.
+		if (const UOUClientNet* NetC = FindComponentByClass<UOUClientNet>())
+		{
+			for (const FOUSystemBody& B : NetC->SystemBodies)
+			{
+				if (B.Radius <= 0.f || (B.Center.IsNearlyZero() && B.Radius > 400000.f))
+				{
+					continue;
+				}
+				const FVector RelB = State.Position - B.Center;
+				const double DB = RelB.Size();
+				if (DB < 1.0 || DB >= B.Radius)
+				{
+					continue;
+				}
+				const FVector UpB = RelB / DB;
+				State.Position = B.Center + UpB * B.Radius;
+				const double VN = State.Velocity.Dot(UpB);
+				if (VN < 0.0)
+				{
+					State.Velocity -= UpB * VN;
+				}
 			}
 		}
 	}

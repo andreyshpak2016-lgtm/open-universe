@@ -129,6 +129,7 @@ window.PLAN = {
         { "title": "Атмосферный → орбитальный переход (посадка)", "title_en": "Atmospheric → orbital transition (landing)", "status": "done" },
         { "title": "Соседние тела системы: луна, планета, звезда, газовый гигант видны в небе", "title_en": "Neighbouring bodies: moon, planet, star and gas giant are visible in the sky", "status": "done" },
         { "title": "Сверхсвет (удержание Shift): сверхскоростной перелёт между телами", "title_en": "Supercruise (hold Shift): high-speed travel between bodies", "status": "done" },
+        { "title": "Гравитация и посадка на соседних телах (гладкие сферы)", "title_en": "Gravity and landing on neighbouring bodies (smooth spheres)", "status": "done" },
         { "title": "Генерация звёздных систем и поясов (генератор есть; обитаемая планета одна)", "title_en": "Star system and belt generation (generator exists; one habitable planet)", "status": "in_progress" },
         { "title": "Перемещения между системами (межзвёздные)", "title_en": "Travel between systems (interstellar)", "status": "todo" },
         { "title": "Орбитальные станции и шлюзы", "title_en": "Orbital stations and gateways", "status": "todo" },

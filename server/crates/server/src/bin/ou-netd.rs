@@ -33,6 +33,7 @@ fn main() {
     // --- персистентность: загружаем мир ---
     let mut store = FileStore::open(&world_dir).expect("не удалось открыть каталог мира");
     let mut server = Server::new();
+    server.build_system();
     match ou_persist::load_world(&store) {
         Ok(w) if !w.entities.is_empty() => {
             println!(
