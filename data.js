@@ -127,8 +127,10 @@ window.PLAN = {
       "goal_en": "From a planet surface to interstellar travel.",
       "tasks": [
         { "title": "Атмосферный → орбитальный переход (посадка)", "title_en": "Atmospheric → orbital transition (landing)", "status": "done" },
-        { "title": "Генерация звёздных систем и поясов (генератор есть; в игре одна планета)", "title_en": "Star system and belt generation (generator exists; the game has one planet)", "status": "in_progress" },
-        { "title": "Сверхсветовые перемещения между системами", "title_en": "Superluminal travel between systems", "status": "todo" },
+        { "title": "Соседние тела системы: луна, планета, звезда, газовый гигант видны в небе", "title_en": "Neighbouring bodies: moon, planet, star and gas giant are visible in the sky", "status": "done" },
+        { "title": "Сверхсвет (удержание Shift): сверхскоростной перелёт между телами", "title_en": "Supercruise (hold Shift): high-speed travel between bodies", "status": "done" },
+        { "title": "Генерация звёздных систем и поясов (генератор есть; обитаемая планета одна)", "title_en": "Star system and belt generation (generator exists; one habitable planet)", "status": "in_progress" },
+        { "title": "Перемещения между системами (межзвёздные)", "title_en": "Travel between systems (interstellar)", "status": "todo" },
         { "title": "Орбитальные станции и шлюзы", "title_en": "Orbital stations and gateways", "status": "todo" },
         { "title": "Опасные зоны: чёрные дыры, радиация", "title_en": "Hazard zones: black holes, radiation", "status": "todo" }
       ]

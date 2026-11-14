@@ -94,6 +94,10 @@ protected:
 	void OnDescendPressed();
 	void OnDescendReleased();
 
+	/** Сверхсвет (удержание Shift): сверхскоростной перелёт между телами. */
+	void OnBoostPressed();
+	void OnBoostReleased();
+
 	/** Чувствительность мыши для корабля (рад на единицу дельты). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Open Universe|Input")
 	float MouseSensitivity = 0.0025f;
@@ -106,6 +110,8 @@ protected:
 	/** Подъём/спуск (Пробел/Ctrl). */
 	bool bAscend = false;
 	bool bDescend = false;
+	/** Сверхсвет (удержание Shift). */
+	bool bBoost = false;
 	/** Захвачен ли курсор: Alt отпускает/возвращает (как в DU). */
 	bool bCursorCaptured = true;
 	void OnCursorToggle();

@@ -152,7 +152,7 @@ void UOUClientNet::SendInput(const FOUInputFrame& Input)
 	// Формат кадра — в OUWire (тот же код проверяет стенд test_wire).
 	const std::vector<uint8_t> Body = OUWire::EncodeInput(
 		static_cast<uint32_t>(Input.Seq),
-		Input.Throttle, Input.Yaw, Input.Pitch, Input.Strafe, Input.Up, Input.bFire);
+		Input.Throttle, Input.Yaw, Input.Pitch, Input.Strafe, Input.Up, Input.bFire, Input.bBoost);
 	TArray<uint8> Arr;
 	Arr.Append(Body.data(), static_cast<int32>(Body.size()));
 	if (SendPacket(Arr))

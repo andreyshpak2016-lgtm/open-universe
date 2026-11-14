@@ -866,9 +866,10 @@ namespace OUWire
 
     /// Собрать кадр ввода (клиент → сервер, тег 2).
     /// Формат (должен совпадать с `ou_protocol`):
-    /// [tag][count u16][seq u32][throttle i16][yaw i16][pitch i16][strafe i16][up i16][fire u8].
+    /// [tag][count u16][seq u32][throttle i16][yaw i16][pitch i16][strafe i16][up i16][fire u8][boost u8].
     inline std::vector<uint8_t> EncodeInput(
-        uint32_t seq, float throttle, float yaw, float pitch, float strafe, float up, bool fire)
+        uint32_t seq, float throttle, float yaw, float pitch, float strafe, float up, bool fire,
+        bool boost = false)
     {
         std::vector<uint8_t> out;
         out.push_back(TagInput);
@@ -890,6 +891,7 @@ namespace OUWire
         push_unit(strafe);
         push_unit(up);
         out.push_back(fire ? 1 : 0);
+        out.push_back(boost ? 1 : 0);
         return out;
     }
 

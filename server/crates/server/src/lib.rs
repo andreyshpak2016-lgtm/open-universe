@@ -828,9 +828,43 @@ impl Server {
     /// тел в системе нет. Сообщение остаётся ради имени/идентификатора системы
     /// и на будущее (когда появятся другие тела).
     pub fn system_description(&self) -> (u32, String, Vec<ou_protocol::SystemBodyDto>) {
-        let id = 0;
-        let name = ou_sim::system_name(id, ou_sim::HOME_PLANET_SEED);
-        (id, name, Vec::new())
+        // Реальная домашняя система: звезда, луна, соседняя планета, газовый
+        // гигант — на своих расстояниях (сотни тысяч км). Домашняя планета
+        // (тело 90) идёт первой — на ней база и точка появления.
+        let sys = ou_sim::home_system();
+        let mut bodies = Vec::new();
+        // Домашняя планета: в начале координат, радиус — как у рельефа.
+        bodies.push(ou_protocol::SystemBodyDto {
+            id: ou_sim::home_body_id(),
+            kind: 1,          // планета
+            surface: 0,       // землеподобная
+            radius: ou_sim::HOME_PLANET_RADIUS,
+            center: Vec3::ZERO,
+            orbit: 0.0,
+            phase: 0.0,
+            omega: 0.0,
+        });
+        for b in &sys.bodies {
+            let (kind, surface) = match b.kind {
+                ou_sim::BodyKind::Star => (0u8, 0u8),
+                ou_sim::BodyKind::Planet => (1, 0),
+                ou_sim::BodyKind::Moon => (2, 5),
+                ou_sim::BodyKind::GasGiant => (3, 4),
+                ou_sim::BodyKind::AsteroidBelt => (4, 5),
+                ou_sim::BodyKind::BlackHole => (5, 5),
+            };
+            bodies.push(ou_protocol::SystemBodyDto {
+                id: b.id,
+                kind,
+                surface,
+                radius: b.radius,
+                center: b.pos,
+                orbit: b.orbit as f32,
+                phase: b.phase as f32,
+                omega: 0.0,
+            });
+        }
+        (sys.id, sys.name, bodies)
     }
 
     /// Подключение игрока **на домашней планете** (точка появления на суше).
@@ -1924,13 +1958,18 @@ mod tests {
     }
 
     #[test]
-    fn system_description_has_name_and_no_extra_bodies() {
+    fn system_description_has_home_and_neighbours() {
         let s = Server::new();
         let (id, name, bodies) = s.system_description();
         assert_eq!(id, 0);
         assert!(!name.is_empty(), "у системы есть имя");
-        // В мире ровно одна планета, и она строится клиентом из общих констант,
-        // поэтому дополнительных тел в описании системы нет.
-        assert!(bodies.is_empty(), "нет дополнительных тел системы");
+        // Первое тело — домашняя планета (в начале координат).
+        assert_eq!(bodies[0].id, ou_sim::home_body_id());
+        assert!(bodies[0].center.length() < 1.0, "домашняя планета в центре");
+        // Есть соседние тела (луна/планета/звезда) — система не из одной планеты.
+        assert!(bodies.len() >= 3, "в системе есть соседние тела: {}", bodies.len());
+        // Есть и луна (тип 2), и звезда (тип 0) для ориентира.
+        assert!(bodies.iter().any(|b| b.kind == 2), "есть луна");
+        assert!(bodies.iter().any(|b| b.kind == 0), "есть звезда");
     }
 }

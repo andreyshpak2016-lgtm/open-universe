@@ -193,7 +193,14 @@ pub fn integrate_with_accel(
     let up_local = if up_local.length() > 1e-6 { up_local.scale(1.0 / up_local.length()) } else { world_up };
 
     // 3. Тяга (вперёд) + стрейф (вбок) + подъём/спуск + демпфирование + гравитация.
-    let thrust = forward.scale(input.throttle as f64 * p.max_thrust);
+    // Сверхсвет (boost): во много раз выше тяга и лимит скорости — перелёт
+    // между телами системы. Гравитация и посадка при этом сохраняются (по мере
+    // приближения к планете сверхсвет гасится, см. ниже).
+    const BOOST_THRUST_MUL: f64 = 400.0;
+    const BOOST_SPEED_MUL: f64 = 400.0;
+    let boosting = input.boost;
+    let thrust_gain = if boosting { p.max_thrust * BOOST_THRUST_MUL } else { p.max_thrust };
+    let thrust = forward.scale(input.throttle as f64 * thrust_gain);
     let side = right.scale(input.strafe as f64 * p.max_strafe_thrust);
     let lift = up_local.scale(input.up as f64 * p.max_strafe_thrust);
     let damp = state.vel.scale(-p.linear_damping);
@@ -201,10 +208,11 @@ pub fn integrate_with_accel(
         .vel
         .add(thrust.add(side).add(lift).add(damp).add(external_accel).scale(dt));
 
-    // 4. Ограничение скорости.
+    // 4. Ограничение скорости (в сверхсвете лимит во столько же раз выше).
+    let speed_cap = if boosting { p.max_speed * BOOST_SPEED_MUL } else { p.max_speed };
     let speed = state.vel.length();
-    if speed > p.max_speed {
-        state.vel = state.vel.scale(p.max_speed / speed);
+    if speed > speed_cap {
+        state.vel = state.vel.scale(speed_cap / speed);
     }
 
     // 5. Позиция.
@@ -244,6 +252,68 @@ pub fn home_planet() -> Terrain {
             seed: HOME_PLANET_SEED,
         },
     )
+}
+
+/// Реалистичная домашняя система (в серверных единицах; 1 ед = 1 м).
+///
+/// Домашняя планета — 500 км радиусом (тело `home_body_id`). Вокруг неё —
+/// луна, соседняя планета и газовый гигант на расстояниях в сотни тысяч км
+/// (в масштабе, который рендерится без переработки floating origin).
+/// Сверхсвет позволяет реально долетать до них.
+pub fn home_system() -> StarSystem {
+    let mut bodies = Vec::new();
+    // Луна домашней планеты — достижима сверхсветом и рендерится без потери
+    // точности (60 км от поверхности; ближе к границам float-мира UE).
+    bodies.push(Body {
+        id: 2,
+        kind: BodyKind::Moon,
+        pos: Vec3::new(560_000.0, 0.0, 0.0),      // 560 км от центра (= +60 км от поверхности)
+        radius: 60_000.0,                           // 60 км
+        orbit: 0.0,
+        phase: 0.0,
+        resources: 40,
+    });
+    // Соседняя планета — 900 км от центра, тоже достижима.
+    bodies.push(Body {
+        id: 1,
+        kind: BodyKind::Planet,
+        pos: Vec3::new(-900_000.0, 0.0, 0.0),       // 900 км
+        radius: 260_000.0,                          // 260 км
+        orbit: 0.0,
+        phase: 0.0,
+        resources: 200,
+    });
+    // Далёкие ориентиры (декорации; их размер мал, точность не страдает).
+    bodies.push(Body {
+        id: 0,
+        kind: BodyKind::Star,
+        pos: Vec3::new(40_000_000.0, 0.0, 0.0),     // 40 000 км
+        radius: 200_000.0,                          // 200 км
+        orbit: 0.0,
+        phase: 0.0,
+        resources: 0,
+    });
+    bodies.push(Body {
+        id: 3,
+        kind: BodyKind::GasGiant,
+        pos: Vec3::new(20_000_000.0, 0.0, 0.0),     // 20 000 км
+        radius: 1_400_000.0,                        // 1400 км
+        orbit: 0.0,
+        phase: 0.0,
+        resources: 0,
+    });
+    StarSystem {
+        id: 0,
+        name: system_name(0, HOME_PLANET_SEED),
+        seed: HOME_PLANET_SEED,
+        pos: Vec3::ZERO,
+        bodies,
+    }
+}
+
+/// Id домашней планеты в описании системы (на ней база и точка появления).
+pub fn home_body_id() -> u32 {
+    90
 }
 
 /// Насколько неровная земля вокруг направления `d` в радиусе `radius_m` метров.
@@ -673,7 +743,7 @@ mod tests {
             w.spawn(1, Vec3::ZERO);
             let mut inputs = BTreeMap::new();
             inputs.insert(1, InputFrame {
-                seq: 1, throttle: 0.0, yaw: 0.0, pitch: 0.0, strafe, up, fire: false,
+                seq: 1, throttle: 0.0, yaw: 0.0, pitch: 0.0, strafe, up, fire: false, boost: false,
             });
             for _ in 0..30 {
                 w.step(&inputs);

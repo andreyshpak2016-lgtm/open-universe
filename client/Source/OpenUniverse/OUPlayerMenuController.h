@@ -250,6 +250,9 @@ private:
 	/** Диагностика `-OUPauseMenu`: таймер до открытия пауза-меню. */
 	float PauseShotTimer = 0.f;
 
+	/** Построены ли тела системы (один раз, когда пришло описание). */
+	bool bSystemBuilt = false;
+
 	/** Найти сеть (после создания Pawn). */
 	void ResolveNet();
 

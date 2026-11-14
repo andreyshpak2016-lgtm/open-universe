@@ -71,6 +71,10 @@ struct FOUInputFrame
 
 	UPROPERTY(BlueprintReadOnly, Category = "Open Universe")
 	bool bFire = false;
+
+	/** Сверхсвет (сверхскоростной режим) — межпланетный перелёт. */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe")
+	bool bBoost = false;
 };
 
 /**

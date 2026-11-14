@@ -131,6 +131,8 @@ pub struct InputFrame {
     pub up: f32,
     /// Огонь.
     pub fire: bool,
+    /// Сверхсвет (сверхскоростной режим): межпланетный перелёт.
+    pub boost: bool,
 }
 
 impl InputFrame {
@@ -585,6 +587,7 @@ mod wire {
                     w.unit(i.strafe);
                     w.unit(i.up);
                     w.bool(i.fire);
+                    w.bool(i.boost);
                 }
             }
             Message::ServerSnapshot(s) => {
@@ -839,6 +842,8 @@ mod wire {
                         strafe: r.unit()?,
                         up: r.unit()?,
                         fire: r.bool()?,
+                        // Необязательный байт: старые пакеты его не содержат.
+                        boost: r.bool().unwrap_or(false),
                     });
                 }
                 Ok(Message::ClientInput { inputs })

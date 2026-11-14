@@ -36,6 +36,14 @@ public:
 	void BuildWorld();
 
 	/**
+	 * Построить тела звёздной системы (звезда, луна, соседние планеты, гигант)
+	 * из описания, присланного сервером. Вызывается, когда клиент получил
+	 * `ServerSystem`. Домашняя планета уже есть — её пропускаем.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Open Universe|World")
+	void BuildSystemBodies();
+
+	/**
 	 * Сохранить скриншот кадра в файл `Saved/Screenshots/OU_<метка>.png`.
 	 *
 	 * Вызывается автоматически при старте PIE (если включён `bAutoScreenshots`),

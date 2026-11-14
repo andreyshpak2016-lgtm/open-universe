@@ -4,6 +4,7 @@
 #include "OUClientNet.h"
 #include "OUShipPawn.h"
 #include "OUCharacterPawn.h"
+#include "OUGameMode.h"
 #include "OpenUniverseTypes.h"
 #include "Engine/Canvas.h"
 #include "Engine/Engine.h"
@@ -266,6 +267,17 @@ void AOUPlayerMenuController::Tick(float DeltaSeconds)
 			{
 				Screen = EOUMenuScreen::Settings;
 			}
+		}
+	}
+
+	// Тела системы: как только сервер прислал описание системы — строим
+	// (звезда, луна, планеты) ОДИН раз.
+	if (!bSystemBuilt && Net && Net->bSystemReceived)
+	{
+		bSystemBuilt = true;
+		if (AOUGameMode* GM = GetWorld() ? GetWorld()->GetAuthGameMode<AOUGameMode>() : nullptr)
+		{
+			GM->BuildSystemBodies();
 		}
 	}
 }

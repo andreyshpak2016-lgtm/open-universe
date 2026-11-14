@@ -315,3 +315,67 @@ void AOUGameMode::BuildWorld()
 	UE_LOG(LogOUGameMode, Log, TEXT("Сцена Open Universe собрана: свет, небо, одна планета, база, floating origin"));
 }
 
+void AOUGameMode::BuildSystemBodies()
+{
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+	// Ищем сетевой компонент (на корабле) — там описание системы с сервера.
+	UOUClientNet* Net = nullptr;
+	for (TActorIterator<APawn> It(World); It; ++It)
+	{
+		if (UOUClientNet* N = It->FindComponentByClass<UOUClientNet>())
+		{
+			Net = N;
+			break;
+		}
+	}
+	if (!Net || Net->SystemBodies.Num() == 0)
+	{
+		UE_LOG(LogOUGameMode, Log, TEXT("Тела системы: описание ещё не пришло"));
+		return;
+	}
+
+	// Убираем прежние тела системы (кроме домашней планеты — она своя).
+	for (TActorIterator<AOUSolarBody> It(World); It; ++It)
+	{
+		It->Destroy();
+	}
+
+	// Домашняя планета — центр мира; остальные тела ставим по описанию.
+	const FVector HomeCenter = AOUVoxelPlanet::HomeSpawn(0.f).GetSafeNormal()
+		* AOUVoxelPlanet::HomeSpawn(0.f).Size();   // центр планеты (от начала координат)
+	int32 Spawned = 0;
+	for (const FOUSystemBody& B : Net->SystemBodies)
+	{
+		const bool bHome = B.Center.IsNearlyZero() && B.Radius > 400000.f;
+		if (bHome)
+		{
+			continue;   // домашняя планета уже построена как воксельный мир
+		}
+		// Позиция серверная (1 ед = 1 м) → см UE (×100), оси сервер→UE.
+		const FVector PosUE = OUInterop::ServerToUE(B.Center);
+		AOUSolarBody* Body = World->SpawnActor<AOUSolarBody>(
+			AOUSolarBody::StaticClass(), FTransform(FRotator::ZeroRotator, PosUE));
+		if (!Body)
+		{
+			continue;
+		}
+		Body->Kind = (B.Kind == 0) ? EOUSolarKind::Star : EOUSolarKind::Planet;
+		Body->BodyRadiusCm = B.Radius * OUInterop::ServerUnitToCm;   // радиус в см
+		// Цвет/поверхность по типу.
+		switch (B.Surface)
+		{
+		case 4:  Body->BodyColor = FLinearColor(0.85f, 0.72f, 0.5f); break;   // газовый гигант
+		case 5:  Body->BodyColor = FLinearColor(0.5f, 0.5f, 0.55f); break;    // безвоздушная
+		default: Body->BodyColor = (B.Kind == 0) ? FLinearColor(1.f, 0.9f, 0.5f)
+			: FLinearColor(0.35f, 0.55f, 0.35f);                              // звезда/земля
+		}
+		Body->BuildBody();
+		++Spawned;
+	}
+	UE_LOG(LogOUGameMode, Log, TEXT("Тела системы построены: %d (кроме домашней планеты)"), Spawned);
+}
+

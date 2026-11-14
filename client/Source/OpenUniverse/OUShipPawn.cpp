@@ -319,6 +319,9 @@ void AOUShipPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 	PlayerInputComponent->BindAction(TEXT("ExitShip"), IE_Pressed, this, &AOUShipPawn::OnExitPressed);
 	PlayerInputComponent->BindAction(TEXT("ExitShip"), IE_Released, this, &AOUShipPawn::OnExitReleased);
 	PlayerInputComponent->BindAction(TEXT("CursorToggle"), IE_Pressed, this, &AOUShipPawn::OnCursorToggle);
+	// Сверхсвет: удержание Shift — сверхскоростной перелёт между телами системы.
+	PlayerInputComponent->BindAction(TEXT("ShipBoost"), IE_Pressed, this, &AOUShipPawn::OnBoostPressed);
+	PlayerInputComponent->BindAction(TEXT("ShipBoost"), IE_Released, this, &AOUShipPawn::OnBoostReleased);
 }
 
 void AOUShipPawn::AxisYawMouse(float Value)
@@ -369,6 +372,8 @@ void AOUShipPawn::OnAscendPressed() { bAscend = true; }
 void AOUShipPawn::OnAscendReleased() { bAscend = false; }
 void AOUShipPawn::OnDescendPressed() { bDescend = true; }
 void AOUShipPawn::OnDescendReleased() { bDescend = false; }
+void AOUShipPawn::OnBoostPressed() { bBoost = true; }
+void AOUShipPawn::OnBoostReleased() { bBoost = false; }
 
 void AOUShipPawn::OnExitPressed()
 {
@@ -510,18 +515,23 @@ void AOUShipPawn::StepPrediction(const FOUInputFrame& Input, float Dt)
 
 	// 3. Тяга + стрейф + подъём/спуск + демпфирование + гравитация планеты (как
 	//    на сервере: `integrate_with_accel` добавляет внешнее ускорение до шага).
-	const FVector Thrust = Forward * (Input.Throttle * Flight.MaxThrust);
+	// Сверхсвет (boost) — те же множители, что на сервере, иначе предсказание
+	// разойдётся с авторитетным состоянием.
+	const double BoostThrustMul = Input.bBoost ? 400.0 : 1.0;
+	const double BoostSpeedMul = Input.bBoost ? 400.0 : 1.0;
+	const FVector Thrust = Forward * (Input.Throttle * Flight.MaxThrust * BoostThrustMul);
 	const FVector Side = Right * (Input.Strafe * Flight.MaxStrafeThrust);
 	const FVector Lift = UpLocal * (Input.Up * Flight.MaxStrafeThrust);
 	const FVector Damp = State.Velocity * (-Flight.LinearDamping);
 	const FVector Gravity = GravityAt(State.Position);
 	State.Velocity += (Thrust + Side + Lift + Damp + Gravity) * Dt;
 
-	// 4. Ограничение скорости.
+	// 4. Ограничение скорости (в сверхсвете лимит выше).
 	const double Speed = State.Velocity.Size();
-	if (Speed > Flight.MaxSpeed)
+	const double SpeedCap = Flight.MaxSpeed * BoostSpeedMul;
+	if (Speed > SpeedCap)
 	{
-		State.Velocity = State.Velocity * (Flight.MaxSpeed / Speed);
+		State.Velocity = State.Velocity * (SpeedCap / Speed);
 	}
 
 	// 5. Позиция.
@@ -729,6 +739,8 @@ void AOUShipPawn::Tick(float DeltaSeconds)
 	// Стрейф (A/D) и подъём/спуск (Пробел/Ctrl) — как в Dual Universe.
 	CurrentInput.Strafe = StrafeInput;
 	CurrentInput.Up = (bAscend ? 1.f : 0.f) + (bDescend ? -1.f : 0.f);
+	// Сверхсвет: перелёт между телами системы.
+	CurrentInput.bBoost = bBoost;
 
 	// Предсказываем движение нашим же шагом (сеть не требуется).
 	CurrentInput.Seq += 1;
