@@ -189,6 +189,19 @@ public:
 	static double AnalyticHeightCm(const FVector& DirUE);
 
 	/**
+	 * Высота фактической земли (см над РАДИУСОМ планеты) в направлении: обычный
+	 * рельеф + воронки копания + выравнивание/террасы площадки базы. Именно по
+	 * ней ходит персонаж — по ней же рисуем меш воронок.
+	 */
+	double GroundAboveRadiusCm(const FVector& DirUE) const;
+
+	/**
+	 * Построить плотную внутреннюю часть локального участка (мелкая сетка ~1 м)
+	 * вокруг игрока. Грубая сетка (~21 м) не показывает ямы копания (~10 м), а
+	 * центральный квадрат рисуется мелко и с общей границей — без швов.
+	 */
+	void BuildFineMesh(const FVector& AroundUE);
+	/**
 	 * Построить ВОКСЕЛЬНЫЙ меш площадки базы (ступени) вокруг её центра.
 	 *
 	 * Глобальный меш планеты (~1.5 км/ячейка) и плотный локальный участок
@@ -259,10 +272,10 @@ public:
 
 	/** Размер локального участка (полусторона, см) и число ячеек на сторону. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Open Universe|Planet")
-	float LocalExtentCm = 400000.f;   // 4 км в каждую сторону (за горизонт)
+	float LocalExtentCm = 160000.f;   // 1.6 км в каждую сторону
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Open Universe|Planet")
-	int32 LocalCells = 384;           // 768×768 вершин, ячейка ~21 м
+	int32 LocalCells = 400;           // 800×800 вершин, ячейка ~8 м
 
 	/** Максимум облачных «клубов» на планету (пул создаётся в конструкторе). */
 	static constexpr int32 MaxCloudPuffs = 160;
@@ -272,6 +285,17 @@ public:
 
 	/** Последний центр локального участка (задаёт персонаж) — для перестройки. */
 	FVector LocalDentCenter = FVector(FLT_MAX, FLT_MAX, FLT_MAX);
+
+	/**
+	 * Границы плотного квадрата в касательной плоскости локального участка (см)
+	 * и его базис/шаг. Заполняет `RebuildLocal`, читает `BuildFineMesh` — так
+	 * границы мелкой и грубой сеток совпадают (без швов и нахлёста).
+	 */
+	float FineV0 = 0.f, FineV1 = 0.f, FineW0 = 0.f, FineW1 = 0.f;
+	float FineStep = 200.f;
+	FVector FineT1 = FVector::ForwardVector;
+	FVector FineT2 = FVector::RightVector;
+	FVector FineCenter = FVector::UpVector;
 
 protected:
 	virtual void BeginPlay() override;
@@ -293,6 +317,22 @@ protected:
 	 */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Open Universe|Planet")
 	UProceduralMeshComponent* PadMesh = nullptr;
+
+	/** Сторона вокселя рельефа для копания (см): ямы квантуются в «воксели» DU. */
+	static constexpr float DigVoxelCm = 100.f;
+
+	/**
+	 * Плотная внутренняя часть локального участка (мелкая сетка ~2 м) вокруг
+	 * игрока. Грубая сетка (~21 м) не разрешает яму копания (~10 м), поэтому в
+	 * центре участка грубые ячейки пропускаются, а там рисуется этот мелкий меш
+	 * с ОБЩЕЙ границей (узлы совпадают — без нахлёста и швов).
+	 */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Open Universe|Planet")
+	UProceduralMeshComponent* FineMesh = nullptr;
+
+	/** Полусторона мелкого квадрата в грубых ячейках и подразбиение на ячейку. */
+	static constexpr int32 FineCoarseCells = 8;    // 8 грубых ячеек ≈ 166 м
+	static constexpr int32 FineSubdiv = 10;        // мелкая ячейка ≈ 2 м
 
 	/** Слой атмосферы: чуть больше планеты, полупрозрачный ореол. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Open Universe|Planet")

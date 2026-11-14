@@ -88,6 +88,14 @@ AOUVoxelPlanet::AOUVoxelPlanet()
 	PadMesh->bUseAsyncCooking = true;
 	PadMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 
+	// Плотная внутренняя часть локального участка (мелкая сетка вокруг игрока):
+	// грубая сетка (~21 м) не показывает ямы копания (~10 м). Рисуется отдельным
+	// мешем с ТОЙ ЖЕ границей, что и грубая часть (узлы совпадают) — без швов.
+	FineMesh = CreateDefaultSubobject<UProceduralMeshComponent>(TEXT("FineTerrainMesh"));
+	FineMesh->SetupAttachment(Mesh);
+	FineMesh->bUseAsyncCooking = true;
+	FineMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+
 	// Материал обязателен: без него процедурный меш в UE не виден.
 	// Берём материал, который рисует **цвет вершин** — иначе планета была бы
 	// однотонно-белой и весь рельеф (вода/песок/трава/снег) потерялся бы.
@@ -235,6 +243,7 @@ void AOUVoxelPlanet::ApplyDent(int32 Slot, double X, double Y, double Z, double 
 	if (LocalDentCenter.IsNearlyZero() == false)
 	{
 		RebuildLocal(LocalDentCenter);
+		BuildFineMesh(LocalDentCenter);
 	}
 	UE_LOG(LogOUPlanet, Log, TEXT("Воронка %d применена: глубина %.0f, всего воронок %d"),
 		Slot, D.Depth, Dents.Num());
@@ -372,6 +381,14 @@ double AOUVoxelPlanet::AnalyticHeightCm(const FVector& DirUE)
 	const FVector S = OUInterop::UEDirToServer(DirUE);
 	return OULT::HeightDir(S.X, S.Y, S.Z, 10000.0, 0.545, 0xC0FFEEull, 1)
 		* OUInterop::ServerUnitToCm;
+}
+
+double AOUVoxelPlanet::GroundAboveRadiusCm(const FVector& DirUE) const
+{
+	// Полная «земля» (см над радиусом планеты): рельеф + воронки копания +
+	// выравнивание/террасы площадки. Это ровно то, что видно в меше и по чему
+	// ходит персонаж (см. VisualHeightDetail).
+	return static_cast<double>(VisualHeightDetail(DirUE, 1));
 }
 
 float AOUVoxelPlanet::SurfaceRadiusAt(const FVector& Direction) const
@@ -802,6 +819,23 @@ void AOUVoxelPlanet::RebuildLocal(const FVector& AroundUE)
 	const int32 N = FMath::Clamp(LocalCells, 8, 512);
 	const float Step = (2.f * LocalExtentCm) / N;
 
+	// Центральный квадрат (в ячейках грубой сетки), который отдаём плотному
+	// мешу FineMesh. Границы выровнены по узлам этой же сетки — стык без швов.
+	const int32 HalfCells = FMath::Clamp(FineCoarseCells, 1, N / 2 - 1);
+	const int32 Mid = N / 2;
+	const int32 FineI0 = Mid - HalfCells, FineI1 = Mid + HalfCells;
+	const int32 FineJ0 = Mid - HalfCells, FineJ1 = Mid + HalfCells;
+
+	// Касательные границы мелкого квадрата (см) — их берёт BuildFineMesh.
+	FineV0 = -LocalExtentCm + FineI0 * Step;
+	FineV1 = -LocalExtentCm + FineI1 * Step;
+	FineW0 = -LocalExtentCm + FineJ0 * Step;
+	FineW1 = -LocalExtentCm + FineJ1 * Step;
+	FineT1 = T1;
+	FineT2 = T2;
+	FineCenter = DirUE;
+	FineStep = (FineV1 - FineV0) / FMath::Max(1, FineSubdiv * (FineI1 - FineI0));
+
 	TArray<FVector> Verts;
 	TArray<int32> Tris;
 	TArray<FVector> Normals;
@@ -844,7 +878,15 @@ void AOUVoxelPlanet::RebuildLocal(const FVector& AroundUE)
 			// меш ступеней, а грубая ячейка (~21 м) перекрыла бы его и торчала
 			// бы сквозь ровный пол.
 			const int32 A0 = J * (N + 1) + I;
-			if (PadSquareDistCm(Verts[A0].GetSafeNormal()) < PadOuterRadiusCm)
+			const FVector DirA = Verts[A0].GetSafeNormal();
+			if (PadSquareDistCm(DirA) < PadOuterRadiusCm)
+			{
+				continue;
+			}
+			// Центральный квадрат отдаём ПЛОТНОМУ мешу (FineMesh): грубая
+			// ячейка (~21 м) не разрешает яму копания (~10 м). Границы квадрата
+			// совпадают с узлами этой сетки, поэтому стык без швов и нахлёста.
+			if (I >= FineI0 && I < FineI1 && J >= FineJ0 && J < FineJ1)
 			{
 				continue;
 			}
@@ -871,6 +913,10 @@ void AOUVoxelPlanet::RebuildLocal(const FVector& AroundUE)
 	LocalMesh->CreateMeshSection_LinearColor(0, Verts, Tris, Normals, UVs, Colors, Tangents, false);
 	LocalMesh->SetMaterial(0, PlanetMaterial);
 	UE_LOG(LogOUPlanet, Log, TEXT("Локальный участок вокруг игрока: ячеек %d, шаг %.0f см"), N, Step);
+
+	// Плотная часть (мелкая сетка) — в центральном квадрате: она разрешает ямы
+	// копания (~10 м), которые грубая сетка (~21 м) не показывает.
+	BuildFineMesh(AroundUE);
 }
 
 void AOUVoxelPlanet::BuildPadMesh()
@@ -916,12 +962,17 @@ void AOUVoxelPlanet::BuildPadMesh()
 	TArray<FLinearColor> Colors;
 	TArray<struct FProcMeshTangent> Tangents;
 
+	// Единый цвет площадки (совпадает с плитой базы `AOUSurfaceBase`).
+	const FLinearColor PadColor(0.34f, 0.37f, 0.42f, 1.f);
+
 	auto PushVert = [&](const FVector& P, const FVector& Nrm)
 	{
+		// Один цвет для всей площадки: ступени/плиты должны выглядеть как единое
+		// металлическое поле базы, а не как пятна по рельефу.
 		Verts.Add(P);
 		Normals.Add(Nrm);
 		UVs.Add(FVector2D::ZeroVector);
-		Colors.Add(ShadedVertexColor(static_cast<float>(P.Size() - R), Nrm));
+		Colors.Add(PadColor);
 		Tangents.Add(FProcMeshTangent(T1.X, T1.Y, T1.Z));
 		return Verts.Num() - 1;
 	};
@@ -1002,6 +1053,179 @@ void AOUVoxelPlanet::BuildPadMesh()
 		N, Cell, PadVoxelCm, Verts.Num());
 }
 
+void AOUVoxelPlanet::BuildFineMesh(const FVector& AroundUE)
+{
+	if (!FineMesh || !bHomePlanet || Radius <= 0.f)
+	{
+		return;
+	}
+	FineMesh->ClearAllMeshSections();
+	if (FParse::Param(FCommandLine::Get(), TEXT("OUNoLocal")))
+	{
+		return;
+	}
+	if (FineStep <= 1.f || FineCenter.IsNearlyZero())
+	{
+		return;
+	}
+
+	const FVector Up = FineCenter.GetSafeNormal();
+	const FVector T1 = FineT1, T2 = FineT2;
+
+	// Мелкая сетка внутри квадрата (границы = узлы грубой сетки).
+	const int32 NV = FMath::Clamp(FMath::RoundToInt((FineV1 - FineV0) / FineStep), 4, 512);
+	const int32 NW = FMath::Clamp(FMath::RoundToInt((FineW1 - FineW0) / FineStep), 4, 512);
+	const float SV = (FineV1 - FineV0) / NV;
+	const float SW = (FineW1 - FineW0) / NW;
+
+	// Направление узла и высота ГРУБОЙ части в точке (формула локального меша).
+	auto NodeDir = [&](int32 I, int32 J)
+	{
+		const float A = FineV0 + I * SV;
+		const float B = FineW0 + J * SW;
+		return (Up * Radius + T1 * A + T2 * B).GetSafeNormal();
+	};
+	auto BaseAt = [&](const FVector& Dir, float A, float B)
+	{
+		const float Fade = LocalDetailFade(FMath::Max(FMath::Abs(A), FMath::Abs(B)));
+		const float HCoarse = VisualHeightDetail(Dir, 0);
+		const float HFull = VisualHeightDetail(Dir, 1);
+		return HCoarse + (HFull - HCoarse) * Fade;
+	};
+	// Выкопанное (см) и признак «внутри ямы».
+	auto DugCm = [&](const FVector& Dir) -> double
+	{
+		const FVector S = OUInterop::UEDirToServer(Dir);
+		return OULT::DentsOffset(S.X, S.Y, S.Z, Dents.GetData(), Dents.Num())
+			* OUInterop::ServerUnitToCm;
+	};
+
+	TArray<FVector> Verts;
+	TArray<int32> Tris;
+	TArray<FVector> Normals;
+	TArray<FVector2D> UVs;
+	TArray<FLinearColor> Colors;
+	TArray<struct FProcMeshTangent> Tangents;
+
+	auto PushVert = [&](const FVector& P, const FVector& Nrm, const FLinearColor& Col)
+	{
+		Verts.Add(P);
+		Normals.Add(Nrm);
+		UVs.Add(FVector2D::ZeroVector);
+		Colors.Add(Col);
+		Tangents.Add(FProcMeshTangent(T1.X, T1.Y, T1.Z));
+		return Verts.Num() - 1;
+	};
+
+	// Высота ячейки — по её центру: ровная площадка (воксельное «дно»). Вне ямы
+	// берём обычный рельеф в центре ячейки, поэтому наклонные склоны гладкие.
+	auto CellTop = [&](int32 I, int32 J) -> float
+	{
+		const float A = FineV0 + (I + 0.5f) * SV;
+		const float B = FineW0 + (J + 0.5f) * SW;
+		const FVector Dir = (Up * Radius + T1 * A + T2 * B).GetSafeNormal();
+		const float Base = BaseAt(Dir, A, B);
+		const double Dug = DugCm(Dir);
+		if (Dug <= 1.0)
+		{
+			return Base;
+		}
+		// Воксельное дно: округляем выкопанное к ближайшему вокселю (дают ровные
+		// ступени без «шипов» у кромки) и вычитаем — яма идёт вниз.
+		const double Q = FMath::RoundToDouble(Dug / DigVoxelCm) * DigVoxelCm;
+		return Base - static_cast<float>(Q);
+	};
+	auto CellDug = [&](int32 I, int32 J) -> bool
+	{
+		const float A = FineV0 + (I + 0.5f) * SV;
+		const float B = FineW0 + (J + 0.5f) * SW;
+		const FVector Dir = (Up * Radius + T1 * A + T2 * B).GetSafeNormal();
+		return DugCm(Dir) > 1.0;
+	};
+	auto CornerDir = NodeDir;
+
+	// Верхние плитки ячеек (ровные квадраты на высоте ячейки).
+	for (int32 J = 0; J < NW; ++J)
+	{
+		for (int32 I = 0; I < NV; ++I)
+		{
+			if (PadSquareDistCm(NodeDir(I, J)) < PadOuterRadiusCm)
+			{
+				continue;   // тут свой меш площадки базы
+			}
+			const float Hc = CellTop(I, J);
+			const FVector P00 = CornerDir(I, J) * (Radius + Hc);
+			const FVector P10 = CornerDir(I + 1, J) * (Radius + Hc);
+			const FVector P11 = CornerDir(I + 1, J + 1) * (Radius + Hc);
+			const FVector P01 = CornerDir(I, J + 1) * (Radius + Hc);
+			const FVector Nrm = (CornerDir(I, J) + CornerDir(I + 1, J + 1)).GetSafeNormal();
+			const FLinearColor Col = ShadedVertexColor(Hc, Nrm);
+			const int32 IA = PushVert(P00, Nrm, Col);
+			const int32 IB = PushVert(P10, Nrm, Col);
+			const int32 IC = PushVert(P11, Nrm, Col);
+			const int32 ID = PushVert(P01, Nrm, Col);
+			Tris.Add(IA); Tris.Add(IC); Tris.Add(IB);
+			Tris.Add(IA); Tris.Add(ID); Tris.Add(IC);
+			Tris.Add(IA); Tris.Add(IB); Tris.Add(IC);
+			Tris.Add(IA); Tris.Add(IC); Tris.Add(ID);
+		}
+	}
+
+	// Вертикальные стенки между ячейками разной высоты (ступени ямы).
+	auto Wall = [&](const FVector& N0, const FVector& N1, float Lo, float Hi)
+	{
+		const FVector P00 = N0 * (Radius + Lo);
+		const FVector P10 = N1 * (Radius + Lo);
+		const FVector P11 = N1 * (Radius + Hi);
+		const FVector P01 = N0 * (Radius + Hi);
+		const FVector Nrm = FVector::CrossProduct(N0, N1).GetSafeNormal();
+		const FLinearColor Col = ShadedVertexColor(Lo, Nrm) * 0.82f;
+		const int32 IA = PushVert(P00, Nrm, Col);
+		const int32 IB = PushVert(P10, Nrm, Col);
+		const int32 IC = PushVert(P11, Nrm, Col);
+		const int32 ID = PushVert(P01, Nrm, Col);
+		Tris.Add(IA); Tris.Add(IB); Tris.Add(IC);
+		Tris.Add(IA); Tris.Add(IC); Tris.Add(ID);
+		Tris.Add(IA); Tris.Add(IC); Tris.Add(IB);
+		Tris.Add(IA); Tris.Add(ID); Tris.Add(IC);
+	};
+	for (int32 J = 0; J < NW; ++J)
+	{
+		for (int32 I = 0; I < NV; ++I)
+		{
+			if (!CellDug(I, J) || PadSquareDistCm(NodeDir(I, J)) < PadOuterRadiusCm)
+			{
+				continue;
+			}
+			const float Hc = CellTop(I, J);
+			if (I + 1 < NV)
+			{
+				const float Hr = CellTop(I + 1, J);
+				if (FMath::Abs(Hc - Hr) > 1.f)
+				{
+					Wall(CornerDir(I + 1, J), CornerDir(I + 1, J + 1), FMath::Min(Hc, Hr), FMath::Max(Hc, Hr));
+				}
+			}
+			if (J + 1 < NW)
+			{
+				const float Hu = CellTop(I, J + 1);
+				if (FMath::Abs(Hc - Hu) > 1.f)
+				{
+					Wall(CornerDir(I, J + 1), CornerDir(I + 1, J + 1), FMath::Min(Hc, Hu), FMath::Max(Hc, Hu));
+				}
+			}
+		}
+	}
+
+	if (Verts.Num() == 0)
+	{
+		return;
+	}
+	FineMesh->CreateMeshSection_LinearColor(0, Verts, Tris, Normals, UVs, Colors, Tangents, false);
+	FineMesh->SetMaterial(0, PlanetMaterial);
+	UE_LOG(LogOUPlanet, Log, TEXT("Плотный участок (копание): %dx%d, шаг %.0f см, вершин %d"),
+		NV, NW, SV, Verts.Num());
+}
 bool AOUVoxelPlanet::TypeHasAtmosphere(EOUPlanetType Type)
 {
 	// Воздух есть у всех типов, КРОМЕ безвоздушной луны.

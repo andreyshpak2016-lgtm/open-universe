@@ -271,6 +271,17 @@ void AOUCharacterPawn::BeginPlay()
 		CharPos = Dir * (AOUVoxelPlanet::PadHomeRadiusCm + 300.f);
 		LookYaw = FMath::Atan2(-T2.Y, -T2.X);   // смотрим внутрь, на базу
 	}
+	// Диагностика: `-OUDigOutside` — ставим игрока ВНЕ площадки базы (на чистый
+	// рельеф), чтобы копание было видно (внутри площадки яма гасится ровным полом).
+	if (FParse::Param(FCommandLine::Get(), TEXT("OUDigOutside")))
+	{
+		FVector Center, UpB, T1, T2;
+		AOUVoxelPlanet::PadFrame(Center, UpB, T1, T2);
+		const float Dist = AOUVoxelPlanet::PadOuterRadiusCm + 6000.f;
+		FVector Dir = (UpB * static_cast<float>(AOUVoxelPlanet::PadHomeRadiusCm) + T2 * Dist).GetSafeNormal();
+		CharPos = Dir * (AOUVoxelPlanet::PadHomeRadiusCm + 300.f);
+		LookYaw = FMath::Atan2(-T2.Y, -T2.X);
+	}
 	PlaceAt(CharPos, LookYaw);
 	// Смотрим чуть вверх: в кадр попадают и земля, и небо с облаками.
 	ViewPitch = 0.10f;
@@ -792,12 +803,59 @@ void AOUCharacterPawn::DigTerrain()
 	{
 		return;
 	}
-	// Направление — куда смотрит камера (прицел), из центра планеты.
-	const FVector DirUE = (Camera ? Camera->GetForwardVector() : GetActorForwardVector()).GetSafeNormal();
+	// Направление копания — НЕ курс камеры (курс — это касательная), а точка на
+	// земле под прицелом. Иначе яма уходила бы «за горизонт»: направление
+	// трактовалось как радиус от центра планеты. Ищем пересечение луча взгляда с
+	// рельефом (маршем), затем берём направление этой точки от центра планеты.
+	FVector DirUE = (Camera ? Camera->GetForwardVector() : GetActorForwardVector()).GetSafeNormal();
 	AOUVoxelPlanet* Planet = AOUVoxelPlanet::FindHomePlanet(World);
 	if (!Planet || DirUE.IsNearlyZero())
 	{
 		return;
+	}
+	{
+		const FVector Origin = Camera ? Camera->GetComponentLocation() : GetActorLocation();
+		const double R = 500000.0 * OUInterop::ServerUnitToCm;   // радиус планеты, см
+		// Марш вдоль луча: ищем, где луч приблизится к поверхности на шаг.
+		double T = 0.0;
+		FVector HitDir = (Origin + DirUE * 100.f).GetSafeNormal();
+		bool bHit = false;
+		double PrevGap = 1e30;
+		double PrevT = 0.0;
+		for (int32 Step = 0; Step < 400; ++Step)
+		{
+			const double TNow = 40.0 * Step;               // шаг 40 см
+			const FVector P = Origin + DirUE * TNow;
+			const FVector DirP = P.GetSafeNormal();
+			if (DirP.IsNearlyZero())
+			{
+				break;
+			}
+			const double Surf = static_cast<double>(Planet->SurfaceRadiusAt(DirP));
+			const double Gap = P.Size() - Surf;            // >0 над землёй
+			if (Gap <= 0.0)
+			{
+				// Пересекли поверхность между PrevT и TNow — берём эту точку.
+				HitDir = DirP;
+				bHit = true;
+				T = TNow;
+				break;
+			}
+			if (Gap > PrevGap && Step > 3)
+			{
+				// Луч пошёл вверх и не пересечёт землю — копаем в самой близкой точке.
+				HitDir = (Origin + DirUE * PrevT).GetSafeNormal();
+				bHit = true;
+				break;
+			}
+			PrevGap = Gap;
+			PrevT = TNow;
+		}
+		if (bHit && !HitDir.IsNearlyZero())
+		{
+			DirUE = HitDir;
+		}
+		(void)T;
 	}
 	// Направление и радиус — в СЕРВЕРНЫХ единицах (1 ед = 100 см).
 	const FVector DirServer = OUInterop::UEDirToServer(DirUE).GetSafeNormal();
