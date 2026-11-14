@@ -260,6 +260,34 @@ pub enum Message {
     ClientCraft { recipe: u32 },
     /// Сервер: результат крафта — что получилось, или причина отказа.
     ServerCraftResult { ok: bool, item: u32, qty: u64, reason: String },
+    /// Сервер: список территорий системы (владение, статус, налог) для HUD.
+    ///
+    /// Шлётся при подключении и при каждом изменении (захват, смена статуса).
+    /// Позиции — в СЕРВЕРНЫХ единицах, как и в `ServerSystem`.
+    ServerTerritory { territories: Vec<TerritoryDto> },
+    /// Клиент: объявить территорию (по id) своей — захват.
+    ///
+    /// Сервер проверяет, что игрок **внутри** территории, и передаёт владение
+    /// ему (статус — «спорная»). Возвращает новое состояние всем.
+    ClientCapture { id: u32 },
+}
+
+/// Территория в сообщении (для HUD).
+#[derive(Clone, Debug, PartialEq)]
+pub struct TerritoryDto {
+    pub id: u32,
+    /// Владелец: 0 — ничей, иначе id игрока-владельца.
+    pub owner: u32,
+    /// Статус: 0 мирная, 1 спорная, 2 укреплённая.
+    pub status: u8,
+    pub center: Vec3,
+    pub radius: f64,
+    /// Щит контроля (0..100).
+    pub control_shield: u32,
+    /// Налог с торговли, проценты.
+    pub tax_percent: u32,
+    /// Сколько налога уже собрано владельцем.
+    pub collected_tax: u64,
 }
 
 /// Тело системы в сообщении.
@@ -567,6 +595,8 @@ mod wire {
     const TAG_RECIPES: u8 = 26;
     const TAG_CRAFT: u8 = 27;
     const TAG_CRAFT_RESULT: u8 = 28;
+    const TAG_TERRITORY: u8 = 29;
+    const TAG_CAPTURE: u8 = 30;
 
     pub fn encode(msg: &Message) -> Vec<u8> {
         let mut w = Writer::new();
@@ -821,6 +851,24 @@ mod wire {
                 w.varint(*qty);
                 w.str(reason);
             }
+            Message::ServerTerritory { territories } => {
+                w.u8(TAG_TERRITORY);
+                w.varint(territories.len() as u64);
+                for t in territories {
+                    w.varint(t.id as u64);
+                    w.varint(t.owner as u64);
+                    w.u8(t.status);
+                    w.vec3_qv(t.center);
+                    w.f64(t.radius);
+                    w.varint(t.control_shield as u64);
+                    w.varint(t.tax_percent as u64);
+                    w.varint(t.collected_tax);
+                }
+            }
+            Message::ClientCapture { id } => {
+                w.u8(TAG_CAPTURE);
+                w.varint(*id as u64);
+            }
         }
         w.buf
     }
@@ -1058,6 +1106,24 @@ mod wire {
                 let reason = r.str()?;
                 Ok(Message::ServerCraftResult { ok, item, qty, reason })
             }
+            TAG_TERRITORY => {
+                let n = r.varint()? as usize;
+                let mut territories = Vec::with_capacity(n.min(256));
+                for _ in 0..n {
+                    territories.push(TerritoryDto {
+                        id: r.varint()? as u32,
+                        owner: r.varint()? as u32,
+                        status: r.u8()?,
+                        center: r.vec3_qv()?,
+                        radius: r.f64()?,
+                        control_shield: r.varint()? as u32,
+                        tax_percent: r.varint()? as u32,
+                        collected_tax: r.varint()?,
+                    });
+                }
+                Ok(Message::ServerTerritory { territories })
+            }
+            TAG_CAPTURE => Ok(Message::ClientCapture { id: r.varint()? as u32 }),
             other => Err(WireError::BadTag(other)),
         }
     }
@@ -1152,6 +1218,37 @@ mod tests {
         assert_eq!(decode(&encode(&craft)).unwrap(), craft);
         let res = Message::ServerCraftResult { ok: false, item: 0, qty: 0, reason: "не хватает входов".into() };
         assert_eq!(decode(&encode(&res)).unwrap(), res);
+    }
+
+    #[test]
+    fn territory_roundtrip() {
+        let t = Message::ServerTerritory {
+            territories: vec![
+                TerritoryDto {
+                    id: 1,
+                    owner: 7,
+                    status: 1,
+                    center: Vec3::new(1234.5, -6789.25, 42.0),
+                    radius: 2500.0,
+                    control_shield: 80,
+                    tax_percent: 5,
+                    collected_tax: 12345,
+                },
+                TerritoryDto {
+                    id: 2,
+                    owner: 0,
+                    status: 0,
+                    center: Vec3::new(-100.0, 200.0, 300.0),
+                    radius: 500.0,
+                    control_shield: 100,
+                    tax_percent: 0,
+                    collected_tax: 0,
+                },
+            ],
+        };
+        assert_eq!(decode(&encode(&t)).unwrap(), t);
+        let cap = Message::ClientCapture { id: 1 };
+        assert_eq!(decode(&encode(&cap)).unwrap(), cap);
     }
 
     #[test]

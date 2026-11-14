@@ -168,6 +168,10 @@ public:
 	/** Открыть/закрыть окно рынка (клавиша M). */
 	void ToggleMarket();
 
+	/** Захватить территорию, в которой стоит игрок (клавиша T). */
+	UFUNCTION(BlueprintCallable, Category = "Open Universe|Territory")
+	void CaptureTerritory();
+
 	/** Быстрая сделка: продать (`bSell`) или купить 1 руду по фиксированной цене. */
 	void MarketQuickTrade(bool bSell);
 	void OnMarketSell() { MarketQuickTrade(true); }

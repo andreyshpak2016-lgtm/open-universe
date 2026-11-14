@@ -253,6 +253,44 @@ struct FOUSystemBody
 	float Radius = 0.f;
 };
 
+/** Территория (зона) системы: владение, статус, налог — для HUD и миникарты. */
+USTRUCT(BlueprintType)
+struct FOUTerritory
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Territory")
+	int32 Id = 0;
+
+	/** Владелец: 0 — ничей, иначе id игрока-владельца. */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Territory")
+	int32 Owner = 0;
+
+	/** Статус: 0 мирная (бой запрещён), 1 спорная, 2 укреплённая. */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Territory")
+	int32 Status = 0;
+
+	/** Центр, в СЕРВЕРНЫХ единицах (для миникарты). */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Territory")
+	FVector Center = FVector::ZeroVector;
+
+	/** Радиус зоны, в СЕРВЕРНЫХ единицах. */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Territory")
+	double Radius = 0.0;
+
+	/** Щит контроля (0..100). */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Territory")
+	int32 ControlShield = 0;
+
+	/** Налог с торговли, проценты. */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Territory")
+	int32 TaxPercent = 0;
+
+	/** Сколько налога уже собрано владельцем. */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Territory")
+	int64 CollectedTax = 0;
+};
+
 /**
  * Сетевой клиент Open Universe.
  *
@@ -444,6 +482,37 @@ public:
 	/** Пришло ли описание системы (чтобы не перестраивать сцену зря). */
 	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|System")
 	bool bSystemReceived = false;
+
+	// --- Территории (владение и налоги) ---
+
+	/** Территории системы от сервера (владение, статус, налог) для HUD. */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Territory")
+	TArray<FOUTerritory> Territories;
+
+	/** Приходил ли список территорий. */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Territory")
+	bool bTerritoriesReceived = false;
+
+	/** Время последнего изменения территорий (мир) — для всплывающей подсказки. */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Territory")
+	float LastTerritoryTime = -100.f;
+
+	/** Территория, в которой сейчас игрок (id, 0 — вне зон). */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Territory")
+	int32 CurrentTerritoryId = 0;
+
+	/** Игрок сейчас в мирной зоне (бой запрещён). */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Territory")
+	bool bInPeacefulZone = false;
+
+	/**
+	 * Обновить, в какой территории находится игрок. Вызывается из pawn'а,
+	 * который знает свою позицию (в серверных единицах).
+	 */
+	void UpdateTerritoryAt(double ServerX, double ServerY, double ServerZ);
+
+	/** Отправить запрос захвата территории (id). */
+	void SendCapture(int32 Id);
 
 	/** Подключиться к серверу. */
 	UFUNCTION(BlueprintCallable, Category = "Open Universe|Net")

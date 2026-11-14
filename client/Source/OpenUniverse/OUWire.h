@@ -67,6 +67,8 @@ namespace OUWire
         TagRecipes = 26,
         TagCraft = 27,
         TagCraftResult = 28,
+        TagTerritory = 29,
+        TagCapture = 30,
     };
 
     /// Действия редактора конструкций.
@@ -861,6 +863,61 @@ namespace OUWire
         std::vector<uint8_t> out;
         out.push_back(TagCraft);
         push_varint(out, Recipe);
+        return out;
+    }
+
+    /// Территория (сервер → клиент, тег 29) для HUD и миникарты.
+    struct Territory
+    {
+        uint32_t Id = 0;
+        uint32_t Owner = 0;   // 0 — ничей, иначе id игрока-владельца
+        uint8_t Status = 0;   // 0 мирная, 1 спорная, 2 укреплённая
+        double X = 0.0, Y = 0.0, Z = 0.0;   // центр, серверные единицы
+        double Radius = 0.0;
+        uint32_t ControlShield = 0;
+        uint32_t TaxPercent = 0;
+        uint64_t CollectedTax = 0;
+    };
+
+    inline bool DecodeTerritory(const uint8_t* body, size_t len, std::vector<Territory>& Out)
+    {
+        Reader r{body, len, 0};
+        uint8_t tag = 0;
+        if (!r.U8(tag) || tag != TagTerritory) return false;
+        uint64_t n = 0;
+        if (!r.Varint(n)) return false;
+        Out.clear();
+        Out.reserve(static_cast<size_t>(n));
+        for (uint64_t k = 0; k < n; ++k)
+        {
+            Territory T;
+            uint64_t id = 0, owner = 0, shield = 0, tax = 0;
+            if (!r.Varint(id) || !r.Varint(owner)) return false;
+            T.Id = static_cast<uint32_t>(id);
+            T.Owner = static_cast<uint32_t>(owner);
+            if (!r.U8(T.Status)) return false;
+            int64_t cx = 0, cy = 0, cz = 0;
+            if (!r.SVarint(cx) || !r.SVarint(cy) || !r.SVarint(cz)) return false;
+            const double Inv = 1.0 / 1000.0;   // POS_SCALE на проводе
+            T.X = static_cast<double>(cx) * Inv;
+            T.Y = static_cast<double>(cy) * Inv;
+            T.Z = static_cast<double>(cz) * Inv;
+            if (!r.F64(T.Radius)) return false;
+            if (!r.Varint(shield) || !r.Varint(tax)) return false;
+            T.ControlShield = static_cast<uint32_t>(shield);
+            T.TaxPercent = static_cast<uint32_t>(tax);
+            if (!r.Varint(T.CollectedTax)) return false;
+            Out.push_back(T);
+        }
+        return true;
+    }
+
+    /// Собрать запрос захвата территории (клиент → сервер, тег 30): [tag][id varint].
+    inline std::vector<uint8_t> EncodeCapture(uint32_t Id)
+    {
+        std::vector<uint8_t> out;
+        out.push_back(TagCapture);
+        push_varint(out, Id);
         return out;
     }
 

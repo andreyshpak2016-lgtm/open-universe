@@ -1216,6 +1216,44 @@ void AOUPlayerMenuController::DrawGameHud(UCanvas* InCanvas)
 		}
 	}
 
+	// --- Территории: текущая зона, владелец, налог ---
+	if (Net && Net->bTerritoriesReceived)
+	{
+		const FVector2D TP(16, 136);
+		GlassPanel(InCanvas, TP, FVector2D(230, 96), PanelB, Line);
+		DrawText(InCanvas, Tiny, TEXT("ТЕРРИТОРИЯ"), TP + FVector2D(12, 8), ColAccent);
+		// Найти текущую зону (в которой игрок) для деталей.
+		const FOUTerritory* Cur = nullptr;
+		for (const FOUTerritory& T : Net->Territories)
+		{
+			if (T.Id == Net->CurrentTerritoryId) { Cur = &T; break; }
+		}
+		if (Cur)
+		{
+			static const TCHAR* StatusName[3] = { TEXT("мирная"), TEXT("спорная"), TEXT("укреплённая") };
+			const int32 Si = FMath::Clamp(Cur->Status, 0, 2);
+			const FLinearColor Sc = (Si == 0) ? ColOk : ((Si == 1) ? WarmDot : FLinearColor(1.f, 0.55f, 0.35f));
+			DrawText(InCanvas, Tiny, FString::Printf(TEXT("зона %d  ·  %s"), Cur->Id, StatusName[Si]),
+				TP + FVector2D(12, 28), Sc);
+			const FString OwnerLabel = (Cur->Owner == 0)
+				? TEXT("ничей")
+				: FString::Printf(TEXT("владелец игрок #%d"), Cur->Owner);
+			DrawText(InCanvas, Tiny, OwnerLabel, TP + FVector2D(12, 46), Cur->Owner == 0 ? Dim : ColOk);
+			DrawText(InCanvas, Tiny, FString::Printf(TEXT("налог %d%%   ·   щит %d%%"), Cur->TaxPercent, Cur->ControlShield),
+				TP + FVector2D(12, 64), Dim);
+			// Мирную зону захватить нельзя (защита новичков) — подсказку не врём.
+			const TCHAR* HintTxt = (Si == 0)
+				? TEXT("мирная зона — бой запрещён")
+				: ((Cur->Owner == 0) ? TEXT("T — захватить зону") : TEXT("зона занята"));
+			DrawText(InCanvas, Tiny, HintTxt, TP + FVector2D(12, 80), (Si == 0) ? ColOk : ColAccent);
+		}
+		else
+		{
+			DrawText(InCanvas, Tiny, TEXT("вне зон  ·  T — нечего захватывать"), TP + FVector2D(12, 28), Dim);
+			DrawText(InCanvas, Tiny, TEXT("зоны у соседних тел системы"), TP + FVector2D(12, 46), Dim);
+		}
+	}
+
 	// --- Справа сверху: состояние сети ---
 	ResolveNet();
 	{
@@ -1257,6 +1295,33 @@ void AOUPlayerMenuController::DrawGameHud(UCanvas* InCanvas)
 		// Точки: игрок (центр, зелёный), база (акцент, «север» карты), другие.
 		FillBox(InCanvas, MC - FVector2D(3, 3), FVector2D(6, 6), ColOk);
 		FillBox(InCanvas, MC + FVector2D(-4, -44), FVector2D(8, 8), ColAccent2);
+		// Границы территорий: цвет по статусу (мирная — зелёная, спорная — жёлтая).
+		if (Net && Net->bTerritoriesReceived && MyPawn)
+		{
+			const FVector PPos = MyPawn->GetActorLocation() / 100.f;   // серверные единицы
+			const float MapScale = MR / 22000.f;
+			for (const FOUTerritory& T : Net->Territories)
+			{
+				const FVector2D RP(
+					MC.X + (T.Center.X - PPos.X) * MapScale,
+					MC.Y + (T.Center.Y - PPos.Y) * MapScale);
+				const FLinearColor TC = (T.Status == 0)
+					? FLinearColor(0.4f, 0.9f, 0.5f, 0.9f)     // мирная
+					: ((T.Status == 1)
+						? FLinearColor(0.95f, 0.8f, 0.3f, 0.9f)  // спорная
+						: FLinearColor(1.f, 0.5f, 0.3f, 0.9f));  // укреплённая
+				const float RR = FMath::Clamp(static_cast<float>(T.Radius) * MapScale, 4.f, MR);
+				for (int32 k = 0; k < 20; ++k)
+				{
+					const float A0 = 6.2831853f * k / 20.f;
+					const FVector2D Q(RP.X + FMath::Cos(A0) * RR, RP.Y + FMath::Sin(A0) * RR);
+					if ((Q - MC).SizeSquared() <= (MR - 2.f) * (MR - 2.f))
+					{
+						FillBox(InCanvas, Q - FVector2D(1.f, 1.f), FVector2D(2.f, 2.f), TC);
+					}
+				}
+			}
+		}
 		if (Net)
 		{
 			for (const FOUEntityState& E : Net->LatestSnapshot.Entities)
@@ -1315,7 +1380,7 @@ void AOUPlayerMenuController::DrawGameHud(UCanvas* InCanvas)
 		const bool bInShip = ShipPawn != nullptr;
 		const FString Hint = bInShip
 			? TEXT("Мышь — обзор   ·   W/S — тяга   ·   A/D — стрейф   ·   Пробел/Ctrl — вверх/вниз   ·   ЛКМ — огонь   ·   F — выход")
-			: TEXT("Мышь — обзор   ·   W/A/S/D — ходьба   ·   ЛКМ — копать   ·   M — рынок   ·   B — строительство");
+			: TEXT("Мышь — обзор   ·   W/A/S/D — ходьба   ·   ЛКМ — копать   ·   M — рынок   ·   B — строительство   ·   T — захват зоны");
 		DrawText(InCanvas, Tiny, Hint, FVector2D(18, H - 22), Dim);
 	}
 

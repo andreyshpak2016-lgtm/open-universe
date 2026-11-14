@@ -353,6 +353,8 @@ void AOUShipPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 	PlayerInputComponent->BindAction(TEXT("ExitShip"), IE_Pressed, this, &AOUShipPawn::OnExitPressed);
 	PlayerInputComponent->BindAction(TEXT("ExitShip"), IE_Released, this, &AOUShipPawn::OnExitReleased);
 	PlayerInputComponent->BindAction(TEXT("CursorToggle"), IE_Pressed, this, &AOUShipPawn::OnCursorToggle);
+	// Захват территории: T — объявить текущую зону своей (и в корабле).
+	PlayerInputComponent->BindAction(TEXT("TerritoryCapture"), IE_Pressed, this, &AOUShipPawn::CaptureTerritory);
 	// Сверхсвет: удержание Shift — сверхскоростной перелёт между телами системы.
 	PlayerInputComponent->BindAction(TEXT("ShipBoost"), IE_Pressed, this, &AOUShipPawn::OnBoostPressed);
 	PlayerInputComponent->BindAction(TEXT("ShipBoost"), IE_Released, this, &AOUShipPawn::OnBoostReleased);
@@ -420,6 +422,21 @@ void AOUShipPawn::OnExitReleased()
 {
 	bExitHeld = false;
 	ExitHoldTime = 0.f;
+}
+
+void AOUShipPawn::CaptureTerritory()
+{
+	// Захват зоны, в которой находится корабль (клавиша T).
+	if (!Net)
+	{
+		Net = FindComponentByClass<UOUClientNet>();
+	}
+	if (!Net || !Net->bTerritoriesReceived || Net->CurrentTerritoryId == 0)
+	{
+		return;
+	}
+	Net->SendCapture(Net->CurrentTerritoryId);
+	UE_LOG(LogOUShip, Log, TEXT("Территория: запрос захвата зоны %d"), Net->CurrentTerritoryId);
 }
 
 void AOUShipPawn::ExitShip()
@@ -832,6 +849,8 @@ void AOUShipPawn::Tick(float DeltaSeconds)
 					PendingInputs.RemoveAt(0);
 				}
 			}
+			// Какая территория под кораблём (для HUD и клавиши захвата T).
+			Net->UpdateTerritoryAt(State.Position.X, State.Position.Y, State.Position.Z);
 			// Реконсиляция: принимаем авторитетное состояние своей сущности
 			// и переигрываем ещё не подтверждённые кадры.
 			for (const FOUEntityState& E : Net->LatestSnapshot.Entities)

@@ -264,6 +264,41 @@ void UOUClientNet::SendMarketOrder(int32 Side, int32 Item, int64 Price, int64 Qt
 	SendPacket(Arr);
 }
 
+void UOUClientNet::SendCapture(int32 Id)
+{
+	if (!IsConnected())
+	{
+		return;
+	}
+	const std::vector<uint8_t> Body = OUWire::EncodeCapture(static_cast<uint32_t>(FMath::Max(0, Id)));
+	TArray<uint8> Arr;
+	Arr.Append(Body.data(), static_cast<int32>(Body.size()));
+	SendPacket(Arr);
+}
+
+void UOUClientNet::UpdateTerritoryAt(double ServerX, double ServerY, double ServerZ)
+{
+	// Точка игрока в серверных единицах; зоны тоже в серверных.
+	const double PX = ServerX, PY = ServerY, PZ = ServerZ;
+	int32 BestId = 0;
+	bool bPeaceful = false;
+	for (const FOUTerritory& T : Territories)
+	{
+		const double DX = PX - T.Center.X;
+		const double DY = PY - T.Center.Y;
+		const double DZ = PZ - T.Center.Z;
+		const double D2 = DX * DX + DY * DY + DZ * DZ;
+		if (D2 <= T.Radius * T.Radius)
+		{
+			BestId = T.Id;
+			bPeaceful = (T.Status == 0);
+			break;
+		}
+	}
+	CurrentTerritoryId = BestId;
+	bInPeacefulZone = bPeaceful;
+}
+
 void UOUClientNet::SendBuild(int32 Entity, int32 Action, int32 X, int32 Y, int32 Z, int32 R, int32 G, int32 B)
 {	if (!IsConnected())
 	{
@@ -618,6 +653,34 @@ void UOUClientNet::Poll()
 				UE_LOG(LogOUClient, Log, TEXT("Крафт: %s, предмет %d ×%lld %s"),
 					C.Ok ? TEXT("ок") : TEXT("отказ"), LastCraftItem, LastCraftQty,
 					C.Ok ? TEXT("") : *LastCraftReason);
+			}
+		}
+		else if (Body[0] == OUWire::TagTerritory) // территории (владение, налог)
+		{
+			std::vector<OUWire::Territory> Ts;
+			if (OUWire::DecodeTerritory(Body.GetData(), static_cast<size_t>(Body.Num()), Ts))
+			{
+				Territories.Reset();
+				for (const OUWire::Territory& T : Ts)
+				{
+					FOUTerritory E;
+					E.Id = static_cast<int32>(T.Id);
+					E.Owner = static_cast<int32>(T.Owner);
+					E.Status = static_cast<int32>(T.Status);
+					// Серверные единицы — как в системе (миникарта считает сама).
+					E.Center = FVector(T.X, T.Y, T.Z);
+					E.Radius = T.Radius;
+					E.ControlShield = static_cast<int32>(T.ControlShield);
+					E.TaxPercent = static_cast<int32>(T.TaxPercent);
+					E.CollectedTax = static_cast<int64>(T.CollectedTax);
+					Territories.Add(E);
+				}
+				bTerritoriesReceived = true;
+				if (UWorld* W = GetWorld())
+				{
+					LastTerritoryTime = W->GetTimeSeconds();
+				}
+				UE_LOG(LogOUClient, Log, TEXT("Территории: %d зон"), Territories.Num());
 			}
 		}
 		else if (Body[0] == OUWire::TagMarketState) // состояние экономики

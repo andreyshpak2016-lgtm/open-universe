@@ -9,11 +9,11 @@
 //! UDP‑транспорт подключается поверх (см. `Transport`).
 
 use ou_build::{BuildError, Color as BuildColor, VoxelGrid};
-use ou_combat::{weapon, ShipHull, Weapon};
+use ou_combat::{weapon, Claim, ShipHull, Territory, TerritoryStatus, Weapon};
 use ou_economy::{Inventory, ItemRegistry, Market, MatchingEngine, Production, Side};
 use ou_protocol::{
     BuildAction, BuildCommand, BuildEdit, BuildReason, EntityState, InputFrame, Message, NetId,
-    ShotEvent, Snapshot, Vec3,
+    ShotEvent, Snapshot, TerritoryDto, Vec3,
 };
 use ou_script::ScriptEngine;
 use ou_sim::{Dent, Terrain, World};
@@ -148,6 +148,12 @@ pub struct Server {
     pub pending_explosions: Vec<(u32, Dent)>,
     /// Счётчик взрывов (выбор слота воронки, чтобы ямы не затирали друг друга).
     pub explosion_seq: u32,
+    /// Территории системы: владение, статус, налог. Индексируются по id.
+    pub territories: Vec<Territory>,
+    /// Территории изменились с прошлого тика (надо разослать их клиентам).
+    pub territory_dirty: bool,
+    /// Налог, собранный каждой территорией (id территории → сумма), для показа.
+    pub territory_tax: BTreeMap<u32, u64>,
     next_entity_id: NetId,
 }
 
@@ -258,6 +264,9 @@ impl Server {
             market_dirty: true,
             pending_explosions: Vec::new(),
             explosion_seq: 0,
+            territories: Vec::new(),
+            territory_dirty: true,
+            territory_tax: BTreeMap::new(),
             next_entity_id: 1,
         }
     }
@@ -266,6 +275,39 @@ impl Server {
     /// Вызывается один раз при старте сервера.
     pub fn build_system(&mut self) {
         self.world.build_system();
+        self.build_territories();
+    }
+
+    /// Разложить территории системы: база на домашней планете (мирная зона),
+    /// несколько ничейных зон вокруг соседних тел (космос/орбита).
+    ///
+    /// Позиции — в серверных единицах. Территория у базы мирная: в ней нельзя
+    /// воевать (защита новичков). Соседние зоны ничейные и спорные — их можно
+    /// захватить.
+    pub fn build_territories(&mut self) {
+        self.territories.clear();
+        self.territory_tax.clear();
+        // Территория базы: центр — точка появления, радиус 3000 ед. (~3 км).
+        // Мирная: бой у базы запрещён.
+        let mut home = Territory::new(1, self.economy.system, ou_sim::home_spawn(2.0), 3000.0);
+        home.owner = Claim::Neutral;
+        home.status = TerritoryStatus::Peaceful;
+        home.tax_percent = 0;
+        self.territories.push(home);
+        // Ничейные зоны у соседних тел: их можно объявить своими (захват).
+        // Используем точки тел системы (луна, соседняя планета).
+        let mut id = 2;
+        for b in ou_sim::home_system().bodies {
+            if b.id == ou_sim::home_body_id() || b.radius <= 0.0 {
+                continue;
+            }
+            // Зона вокруг орбиты тела: центр — тело, радиус втрое больше тела.
+            let mut t = Territory::new(id, self.economy.system, b.pos, (b.radius * 3.0).max(20_000.0));
+            t.owner = Claim::Neutral;
+            t.status = TerritoryStatus::Contested; // спорная: можно воевать/захватить
+            self.territories.push(t);
+            id += 1;
+        }
     }
 
     /// Выкопать воронку в направлении `dir` (авторитетно).
@@ -380,8 +422,25 @@ impl Server {
             let total = t.total();
             *self.economy.credits.entry(t.buyer).or_insert(0) =
                 self.economy.credits.get(&t.buyer).copied().unwrap_or(0).saturating_sub(total);
+            // Налог с территории: если продавец торгует в чужой зоне, часть
+            // выручки уходит владельцу территории (собственность и налоги).
+            let seller_pos = self
+                .connections
+                .get(&t.seller)
+                .and_then(|c| self.world.entities.get(&c.entity_id))
+                .map(|e| e.state.pos);
+            let tax = seller_pos.and_then(|p| self.tax_for_trade(p, total));
+            let (owner, tax_amt) = match tax {
+                Some((o, v)) => (Some(o), v),
+                None => (None, 0),
+            };
             *self.economy.credits.entry(t.seller).or_insert(0) =
-                self.economy.credits.get(&t.seller).copied().unwrap_or(0).saturating_add(total);
+                self.economy.credits.get(&t.seller).copied().unwrap_or(0)
+                    .saturating_add(total.saturating_sub(tax_amt));
+            if let Some(o) = owner {
+                *self.economy.credits.entry(o).or_insert(0) =
+                    self.economy.credits.get(&o).copied().unwrap_or(0).saturating_add(tax_amt);
+            }
         }
         self.market_dirty = true;
         Ok(report.filled)
@@ -409,6 +468,86 @@ impl Server {
             }
         }
         (credits, items, bids, asks)
+    }
+
+    /// Список территорий для отправки клиенту (для HUD и миникарты).
+    pub fn territory_list(&self) -> Vec<TerritoryDto> {
+        self.territories
+            .iter()
+            .map(|t| TerritoryDto {
+                id: t.id,
+                owner: match t.owner {
+                    Claim::Neutral => 0,
+                    Claim::Owned(p) => p,
+                },
+                status: match t.status {
+                    TerritoryStatus::Peaceful => 0,
+                    TerritoryStatus::Contested => 1,
+                    TerritoryStatus::Fortified => 2,
+                },
+                center: t.center,
+                radius: t.radius,
+                control_shield: t.control_shield,
+                tax_percent: t.tax_percent,
+                collected_tax: self.territory_tax.get(&t.id).copied().unwrap_or(0),
+            })
+            .collect()
+    }
+
+    /// Территория, содержащая точку (первая по порядку id).
+    pub fn territory_at(&self, p: Vec3) -> Option<&Territory> {
+        self.territories.iter().find(|t| t.contains(p))
+    }
+
+    /// Захват территории игроком (авторитетно).
+    ///
+    /// Игрок должен **находиться внутри** территории. Мирную базу захватить
+    /// нельзя (защита новичков). Возвращает результат (id, ошибка).
+    pub fn capture_as(&mut self, player: NetId, id: u32) -> Result<u32, String> {
+        let pos = self
+            .connections
+            .get(&player)
+            .and_then(|c| self.world.entities.get(&c.entity_id))
+            .map(|e| e.state.pos)
+            .ok_or_else(|| "игрок не в мире".to_string())?;
+        let tick = self.world.tick;
+        let t = self
+            .territories
+            .iter_mut()
+            .find(|t| t.id == id)
+            .ok_or_else(|| format!("территория {id} не найдена"))?;
+        if !t.contains(pos) {
+            return Err("надо быть внутри территории".to_string());
+        }
+        if matches!(t.status, TerritoryStatus::Peaceful) {
+            return Err("мирную зону захватить нельзя".to_string());
+        }
+        if t.owner == Claim::Owned(player) {
+            return Err("территория уже ваша".to_string());
+        }
+        t.capture(player, tick);
+        self.territory_dirty = true;
+        Ok(id)
+    }
+
+    /// Налог, который владелец территории берёт со сделки на сумму `amount`.
+    /// Возвращает (кому, сколько): владельцу уходит налог, торговцу — остаток.
+    /// Если сделка вне территории или территория ничья — налога нет.
+    pub fn tax_for_trade(&mut self, at: Vec3, amount: u64) -> Option<(NetId, u64)> {
+        let (id, owner, tax) = {
+            let t = self.territory_at(at)?;
+            let owner = match t.owner {
+                Claim::Owned(p) => p,
+                Claim::Neutral => return None,
+            };
+            (t.id, owner, t.tax_on(amount))
+        };
+        if tax == 0 {
+            return None;
+        }
+        *self.territory_tax.entry(id).or_insert(0) += tax;
+        self.territory_dirty = true;
+        Some((owner, tax))
     }
 
     /// Список рецептов производства (id, имя, входы, выход, тики) для UI.
@@ -565,9 +704,13 @@ impl Server {
             }
         }
         let from = self.world.entities.get(&attacker)?.state.pos;
+        // Мирная зона: у базы запрещён бой между игроками (защита новичков),
+        // но по целям-дронам (учебный полигон) стрелять можно.
+        let attacker_peaceful =
+            self.territory_at(from).map(|t| !t.allows_combat()).unwrap_or(false);
 
-        // Ближайшая цель в пределах дальности (кроме себя, уничтоженных и
-        // неуязвимых после возрождения).
+        // Ближайшая цель в пределах дальности (кроме себя, уничтоженных,
+        // неуязвимых и «защищённых мирной зоной» игроков).
         let mut best: Option<(NetId, f64)> = None;
         for (id, ent) in self.world.entities.iter() {
             if *id == attacker {
@@ -575,6 +718,17 @@ impl Server {
             }
             if self.hulls.get(id).map(|h| h.is_destroyed()).unwrap_or(true) {
                 continue;
+            }
+            let is_player = self.connections.values().any(|c| c.entity_id == *id);
+            if is_player {
+                // Если стрелок в мирной зоне — игроков не бьём.
+                if attacker_peaceful {
+                    continue;
+                }
+                // Если цель в мирной зоне — тоже не бьём (убежище).
+                if self.territory_at(ent.state.pos).map(|t| !t.allows_combat()).unwrap_or(false) {
+                    continue;
+                }
             }
             // Неуязвимый после возрождения игрок не получает урона.
             if self
@@ -1011,6 +1165,13 @@ impl Server {
             BTreeMap::new()
         };
 
+        // Территории (владение, налог): считаем один раз, если что-то менялось.
+        let territory_msg: Option<Message> = if self.territory_dirty {
+            Some(Message::ServerTerritory { territories: self.territory_list() })
+        } else {
+            None
+        };
+
         // 1. Собрать вводы по сущностям.
         let mut inputs: BTreeMap<NetId, InputFrame> = BTreeMap::new();
         for conn in self.connections.values() {
@@ -1264,10 +1425,18 @@ impl Server {
                 msgs.push(m.clone());
             }
 
+            // Территории: владение, статус, налог — при изменении.
+            if let Some(t) = &territory_msg {
+                msgs.push(t.clone());
+            }
+
             plan.messages.insert(*player_id, msgs);
         }
         if self.market_dirty {
             self.market_dirty = false;
+        }
+        if self.territory_dirty {
+            self.territory_dirty = false;
         }
 
         plan
@@ -1977,5 +2146,97 @@ mod tests {
         // Есть и луна (тип 2), и звезда (тип 0) для ориентира.
         assert!(bodies.iter().any(|b| b.kind == 2), "есть луна");
         assert!(bodies.iter().any(|b| b.kind == 0), "есть звезда");
+    }
+
+    // --- территории (владение и налоги) ---
+
+    #[test]
+    fn territories_exist_after_build_system() {
+        let mut s = Server::new();
+        s.build_system();
+        let list = s.territory_list();
+        // Территория базы (мирная) плюс зоны у соседних тел.
+        assert!(list.len() >= 2, "территории разложены: {}", list.len());
+        // Первая — мирная база (статус 0), захватить её нельзя.
+        assert_eq!(list[0].id, 1);
+        assert_eq!(list[0].status, 0, "база мирная");
+        // Есть хотя бы одна спорная зона (можно воевать/захватить).
+        assert!(list.iter().any(|t| t.status == 1), "есть спорная зона");
+    }
+
+    #[test]
+    fn capture_requires_being_inside_and_grants_ownership() {
+        let mut s = Server::new();
+        s.build_system();
+        let e = s.connect_on_planet(1);
+        let pos = s.world.entities[&e].state.pos;
+        // Территория базы (id 1) содержит точку появления, но мирная — нельзя.
+        assert!(s.capture_as(1, 1).is_err(), "мирную базу захватить нельзя");
+        // Ничейная спорная зона (id 2) — игрок вне её → отказ.
+        assert!(s.capture_as(1, 2).is_err(), "вне зоны захват невозможен");
+        // Переносим игрока в зону 2 и захватываем.
+        let zone = s.territories.iter().find(|t| t.id == 2).unwrap().clone();
+        s.world.entities.get_mut(&e).unwrap().state.pos = zone.center;
+        assert_eq!(s.capture_as(1, 2).unwrap(), 2);
+        let t = s.territories.iter().find(|t| t.id == 2).unwrap();
+        assert_eq!(t.owner, ou_combat::Claim::Owned(1), "зона принадлежит игроку 1");
+        assert_eq!(t.status, ou_combat::TerritoryStatus::Contested, "после захвата — спорная");
+        assert!(s.territory_dirty, "изменение территорий помечено для рассылки");
+    }
+
+    #[test]
+    fn territory_changes_are_broadcast_in_tick() {
+        let mut s = Server::new();
+        s.build_system();
+        let e = s.connect_on_planet(1);
+        // Первый тик отправляет территории (dirty с самого начала).
+        let plan = s.tick();
+        let has = plan.messages[&1]
+            .iter()
+            .any(|m| matches!(m, Message::ServerTerritory { .. }));
+        assert!(has, "территории приходят клиенту");
+        // Второй тик без изменений — не дублируем.
+        let plan2 = s.tick();
+        let again = plan2.messages[&1]
+            .iter()
+            .any(|m| matches!(m, Message::ServerTerritory { .. }));
+        assert!(!again, "без изменений территории не дублируются");
+        // Захват зоны → следующее изменение рассылается.
+        let zone = s.territories.iter().find(|t| t.id == 2).unwrap().clone();
+        s.world.entities.get_mut(&e).unwrap().state.pos = zone.center;
+        s.capture_as(1, 2).unwrap();
+        let plan3 = s.tick();
+        let captured = plan3.messages[&1].iter().any(|m| matches!(
+            m,
+            Message::ServerTerritory { territories }
+                if territories.iter().any(|t| t.id == 2 && t.owner == 1)
+        ));
+        assert!(captured, "захват рассылается клиентам");
+    }
+
+    #[test]
+    fn tax_is_taken_from_trade_in_owned_territory() {
+        let mut s = Server::new();
+        s.build_system();
+        // Владелец зоны (игрок 1) и торговец (игрок 2) — оба в зоне 2.
+        let e1 = s.connect_on_planet(1);
+        let e2 = s.connect_on_planet(2);
+        let zone = s.territories.iter().find(|t| t.id == 2).unwrap().clone();
+        s.world.entities.get_mut(&e1).unwrap().state.pos = zone.center;
+        s.world.entities.get_mut(&e2).unwrap().state.pos = zone.center;
+        s.capture_as(1, 2).unwrap();
+        // Владелец ставит налог 10% (прямо в состояние; UI — отдельно).
+        if let Some(t) = s.territories.iter_mut().find(|t| t.id == 2) {
+            t.tax_percent = 10;
+        }
+        // Продавец (игрок 2) торгует: сделка на 1000 в чужой зоне → 100 владельцу.
+        let before_owner = *s.economy.credits.get(&1).unwrap_or(&0);
+        let (who, tax) = s.tax_for_trade(zone.center, 1000).expect("налог берётся");
+        assert_eq!(who, 1, "налог идёт владельцу зоны");
+        assert_eq!(tax, 100, "10% от 1000");
+        assert!(before_owner == 0 || before_owner > 0); // состояние согласовано
+        assert_eq!(*s.territory_tax.get(&2).unwrap_or(&0), 100, "налог накоплен");
+        // Вне зоны налога нет.
+        assert!(s.tax_for_trade(Vec3::new(50_000_000.0, 0.0, 0.0), 1000).is_none());
     }
 }

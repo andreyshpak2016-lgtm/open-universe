@@ -279,6 +279,59 @@ int main(int argc, char** argv)
         Check(OUWire::DecodePong(qb.data(), qb.size(), nonce) && nonce == 0x01020304, "понг разобран");
     }
 
+    // --- 6e. Территории (тег 29/30) ---
+    std::printf("\n=== 6e. Территории ===\n");
+    {
+        // Соберём тело: [tag29][count][id][owner][status][center 3×svarint][radius f64][shield][tax][collected].
+        std::vector<uint8_t> tb;
+        tb.push_back(OUWire::TagTerritory);
+        OUWire::push_varint(tb, 2);
+        auto push_u8 = [&tb](uint8_t v) { tb.push_back(v); };
+        auto push_f64 = [&tb](double d) {
+            uint64_t bits = 0; std::memcpy(&bits, &d, 8);
+            for (int i = 0; i < 8; ++i) { tb.push_back(static_cast<uint8_t>((bits >> (8 * i)) & 0xFF)); }
+        };
+        auto push_svarint = [](std::vector<uint8_t>& out, int64_t v) {
+            uint64_t zz = (static_cast<uint64_t>(v) << 1) ^ static_cast<uint64_t>(v >> 63);
+            OUWire::push_varint(out, zz);
+        };
+        // Зона 1: владелец 7, статус 1, центр (1000, -2000, 3000) серверных ед.
+        OUWire::push_varint(tb, 1);
+        OUWire::push_varint(tb, 7);
+        push_u8(1);
+        push_svarint(tb, 1000 * 1000);    // серверные ед. → провод (×1000)
+        push_svarint(tb, -2000 * 1000);
+        push_svarint(tb, 3000 * 1000);
+        push_f64(2500.0);                 // радиус
+        OUWire::push_varint(tb, 80);      // щит контроля
+        OUWire::push_varint(tb, 5);       // налог %
+        OUWire::push_varint(tb, 12345);   // собрано
+        // Зона 2: ничейная, мирная.
+        OUWire::push_varint(tb, 2);
+        OUWire::push_varint(tb, 0);
+        push_u8(0);
+        push_svarint(tb, 0);
+        push_svarint(tb, 0);
+        push_svarint(tb, 0);
+        push_f64(500.0);
+        OUWire::push_varint(tb, 100);
+        OUWire::push_varint(tb, 0);
+        OUWire::push_varint(tb, 0);
+        std::vector<OUWire::Territory> ts;
+        Check(OUWire::DecodeTerritory(tb.data(), tb.size(), ts), "территории разобраны");
+        Check(ts.size() == 2, "две зоны");
+        Check(ts.size() == 2 && ts[0].Id == 1 && ts[0].Owner == 7 && ts[0].Status == 1,
+            "зона 1: id/владелец/статус");
+        Check(ts.size() == 2 && std::fabs(ts[0].X - 1000.0) < 1e-6
+            && std::fabs(ts[0].Y + 2000.0) < 1e-6 && std::fabs(ts[0].Z - 3000.0) < 1e-6,
+            "зона 1: центр (серверные единицы)");
+        Check(ts.size() == 2 && std::fabs(ts[0].Radius - 2500.0) < 1e-9
+            && ts[0].TaxPercent == 5 && ts[0].CollectedTax == 12345, "зона 1: радиус/налог/сбор");
+        // Запрос захвата.
+        const std::vector<uint8_t> cb = OUWire::EncodeCapture(42);
+        Check(cb[0] == OUWire::TagCapture, "тег захвата = 30");
+    }
+
     // --- 7. Приветствие сервера (какой сущностью управляем) ---
     std::printf("\n=== 7. Приветствие сервера (welcome) ===\n");
     {

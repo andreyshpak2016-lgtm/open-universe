@@ -445,6 +445,8 @@ void AOUCharacterPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputCom
 	// Выбор блока в палитре: колесо мыши.
 	PlayerInputComponent->BindAction(TEXT("BuildNext"), IE_Pressed, this, &AOUCharacterPawn::OnBuildNext);
 	PlayerInputComponent->BindAction(TEXT("BuildPrev"), IE_Pressed, this, &AOUCharacterPawn::OnBuildPrev);
+	// Захват территории: T — объявить текущую зону своей.
+	PlayerInputComponent->BindAction(TEXT("TerritoryCapture"), IE_Pressed, this, &AOUCharacterPawn::CaptureTerritory);
 	// Alt — отпустить/вернуть курсор (обзор мышью / работа с интерфейсом).
 	PlayerInputComponent->BindAction(TEXT("CursorToggle"), IE_Pressed, this, &AOUCharacterPawn::OnCursorToggle);
 }
@@ -1057,6 +1059,23 @@ void AOUCharacterPawn::ToggleMarket()
 	}
 }
 
+void AOUCharacterPawn::CaptureTerritory()
+{
+	// Захват: просим сервер объявить текущую зону нашей (клавиша T).
+	Net = Net ? Net : FindComponentByClass<UOUClientNet>();
+	if (!Net || !Net->bTerritoriesReceived)
+	{
+		return;
+	}
+	if (Net->CurrentTerritoryId == 0)
+	{
+		UE_LOG(LogOUChar, Log, TEXT("Территория: игрок вне зон"));
+		return;
+	}
+	Net->SendCapture(Net->CurrentTerritoryId);
+	UE_LOG(LogOUChar, Log, TEXT("Территория: запрос захвата зоны %d"), Net->CurrentTerritoryId);
+}
+
 void AOUCharacterPawn::MarketQuickTrade(bool bSell)
 {
 	Net = Net ? Net : FindComponentByClass<UOUClientNet>();
@@ -1192,6 +1211,15 @@ void AOUCharacterPawn::Tick(float DeltaSeconds)
 	if (Up.IsNearlyZero())
 	{
 		return;
+	}
+
+	// Какая территория под ногами (для HUD и клавиши захвата T). Считаем
+	// в начале тика, чтобы работало и в режиме обзора базы (ранний выход ниже).
+	ResolveNet();
+	if (Net && Net->IsConnected())
+	{
+		const FVector PosServerEarly = OUInterop::UEToServer(Pos);
+		Net->UpdateTerritoryAt(PosServerEarly.X, PosServerEarly.Y, PosServerEarly.Z);
 	}
 
 	// Курс и тангаж (обзор мышью/стрелками).
@@ -1373,6 +1401,8 @@ void AOUCharacterPawn::Tick(float DeltaSeconds)
 		// Поза — в серверных единицах (как позиция корабля).
 		const FVector PosServer = OUInterop::UEToServer(GetActorLocation());
 		Net->SendCharacter(PosServer, ViewYaw, HSpdNet > 50.f, /*bActive=*/true);
+		// Какая территория под ногами (для HUD и клавиши захвата T).
+		Net->UpdateTerritoryAt(PosServer.X, PosServer.Y, PosServer.Z);
 	}
 
 	// Оружие: кулдаун, угасание вспышки, автоогонь для тестов.

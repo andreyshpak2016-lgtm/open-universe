@@ -139,6 +139,13 @@ fn main() {
                                 &Message::ServerRecipes { recipes: server.recipe_list() },
                             )
                             .ok();
+                            // И территории системы (владение, статус, налог).
+                            net.send_to(
+                                token,
+                                from,
+                                &Message::ServerTerritory { territories: server.territory_list() },
+                            )
+                            .ok();
                             next_player += 1;
                         }
                     }
@@ -216,6 +223,14 @@ fn main() {
                                 },
                             };
                             net.send_to(token, from, &msg).ok();
+                        }
+                    }
+                    Message::ClientCapture { id } => {
+                        if let Some(pid) = clients.get(&from) {
+                            match server.capture_as(*pid, id) {
+                                Ok(tid) => println!("территория: игрок {pid} захватил зону {tid}"),
+                                Err(e) => println!("территория: захват игроком {pid} отклонён: {e}"),
+                            }
                         }
                     }
                     _ => {}
