@@ -974,6 +974,64 @@ impl Server {
             .collect()
     }
 
+    /// Список шаблонов постройки (blueprints) для редактора: (id, имя, описание).
+    pub fn blueprint_templates(&self) -> Vec<(u32, String, String)> {
+        ou_build::BLUEPRINTS
+            .iter()
+            .map(|b| (b.id, b.name.to_string(), b.description.to_string()))
+            .collect()
+    }
+
+    /// Поставить шаблон постройки в конструкцию игрока (авторитетно).
+    ///
+    /// Игрок штампует воксели шаблона с якорем `origin`. Детали, не прошедшие
+    /// проверку (занято, вне границ, разрыв связности), пропускаются — мир не
+    /// роняем. Возвращает число поставленных вокселей.
+    pub fn place_blueprint_as(
+        &mut self,
+        author: NetId,
+        entity: NetId,
+        id: u32,
+        origin: (i32, i32, i32),
+    ) -> Result<u32, String> {
+        let voxels = ou_build::blueprint_voxels(id).ok_or_else(|| format!("шаблон {id} не найден"))?;
+        // Права проверяем до создания конструкции (как в apply_build_as).
+        if let Some(c) = self.constructions.get(&entity) {
+            if !c.can_edit(author) {
+                return Err("нет прав на эту конструкцию".to_string());
+            }
+        }
+        let c = self
+            .constructions
+            .entry(entity)
+            .or_insert_with(|| Construction::new(author));
+        // Смещение шаблона: ставим относительно якоря.
+        let mut placed = 0u32;
+        let mut edits: Vec<BuildEdit> = Vec::new();
+        for ((dx, dy, dz), col) in voxels {
+            let coord = (origin.0 + dx, origin.1 + dy, origin.2 + dz);
+            let color = BuildColor(col.0, col.1, col.2);
+            if c.grid.place(coord, color).is_ok() {
+                c.revision += 1;
+                edits.push(BuildEdit {
+                    entity,
+                    author,
+                    action: BuildAction::Place,
+                    coord,
+                    color: ou_protocol::Color(col.0, col.1, col.2),
+                    revision: c.revision,
+                });
+                placed += 1;
+            }
+        }
+        if placed > 0 {
+            for (_player, slot) in c.pending.iter_mut() {
+                slot.1.extend(edits.iter().copied());
+            }
+        }
+        Ok(placed)
+    }
+
     /// Привязать к сущности скрипт-шаблон по id игрока (авторитетно).
     ///
     /// Только владелец может управлять скриптом своего объекта. `template = 0`
@@ -2441,5 +2499,59 @@ mod tests {
         ));
         assert!(seen, "статус скрипта рассылается владельцу");
         let _ = e;
+    }
+
+    // --- шаблоны постройки (blueprints) ---
+
+    #[test]
+    fn blueprint_templates_are_available() {
+        let s = Server::new();
+        let list = s.blueprint_templates();
+        assert!(list.len() >= 5, "библиотека шаблонов: {}", list.len());
+        for (id, name, desc) in &list {
+            assert!(*id > 0);
+            assert!(!name.is_empty());
+            assert!(!desc.is_empty());
+        }
+    }
+
+    #[test]
+    fn blueprint_is_stamped_into_construction() {
+        let mut s = Server::new();
+        let e = s.connect_on_planet(1);
+        // Ядро конструкции — в (0,0,0). Ставим куб 5×5×5 рядом с ядром.
+        let placed = s.place_blueprint_as(1, e, 2, (1, 0, 0)).unwrap();
+        assert!(placed > 0, "шаблон поставлен");
+        // Число вокселей конструкции выросло (минимум ядро + поставленные).
+        assert!(s.constructions[&e].grid.len() > 1);
+        // Неизвестный шаблон — ошибка.
+        assert!(s.place_blueprint_as(1, e, 999, (0, 0, 0)).is_err());
+    }
+
+    #[test]
+    fn blueprint_respects_build_rights() {
+        let mut s = Server::new();
+        let e1 = s.connect_on_planet(1);
+        s.connect_on_planet(2);
+        // Игрок 2 пытается строить в конструкции игрока 1 — нет прав.
+        assert!(s.place_blueprint_as(2, e1, 2, (1, 0, 0)).is_err());
+        // Игрок 1 — может.
+        assert!(s.place_blueprint_as(1, e1, 2, (1, 0, 0)).is_ok());
+    }
+
+    #[test]
+    fn blueprint_edits_are_queued_for_owner() {
+        let mut s = Server::new();
+        let e = s.connect_on_planet(1);
+        // Тик создаёт «слот ожидания» правок для игрока (как в живой игре).
+        s.tick();
+        // Ставим шаблон: правки должны попасть в очередь владельца, чтобы
+        // клиент нарисовал блоки.
+        s.place_blueprint_as(1, e, 2, (1, 0, 0)).unwrap();
+        let pending = &s.constructions[&e].pending;
+        assert!(pending.contains_key(&1), "правки для игрока 1 в очереди");
+        let edits = &pending[&1].1;
+        assert!(!edits.is_empty(), "есть правки шаблона");
+        assert!(edits.iter().all(|x| x.action == BuildAction::Place));
     }
 }

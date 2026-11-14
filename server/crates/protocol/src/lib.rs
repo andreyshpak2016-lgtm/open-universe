@@ -294,6 +294,13 @@ pub enum Message {
     /// Шлётся при подключении: игрок выбирает шаблон по `id`. Исходники на
     /// сервере и клиенте не дублируются — клиент знает только имя/описание.
     ServerScripts { templates: Vec<(u32, String, String)> },
+    /// Клиент: поставить шаблон постройки (blueprint) в точку конструкции.
+    ///
+    /// `id` — id шаблона, `origin` — координата-якорь в сетке конструкции.
+    /// Сервер штампует воксели авторитетно, поэтому форму подделать нельзя.
+    ClientPlaceBlueprint { id: u32, origin: (i32, i32, i32), entity: NetId },
+    /// Сервер: библиотека шаблонов постройки (для редактора в игре).
+    ServerBlueprints { templates: Vec<(u32, String, String)> },
 }
 
 /// Территория в сообщении (для HUD).
@@ -624,6 +631,8 @@ mod wire {
     const TAG_SET_SCRIPT: u8 = 31;
     const TAG_SCRIPT: u8 = 32;
     const TAG_SCRIPTS: u8 = 33;
+    const TAG_PLACE_BLUEPRINT: u8 = 34;
+    const TAG_BLUEPRINTS: u8 = 35;
 
     pub fn encode(msg: &Message) -> Vec<u8> {
         let mut w = Writer::new();
@@ -922,6 +931,23 @@ mod wire {
                     w.str(desc);
                 }
             }
+            Message::ClientPlaceBlueprint { id, origin, entity } => {
+                w.u8(TAG_PLACE_BLUEPRINT);
+                w.varint(*id as u64);
+                w.i32(origin.0);
+                w.i32(origin.1);
+                w.i32(origin.2);
+                w.u32(*entity);
+            }
+            Message::ServerBlueprints { templates } => {
+                w.u8(TAG_BLUEPRINTS);
+                w.varint(templates.len() as u64);
+                for (id, name, desc) in templates {
+                    w.varint(*id as u64);
+                    w.str(name);
+                    w.str(desc);
+                }
+            }
         }
         w.buf
     }
@@ -1203,6 +1229,22 @@ mod wire {
                 }
                 Ok(Message::ServerScripts { templates })
             }
+            TAG_PLACE_BLUEPRINT => Ok(Message::ClientPlaceBlueprint {
+                id: r.varint()? as u32,
+                origin: (r.i32()?, r.i32()?, r.i32()?),
+                entity: r.u32()?,
+            }),
+            TAG_BLUEPRINTS => {
+                let n = r.varint()? as usize;
+                let mut templates = Vec::with_capacity(n.min(64));
+                for _ in 0..n {
+                    let id = r.varint()? as u32;
+                    let name = r.str()?;
+                    let desc = r.str()?;
+                    templates.push((id, name, desc));
+                }
+                Ok(Message::ServerBlueprints { templates })
+            }
             other => Err(WireError::BadTag(other)),
         }
     }
@@ -1357,6 +1399,19 @@ mod tests {
         assert_eq!(decode(&encode(&off)).unwrap(), off);
         let lib = Message::ServerScripts {
             templates: vec![(1, "Автопилот: высота".into(), "Держит высоту".into())],
+        };
+        assert_eq!(decode(&encode(&lib)).unwrap(), lib);
+    }
+
+    #[test]
+    fn blueprint_roundtrip() {
+        let place = Message::ClientPlaceBlueprint { id: 2, origin: (3, -4, 5), entity: 7 };
+        assert_eq!(decode(&encode(&place)).unwrap(), place);
+        let lib = Message::ServerBlueprints {
+            templates: vec![
+                (1, "Корабль".into(), "Стартовый корабль".into()),
+                (5, "Платформа 12×12".into(), "Ровная площадка".into()),
+            ],
         };
         assert_eq!(decode(&encode(&lib)).unwrap(), lib);
     }

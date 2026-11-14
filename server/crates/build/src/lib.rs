@@ -364,6 +364,128 @@ pub fn ship_blueprint() -> VoxelGrid {
     g
 }
 
+// ---------------------------------------------------------------------------
+// Библиотека шаблонов (blueprints) для редактора в игре
+// ---------------------------------------------------------------------------
+
+/// Готовый шаблон постройки, который игрок размещает в один клик.
+///
+/// Шаблон — чистая функция: он выдаёт список вокселей (координата + цвет)
+/// **относительно якоря**. Сервер штампует их в конструкцию игрока авторитетно,
+/// поэтому клиент не может «подделать» форму: он лишь выбирает шаблон и точку.
+#[derive(Clone, Copy)]
+pub struct Blueprint {
+    /// Стабильный id (0 зарезервирован под «нет»).
+    pub id: u32,
+    /// Имя для интерфейса.
+    pub name: &'static str,
+    /// Короткое описание.
+    pub description: &'static str,
+    /// Функция, выдающая воксели относительно якоря (0,0,0).
+    pub build: fn() -> Vec<(Coord, Color)>,
+}
+
+/// Все шаблоны библиотеки (стабильный порядок и id).
+pub const BLUEPRINTS: &[Blueprint] = &[
+    Blueprint { id: 1, name: "Корабль", description: "Стартовый корабль (корпус, крылья, двигатели)", build: bp_ship },
+    Blueprint { id: 2, name: "Куб 5×5×5", description: "Сплошной куб из блоков", build: bp_cube },
+    Blueprint { id: 3, name: "Стена 10×4", description: "Ровная стена из блоков", build: bp_wall },
+    Blueprint { id: 4, name: "Башня 3×8", description: "Колонна-башня 3×3 на 8 вверх", build: bp_tower },
+    Blueprint { id: 5, name: "Платформа 12×12", description: "Ровная площадка в один слой", build: bp_platform },
+    Blueprint { id: 6, name: "Рамка 7×7", description: "Пустая рамка-контур", build: bp_frame },
+];
+
+/// Найти шаблон по id.
+pub fn blueprint_by_id(id: u32) -> Option<&'static Blueprint> {
+    BLUEPRINTS.iter().find(|b| b.id == id)
+}
+
+/// Собрать список вокселей шаблона по id (относительно якоря).
+pub fn blueprint_voxels(id: u32) -> Option<Vec<(Coord, Color)>> {
+    blueprint_by_id(id).map(|b| (b.build)())
+}
+
+fn bp_ship() -> Vec<(Coord, Color)> {
+    let mut out = Vec::new();
+    for z in 0..=6 {
+        for x in -1..=1 {
+            for y in 0..=1 {
+                out.push(((x, y, z), if (x + y) % 2 == 0 { Color::HULL } else { Color::DARK }));
+            }
+        }
+    }
+    for x in [-2, 2] {
+        for z in 2..=4 {
+            out.push(((x, 0, z), Color::ACCENT));
+        }
+    }
+    out.push(((0, 2, 3), Color::GLASS));
+    out.push(((0, 0, 7), Color::ENGINE));
+    out.push(((0, 1, 7), Color::ENGINE));
+    out
+}
+
+fn bp_cube() -> Vec<(Coord, Color)> {
+    let mut out = Vec::new();
+    for x in 0..5 {
+        for y in 0..5 {
+            for z in 0..5 {
+                let edge = x == 0 || x == 4 || y == 0 || y == 4 || z == 0 || z == 4;
+                out.push(((x, y, z), if edge { Color::HULL } else { Color::DARK }));
+            }
+        }
+    }
+    out
+}
+
+fn bp_wall() -> Vec<(Coord, Color)> {
+    let mut out = Vec::new();
+    for x in 0..10 {
+        for y in 0..4 {
+            let c = if y == 0 || y == 3 { Color::HULL } else { Color::DARK };
+            out.push(((x, y, 0), c));
+        }
+    }
+    out
+}
+
+fn bp_tower() -> Vec<(Coord, Color)> {
+    let mut out = Vec::new();
+    for y in 0..8 {
+        for x in 0..3 {
+            for z in 0..3 {
+                let shell = x == 0 || x == 2 || z == 0 || z == 2;
+                out.push(((x, y, z), if shell { Color::HULL } else { Color::DARK }));
+            }
+        }
+    }
+    out
+}
+
+fn bp_platform() -> Vec<(Coord, Color)> {
+    let mut out = Vec::new();
+    for x in 0..12 {
+        for z in 0..12 {
+            let border = x == 0 || x == 11 || z == 0 || z == 11;
+            out.push(((x, 0, z), if border { Color::ACCENT } else { Color::HULL }));
+        }
+    }
+    out
+}
+
+fn bp_frame() -> Vec<(Coord, Color)> {
+    let mut out = Vec::new();
+    for x in 0..7 {
+        for y in 0..7 {
+            let border = x == 0 || x == 6 || y == 0 || y == 6;
+            if border {
+                out.push(((x, y, 0), Color::ACCENT));
+            }
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -519,5 +641,40 @@ mod tests {
         let pruned = g.prune_disconnected();
         assert_eq!(pruned, 2, "должны сняться воксели 4 и 5");
         assert!(g.validate().is_ok());
+    }
+
+    #[test]
+    fn blueprint_library_has_templates() {
+        assert!(BLUEPRINTS.len() >= 5, "библиотека шаблонов непуста");
+        for (i, b) in BLUEPRINTS.iter().enumerate() {
+            assert!(b.id > 0);
+            assert!(!b.name.is_empty());
+            assert!(!b.description.is_empty());
+            let v = (b.build)();
+            assert!(!v.is_empty(), "шаблон {} пуст", b.id);
+            for (j, other) in BLUEPRINTS.iter().enumerate() {
+                if i != j {
+                    assert_ne!(b.id, other.id, "id шаблонов уникальны");
+                }
+            }
+        }
+        assert!(blueprint_by_id(1).is_some());
+        assert!(blueprint_by_id(999).is_none());
+    }
+
+    #[test]
+    fn blueprint_voxels_fit_limits() {
+        let lim = BuildLimits::default();
+        for b in BLUEPRINTS {
+            let v = (b.build)();
+            assert!(v.len() <= lim.max_voxels, "шаблон {} превышает лимит вокселей", b.id);
+            for (c, _) in &v {
+                assert!(
+                    c.0.abs() <= lim.max_extent && c.1.abs() <= lim.max_extent && c.2.abs() <= lim.max_extent,
+                    "шаблон {} выходит за границы",
+                    b.id
+                );
+            }
+        }
     }
 }

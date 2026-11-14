@@ -72,6 +72,8 @@ namespace OUWire
         TagSetScript = 31,
         TagScript = 32,
         TagScripts = 33,
+        TagPlaceBlueprint = 34,
+        TagBlueprints = 35,
     };
 
     /// Действия редактора конструкций.
@@ -990,6 +992,51 @@ namespace OUWire
         for (uint64_t i = 0; i < n; ++i)
         {
             ScriptTemplateInfo T;
+            uint64_t id = 0;
+            if (!r.Varint(id)) return false;
+            T.Id = static_cast<uint32_t>(id);
+            if (!r.Str(T.Name) || !r.Str(T.Description)) return false;
+            Out.push_back(std::move(T));
+        }
+        return true;
+    }
+
+    /// Собрать запрос постановки шаблона постройки (клиент → сервер, тег 34).
+    /// Формат: [tag][id varint][x i32][y i32][z i32][entity u32].
+    inline std::vector<uint8_t> EncodePlaceBlueprint(uint32_t Id, int32_t X, int32_t Y, int32_t Z, uint32_t Entity)
+    {
+        std::vector<uint8_t> out;
+        out.push_back(TagPlaceBlueprint);
+        push_varint(out, Id);
+        auto push_i32 = [&out](int32_t v) {
+            const uint32_t u = static_cast<uint32_t>(v);
+            for (int i = 0; i < 4; ++i) { out.push_back(static_cast<uint8_t>((u >> (8 * i)) & 0xFF)); }
+        };
+        push_i32(X); push_i32(Y); push_i32(Z);
+        for (int i = 0; i < 4; ++i) { out.push_back(static_cast<uint8_t>((Entity >> (8 * i)) & 0xFF)); }
+        return out;
+    }
+
+    /// Библиотека шаблонов постройки (сервер → клиент, тег 35).
+    struct BlueprintInfo
+    {
+        uint32_t Id = 0;
+        std::string Name;
+        std::string Description;
+    };
+
+    inline bool DecodeBlueprints(const uint8_t* body, size_t len, std::vector<BlueprintInfo>& Out)
+    {
+        Reader r{body, len, 0};
+        uint8_t tag = 0;
+        if (!r.U8(tag) || tag != TagBlueprints) return false;
+        uint64_t n = 0;
+        if (!r.Varint(n)) return false;
+        Out.clear();
+        Out.reserve(static_cast<size_t>(n));
+        for (uint64_t i = 0; i < n; ++i)
+        {
+            BlueprintInfo T;
             uint64_t id = 0;
             if (!r.Varint(id)) return false;
             T.Id = static_cast<uint32_t>(id);

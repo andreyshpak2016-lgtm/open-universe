@@ -153,6 +153,13 @@ fn main() {
                                 &Message::ServerScripts { templates: server.script_templates() },
                             )
                             .ok();
+                            // И библиотека шаблонов постройки (редактор).
+                            net.send_to(
+                                token,
+                                from,
+                                &Message::ServerBlueprints { templates: server.blueprint_templates() },
+                            )
+                            .ok();
                             next_player += 1;
                         }
                     }
@@ -246,6 +253,14 @@ fn main() {
                                 Ok(0) => println!("скрипт: игрок {pid} снял скрипт"),
                                 Ok(tid) => println!("скрипт: игрок {pid} привязал шаблон {tid}"),
                                 Err(e) => println!("скрипт: привязка игроком {pid} отклонена: {e}"),
+                            }
+                        }
+                    }
+                    Message::ClientPlaceBlueprint { id, origin, entity } => {
+                        if let Some(pid) = clients.get(&from) {
+                            match server.place_blueprint_as(*pid, entity, id, origin) {
+                                Ok(n) => println!("шаблон: игрок {pid} поставил {n} блоков (шаблон {id})"),
+                                Err(e) => println!("шаблон: игрок {pid}: {e}"),
                             }
                         }
                     }

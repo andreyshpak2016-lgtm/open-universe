@@ -99,7 +99,7 @@ window.PLAN = {
         { "title": "Совместное строительство: репликация правок, права, подтверждения", "title_en": "Co-op building: edit replication, permissions, confirmations", "status": "done" },
         { "title": "Редактор в игре: ставить / удалять / красить (прицел, Е/R)", "title_en": "In-game editor: place / remove / paint (crosshair, E/R)", "status": "done" },
         { "title": "Призрак блока под прицелом и постановка «куда смотришь» (как в DU)", "title_en": "Ghost block under the crosshair, place where you look (like DU)", "status": "done" },
-        { "title": "Дублирование и шаблоны (blueprints) — в игру не подключено", "title_en": "Duplication and blueprints — not wired into the game", "status": "in_progress" }
+        { "title": "Дублирование и шаблоны (blueprints) — библиотека в редакторе (Z/X — выбрать, G — поставить)", "title_en": "Duplication and blueprints — library in the editor (Z/X to pick, G to place)", "status": "done" }
       ]
     },
     {

@@ -288,6 +288,19 @@ void UOUClientNet::SendSetScript(int32 Template)
 	SendPacket(Arr);
 }
 
+void UOUClientNet::SendPlaceBlueprint(int32 Id, int32 X, int32 Y, int32 Z, int32 Entity)
+{
+	if (!IsConnected())
+	{
+		return;
+	}
+	const std::vector<uint8_t> Body = OUWire::EncodePlaceBlueprint(
+		static_cast<uint32_t>(FMath::Max(0, Id)), X, Y, Z, static_cast<uint32_t>(FMath::Max(0, Entity)));
+	TArray<uint8> Arr;
+	Arr.Append(Body.data(), static_cast<int32>(Body.size()));
+	SendPacket(Arr);
+}
+
 void UOUClientNet::UpdateTerritoryAt(double ServerX, double ServerY, double ServerZ)
 {
 	// Точка игрока в серверных единицах; зоны тоже в серверных.
@@ -729,6 +742,24 @@ void UOUClientNet::Poll()
 					ScriptLogs.Add(FString(UTF8_TO_TCHAR(L.c_str())));
 				}
 				bScriptStatusReceived = true;
+			}
+		}
+		else if (Body[0] == OUWire::TagBlueprints) // библиотека шаблонов постройки
+		{
+			std::vector<OUWire::BlueprintInfo> Bs;
+			if (OUWire::DecodeBlueprints(Body.GetData(), static_cast<size_t>(Body.Num()), Bs))
+			{
+				Blueprints.Reset();
+				for (const OUWire::BlueprintInfo& B : Bs)
+				{
+					FOUBlueprint E;
+					E.Id = static_cast<int32>(B.Id);
+					E.Name = FString(UTF8_TO_TCHAR(B.Name.c_str()));
+					E.Description = FString(UTF8_TO_TCHAR(B.Description.c_str()));
+					Blueprints.Add(E);
+				}
+				bBlueprintsReceived = true;
+				UE_LOG(LogOUClient, Log, TEXT("Шаблоны постройки: %d"), Blueprints.Num());
 			}
 		}
 		else if (Body[0] == OUWire::TagMarketState) // состояние экономики

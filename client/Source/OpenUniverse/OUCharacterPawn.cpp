@@ -447,6 +447,10 @@ void AOUCharacterPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputCom
 	PlayerInputComponent->BindAction(TEXT("BuildPrev"), IE_Pressed, this, &AOUCharacterPawn::OnBuildPrev);
 	// Захват территории: T — объявить текущую зону своей.
 	PlayerInputComponent->BindAction(TEXT("TerritoryCapture"), IE_Pressed, this, &AOUCharacterPawn::CaptureTerritory);
+	// Шаблоны постройки (blueprints): Z/X — выбрать, G — поставить.
+	PlayerInputComponent->BindAction(TEXT("BlueprintNext"), IE_Pressed, this, &AOUCharacterPawn::BlueprintNext);
+	PlayerInputComponent->BindAction(TEXT("BlueprintPrev"), IE_Pressed, this, &AOUCharacterPawn::BlueprintPrev);
+	PlayerInputComponent->BindAction(TEXT("BlueprintPlace"), IE_Pressed, this, &AOUCharacterPawn::BlueprintPlace);
 	// Скрипты: L — окно скриптов объекта.
 	PlayerInputComponent->BindAction(TEXT("ScriptMenu"), IE_Pressed, this, &AOUCharacterPawn::ToggleScripts);
 	// Alt — отпустить/вернуть курсор (обзор мышью / работа с интерфейсом).
@@ -505,6 +509,68 @@ void AOUCharacterPawn::OnExitPressed() { bExitHeld = true; ExitHoldTime = 0.f; }
 void AOUCharacterPawn::OnExitReleased() { bExitHeld = false; ExitHoldTime = 0.f; }
 void AOUCharacterPawn::OnBuildNext() { if (bBuildMenuOpen) { SelectBuildPart((BuildSelection + 1) % (int32)EOUBuildPart::Count); } }
 void AOUCharacterPawn::OnBuildPrev() { if (bBuildMenuOpen) { SelectBuildPart((BuildSelection + (int32)EOUBuildPart::Count - 1) % (int32)EOUBuildPart::Count); } }
+
+void AOUCharacterPawn::PlaceBlueprint(int32 BlueprintId)
+{
+	// Поставить шаблон постройки: якорь — точка под прицелом (как для блока).
+	// Сервер штампует воксели авторитетно; клиент лишь выбирает шаблон и место.
+	if (!bBuildMenuOpen)
+	{
+		return;
+	}
+	Net = Net ? Net : FindComponentByClass<UOUClientNet>();
+	if (!Net || !Net->IsConnected() || Net->OwnEntityId == 0)
+	{
+		UE_LOG(LogOUChar, Log, TEXT("Шаблон: нет соединения с сервером"));
+		return;
+	}
+	FIntVector Target(0, 0, 0);
+	FVector Hit, Normal;
+	if (TraceBuildTarget(Target, Hit, Normal))
+	{
+		Target += WorldDirToVoxelShift(Normal);
+	}
+	else
+	{
+		FVector GroundDir;
+		if (AimTerrainDir(GroundDir))
+		{
+			Target = WorldToVoxel(GroundDir * (SurfaceRadius(GroundDir) + 75.f));
+		}
+	}
+	Net->SendPlaceBlueprint(BlueprintId, Target.X, Target.Y, Target.Z, Net->OwnEntityId);
+	UE_LOG(LogOUChar, Log, TEXT("Шаблон %d: поставлен в (%d,%d,%d)"), BlueprintId, Target.X, Target.Y, Target.Z);
+}
+
+void AOUCharacterPawn::BlueprintNext()
+{
+	if (!bBuildMenuOpen) { return; }
+	Net = Net ? Net : FindComponentByClass<UOUClientNet>();
+	const int32 N = (Net && Net->Blueprints.Num() > 0) ? Net->Blueprints.Num() : 1;
+	BlueprintSelection = (BlueprintSelection + 1) % N;
+	UE_LOG(LogOUChar, Log, TEXT("Шаблон: выбран индекс %d"), BlueprintSelection);
+}
+
+void AOUCharacterPawn::BlueprintPrev()
+{
+	if (!bBuildMenuOpen) { return; }
+	Net = Net ? Net : FindComponentByClass<UOUClientNet>();
+	const int32 N = (Net && Net->Blueprints.Num() > 0) ? Net->Blueprints.Num() : 1;
+	BlueprintSelection = (BlueprintSelection + N - 1) % N;
+	UE_LOG(LogOUChar, Log, TEXT("Шаблон: выбран индекс %d"), BlueprintSelection);
+}
+
+void AOUCharacterPawn::BlueprintPlace()
+{
+	if (!bBuildMenuOpen) { return; }
+	Net = Net ? Net : FindComponentByClass<UOUClientNet>();
+	if (!Net || !Net->Blueprints.IsValidIndex(BlueprintSelection))
+	{
+		UE_LOG(LogOUChar, Log, TEXT("Шаблон: библиотека не получена"));
+		return;
+	}
+	PlaceBlueprint(Net->Blueprints[BlueprintSelection].Id);
+}
 
 void AOUCharacterPawn::ToggleBuildMenu()
 {
@@ -1516,8 +1582,7 @@ void AOUCharacterPawn::Tick(float DeltaSeconds)
 
 	// Тестовая привязка скрипта (`-OUAutoScript`): открыть окно скриптов и
 	// привязать «крейсерский» автопилот, затем периодически логировать.
-	if (FParse::Param(FCommandLine::Get(), TEXT("OUAutoScript")))
-	{
+	if (FParse::Param(FCommandLine::Get(), TEXT("OUAutoScript")))	{
 		ScriptTimer += DeltaSeconds;
 		if (ScriptTimer >= 1.5f && ScriptCount < 20)
 		{
@@ -1537,6 +1602,28 @@ void AOUCharacterPawn::Tick(float DeltaSeconds)
 					if (Net->ScriptTemplates[i].Id == 2) { Pick = i; break; }
 				}
 				Net->SendSetScript(Net->ScriptTemplates[Pick].Id);
+			}
+		}
+	}
+
+	// Тестовая постановка шаблона (`-OUAutoBlueprint`): открыть строительство и
+	// поставить шаблон «Куб 5×5×5» рядом с базой — проверка blueprints вживую.
+	if (FParse::Param(FCommandLine::Get(), TEXT("OUAutoBlueprint")))
+	{
+		BlueprintTimer += DeltaSeconds;
+		if (BlueprintTimer >= 2.f && BlueprintCount < 10)
+		{
+			BlueprintTimer = 0.f;
+			++BlueprintCount;
+			if (!bBuildMenuOpen)
+			{
+				ToggleBuildMenu();
+			}
+			if (BlueprintCount == 4 && Net && Net->Blueprints.Num() > 0)
+			{
+				// Ставим куб (id 2) в якорь сетки — прямо перед игроком.
+				Net->SendPlaceBlueprint(2, 0, 0, 0, Net->OwnEntityId);
+				UE_LOG(LogOUChar, Log, TEXT("Шаблон: поставлен куб 5×5×5"));
 			}
 		}
 	}

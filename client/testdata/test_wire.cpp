@@ -376,6 +376,30 @@ int main(int argc, char** argv)
         Check(st.Logs.size() == 2 && st.Logs[1] == "готово", "статус: вывод log()");
     }
 
+    // --- 6g. Шаблоны постройки (теги 34/35) ---
+    std::printf("\n=== 6g. Шаблоны постройки ===\n");
+    {
+        auto push_str = [](std::vector<uint8_t>& out, const std::string& s) {
+            out.push_back(static_cast<uint8_t>(s.size() & 0xFF));
+            out.push_back(static_cast<uint8_t>((s.size() >> 8) & 0xFF));
+            out.insert(out.end(), s.begin(), s.end());
+        };
+        // Запрос: [tag34][id varint][x i32][y i32][z i32][entity u32].
+        const std::vector<uint8_t> qb = OUWire::EncodePlaceBlueprint(2, 3, -4, 5, 7);
+        Check(qb[0] == OUWire::TagPlaceBlueprint, "тег постановки шаблона = 34");
+        // Библиотека: [tag35][count]{[id][name][desc]}.
+        std::vector<uint8_t> lb;
+        lb.push_back(OUWire::TagBlueprints);
+        OUWire::push_varint(lb, 1);
+        OUWire::push_varint(lb, 5);
+        push_str(lb, "Платформа 12×12");
+        push_str(lb, "Ровная площадка");
+        std::vector<OUWire::BlueprintInfo> bps;
+        Check(OUWire::DecodeBlueprints(lb.data(), lb.size(), bps), "библиотека шаблонов разобрана");
+        Check(bps.size() == 1 && bps[0].Id == 5 && bps[0].Name == "Платформа 12×12",
+            "шаблон: id/имя совпали");
+    }
+
     // --- 7. Приветствие сервера (какой сущностью управляем) ---
     std::printf("\n=== 7. Приветствие сервера (welcome) ===\n");
     {

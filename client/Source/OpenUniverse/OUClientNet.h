@@ -253,6 +253,22 @@ struct FOUSystemBody
 	float Radius = 0.f;
 };
 
+/** Шаблон постройки (blueprint) для редактора в игре. */
+USTRUCT(BlueprintType)
+struct FOUBlueprint
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Build")
+	int32 Id = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Build")
+	FString Name;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Build")
+	FString Description;
+};
+
 /** Шаблон скрипта из библиотеки (для окна «Скрипты»). */
 USTRUCT(BlueprintType)
 struct FOUScriptTemplate
@@ -570,6 +586,19 @@ public:
 
 	/** Отправить запрос привязки скрипта-шаблона (0 — снять). */
 	void SendSetScript(int32 Template);
+
+	// --- Шаблоны постройки (blueprints) ---
+
+	/** Библиотека шаблонов постройки от сервера (для редактора). */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Build")
+	TArray<FOUBlueprint> Blueprints;
+
+	/** Приходила ли библиотека шаблонов постройки. */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Build")
+	bool bBlueprintsReceived = false;
+
+	/** Поставить шаблон постройки по id с якорем (X,Y,Z) в конструкцию Entity. */
+	void SendPlaceBlueprint(int32 Id, int32 X, int32 Y, int32 Z, int32 Entity);
 
 	/** Подключиться к серверу. */
 	UFUNCTION(BlueprintCallable, Category = "Open Universe|Net")

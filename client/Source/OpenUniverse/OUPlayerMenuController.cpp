@@ -879,11 +879,38 @@ void AOUPlayerMenuController::DrawBuildMenu(UCanvas* InCanvas)
 		X += SlotW + Gap;
 	}
 
-	DrawText(InCanvas, Small, TEXT("B — закрыть   ·   ЛКМ — поставить   ·   E — удалить   ·   R — покрасить   ·   колесо — выбор блока"),
+	DrawText(InCanvas, Small, TEXT("B — закрыть   ·   ЛКМ — поставить   ·   E — удалить   ·   R — покрасить   ·   Z/X — шаблон   ·   G — поставить шаблон"),
 		FVector2D(PanelPos.X + 24, PanelPos.Y + PanelSize.Y + 8), ColMuted);
 
 	DrawText(InCanvas, Small, FString::Printf(TEXT("Блоков поставлено: %d"), Char->BuiltCount),
 		FVector2D(PanelPos.X + PanelSize.X - 220, PanelPos.Y + 16), ColOk);
+
+	// --- Библиотека шаблонов (blueprints): выбрать Z/X, поставить G ---
+	ResolveNet();
+	const TArray<FOUBlueprint>& BPs = Net ? Net->Blueprints : TArray<FOUBlueprint>();
+	{
+		const float BPW = 260.f;
+		const float BPH = 26.f;
+		const float PanelH = FMath::Max(1, BPs.Num()) * (BPH + 6.f) + 34.f;
+		const FVector2D BP(PanelPos.X, PanelPos.Y - PanelH - 12.f);
+		GlassPanel(InCanvas, BP + FVector2D(-8, -6), FVector2D(BPW + 16.f, PanelH), ColPanelBorder, ColAccent);
+		DrawText(InCanvas, Small, TEXT("ШАБЛОНЫ  ·  Z/X — выбрать  ·  G — поставить"), BP + FVector2D(4, -2), ColAccent);
+		if (BPs.Num() == 0)
+		{
+			DrawText(InCanvas, Small, TEXT("(библиотека ещё не получена)"), BP + FVector2D(4, 24), ColMuted);
+		}
+		const int32 Sel = FMath::Clamp(Char->BlueprintSelection, 0, FMath::Max(0, BPs.Num() - 1));
+		for (int32 i = 0; i < BPs.Num(); ++i)
+		{
+			const FOUBlueprint& B = BPs[i];
+			const float RY = BP.Y + 24.f + i * (BPH + 6.f);
+			const bool bSel = (i == Sel);
+			FillBox(InCanvas, FVector2D(BP.X, RY), FVector2D(BPW, BPH),
+				bSel ? FLinearColor(0.16f, 0.26f, 0.20f, 0.9f) : FLinearColor(0.06f, 0.09f, 0.16f, 0.85f));
+			StrokeBox(InCanvas, FVector2D(BP.X, RY), FVector2D(BPW, BPH), bSel ? ColOk : ColPanelBorder, bSel ? 2.f : 1.f);
+			DrawText(InCanvas, Small, B.Name, FVector2D(BP.X + 8, RY + 5), bSel ? ColOk : ColText);
+		}
+	}
 }
 
 void AOUPlayerMenuController::OpenPauseMenu()

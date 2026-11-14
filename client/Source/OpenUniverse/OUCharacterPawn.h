@@ -175,6 +175,21 @@ public:
 	/** Открыть/закрыть окно скриптов объекта (клавиша L). */
 	void ToggleScripts();
 
+	/** Поставить шаблон постройки (blueprint) по id у точки под прицелом. */
+	UFUNCTION(BlueprintCallable, Category = "Open Universe|Build")
+	void PlaceBlueprint(int32 BlueprintId);
+
+	/** Выбрать следующий/предыдущий шаблон постройки (в меню строительства). */
+	void BlueprintNext();
+	void BlueprintPrev();
+
+	/** Поставить выбранный шаблон постройки у точки под прицелом. */
+	void BlueprintPlace();
+
+	/** Индекс выбранного шаблона в библиотеке (меню строительства). */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Build")
+	int32 BlueprintSelection = 0;
+
 	/** Быстрая сделка: продать (`bSell`) или купить 1 руду по фиксированной цене. */
 	void MarketQuickTrade(bool bSell);
 	void OnMarketSell() { MarketQuickTrade(true); }
@@ -199,6 +214,10 @@ public:
 	/** Таймер/счётчик теста скриптов (`-OUAutoScript`). */
 	float ScriptTimer = 0.f;
 	int32 ScriptCount = 0;
+
+	/** Таймер/счётчик теста шаблонов (`-OUAutoBlueprint`). */
+	float BlueprintTimer = 0.f;
+	int32 BlueprintCount = 0;
 
 	/** Таймер/счётчик тестового крафта (`-OUAutoCraft`). */
 	float CraftTimer = 0.f;
