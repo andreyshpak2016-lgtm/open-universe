@@ -261,6 +261,22 @@ struct FOUSystemBody
 	int64 Seed = 0;
 };
 
+/** Предмет магазина (премиум-валютa). */
+USTRUCT(BlueprintType)
+struct FOUShopItem
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Shop")
+	int32 Item = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Shop")
+	FString Name;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Shop")
+	int64 Price = 0;
+};
+
 /** Участник организации (игрок и ранг). */
 USTRUCT(BlueprintType)
 struct FOUOrgMember
@@ -788,6 +804,27 @@ public:
 
 	/** Отправить сообщение в чат (channel 0 локальный, 1 глобальный, 2 организация). */
 	void SendChat(int32 Channel, const FString& Text);
+
+	// --- Премиум-валютa и магазин предметов ---
+
+	/** Кристаллы (премиум-валюта) игрока. */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Shop")
+	int64 Premium = 0;
+
+	/** Каталог магазина от сервера. */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Shop")
+	TArray<FOUShopItem> ShopItems;
+
+	/** Приходил ли каталог магазина. */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Shop")
+	bool bShopReceived = false;
+
+	/** Последний результат покупки (для подсказки). */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Shop")
+	FString ShopMessage;
+
+	/** Купить предмет из магазина за премиум-валюту. */
+	void SendBuyItem(int32 Item);
 
 	/** Подключиться к серверу. */
 	UFUNCTION(BlueprintCallable, Category = "Open Universe|Net")

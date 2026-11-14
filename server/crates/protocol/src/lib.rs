@@ -358,6 +358,16 @@ pub enum Message {
     /// `from` — id игрока-автора, `name` — его позывной, `channel` — канал,
     /// `text` — текст. Локальный канал приходит только тем, кто рядом.
     ServerChat { from: NetId, name: String, channel: u8, text: String },
+    /// Сервер: кошелёк игрока — обычные кредиты и премиум-валюта (кристаллы).
+    ///
+    /// Шлётся при изменении баланса, чтобы интерфейс всегда показывал актуальное.
+    ServerWallet { credits: u64, premium: u64 },
+    /// Сервер: каталог магазина предметов (что можно купить за премиум-валюту).
+    ServerShop { items: Vec<(u32, String, u64)> },
+    /// Клиент: купить предмет из магазина за премиум-валюту.
+    ClientBuyItem { item: u32 },
+    /// Сервер: результат покупки (что выдано или причина отказа).
+    ServerShopResult { ok: bool, item: u32, qty: u64, message: String },
 }
 
 /// Территория в сообщении (для HUD).
@@ -709,6 +719,10 @@ mod wire {
     const TAG_ORG_RESULT: u8 = 48;
     const TAG_CHAT: u8 = 49;
     const TAG_SERVER_CHAT: u8 = 50;
+    const TAG_WALLET: u8 = 51;
+    const TAG_SHOP: u8 = 52;
+    const TAG_BUY_ITEM: u8 = 53;
+    const TAG_SHOP_RESULT: u8 = 54;
 
     pub fn encode(msg: &Message) -> Vec<u8> {
         let mut w = Writer::new();
@@ -1132,6 +1146,31 @@ mod wire {
                 w.u8(*channel);
                 w.str(text);
             }
+            Message::ServerWallet { credits, premium } => {
+                w.u8(TAG_WALLET);
+                w.varint(*credits);
+                w.varint(*premium);
+            }
+            Message::ServerShop { items } => {
+                w.u8(TAG_SHOP);
+                w.varint(items.len() as u64);
+                for (id, name, price) in items {
+                    w.varint(*id as u64);
+                    w.str(name);
+                    w.varint(*price);
+                }
+            }
+            Message::ClientBuyItem { item } => {
+                w.u8(TAG_BUY_ITEM);
+                w.varint(*item as u64);
+            }
+            Message::ServerShopResult { ok, item, qty, message } => {
+                w.u8(TAG_SHOP_RESULT);
+                w.bool(*ok);
+                w.varint(*item as u64);
+                w.varint(*qty);
+                w.str(message);
+            }
         }
         w.buf
     }
@@ -1519,6 +1558,28 @@ mod wire {
                 channel: r.u8()?,
                 text: r.str()?,
             }),
+            TAG_WALLET => Ok(Message::ServerWallet {
+                credits: r.varint()?,
+                premium: r.varint()?,
+            }),
+            TAG_SHOP => {
+                let n = r.varint()? as usize;
+                let mut items = Vec::with_capacity(n.min(64));
+                for _ in 0..n {
+                    let id = r.varint()? as u32;
+                    let name = r.str()?;
+                    let price = r.varint()?;
+                    items.push((id, name, price));
+                }
+                Ok(Message::ServerShop { items })
+            }
+            TAG_BUY_ITEM => Ok(Message::ClientBuyItem { item: r.varint()? as u32 }),
+            TAG_SHOP_RESULT => Ok(Message::ServerShopResult {
+                ok: r.bool()?,
+                item: r.varint()? as u32,
+                qty: r.varint()?,
+                message: r.str()?,
+            }),
             other => Err(WireError::BadTag(other)),
         }
     }
@@ -1736,6 +1797,25 @@ mod tests {
             text: "привет всем".into(),
         };
         assert_eq!(decode(&encode(&s)).unwrap(), s);
+    }
+
+    #[test]
+    fn shop_roundtrip() {
+        let w = Message::ServerWallet { credits: 1500, premium: 25 };
+        assert_eq!(decode(&encode(&w)).unwrap(), w);
+        let shop = Message::ServerShop {
+            items: vec![(1, "руда".into(), 2), (5, "топливо".into(), 1)],
+        };
+        assert_eq!(decode(&encode(&shop)).unwrap(), shop);
+        let buy = Message::ClientBuyItem { item: 5 };
+        assert_eq!(decode(&encode(&buy)).unwrap(), buy);
+        let res = Message::ServerShopResult {
+            ok: true,
+            item: 5,
+            qty: 10,
+            message: "куплено".into(),
+        };
+        assert_eq!(decode(&encode(&res)).unwrap(), res);
     }
 
     #[test]

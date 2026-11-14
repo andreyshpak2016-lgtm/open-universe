@@ -353,6 +353,17 @@ void AOUPlayerMenuController::OnLeftClick()
 			if (bMarketOpen && B.Id >= 200)
 			{
 				ResolveNet();
+				// Магазин за кристаллы: строки с id 800+.
+				if (B.Id >= 800)
+				{
+					const int32 Index = B.Id - 800;
+					if (Net && Net->ShopItems.IsValidIndex(Index))
+					{
+						Net->SendBuyItem(Net->ShopItems[Index].Item);
+						UE_LOG(LogOUMenu, Log, TEXT("Магазин: покупаю предмет %d"), Net->ShopItems[Index].Item);
+					}
+					return;
+				}
 				const int32 Index = B.Id - 200;
 				if (Net && Net->Recipes.IsValidIndex(Index))
 				{
@@ -1211,6 +1222,12 @@ void AOUPlayerMenuController::DrawMarket(UCanvas* InCanvas)
 	// Кредиты.
 	const int64 Credits = Net ? Net->Credits : 0;
 	DrawText(InCanvas, Font, FString::Printf(TEXT("Кредиты: %lld"), Credits), P + FVector2D(24, 56), ColOk);
+	// Премиум-валюта (кристаллы).
+	if (Net)
+	{
+		DrawText(InCanvas, Font, FString::Printf(TEXT("Кристаллы: %lld"), Net->Premium),
+			P + FVector2D(320, 56), FLinearColor(0.6f, 0.85f, 1.f));
+	}
 
 	// Инвентарь (левая колонка).
 	DrawText(InCanvas, Small, TEXT("Инвентарь"), P + FVector2D(24, 96), ColText);
@@ -1299,6 +1316,30 @@ void AOUPlayerMenuController::DrawMarket(UCanvas* InCanvas)
 			*R.Name, *Ins, *ItemName(R.OutItem), R.OutQty);
 		DrawText(InCanvas, Tiny, Row, CP + FVector2D(12, 30 + i * 18.f), RowC);
 		Buttons.Add({ FVector2D(CP.X + 8, CP.Y + 26 + i * 18.f), FVector2D(CPW - 16, 18.f), 200 + i });
+	}
+
+	// --- Магазин предметов за премиум-валюту (правая нижняя панель) ---
+	ResolveNet();
+	const FVector2D SP(P.X + PW * 0.5f + 12.f, CP.Y);
+	const float SPW = PW * 0.5f - 36.f;
+	GlassPanel(InCanvas, SP, FVector2D(SPW, CPH), PanelB, FLinearColor(0.6f, 0.85f, 1.f));
+	DrawText(InCanvas, Small, TEXT("МАГАЗИН  ·  за кристаллы"), SP + FVector2D(12, 8), FLinearColor(0.6f, 0.85f, 1.f));
+	const TArray<FOUShopItem>& Shop = Net ? Net->ShopItems : TArray<FOUShopItem>();
+	if (Shop.Num() == 0)
+	{
+		DrawText(InCanvas, Small, TEXT("(каталог ещё не получен)"), SP + FVector2D(12, 34), Dim);
+	}
+	for (int32 i = 0; i < Shop.Num() && i < 6; ++i)
+	{
+		const FOUShopItem& It = Shop[i];
+		const bool bCan = Net && Net->Premium >= It.Price;
+		const FString Row = FString::Printf(TEXT("%-14s  ×10   %lld кр."), *It.Name, It.Price);
+		DrawText(InCanvas, Tiny, Row, SP + FVector2D(12, 30 + i * 18.f), bCan ? ColOk : Dim);
+		Buttons.Add({ FVector2D(SP.X + 8, SP.Y + 26 + i * 18.f), FVector2D(SPW - 16, 18.f), 800 + i });
+	}
+	if (Net && Net->ShopMessage.Len() > 0)
+	{
+		DrawText(InCanvas, Tiny, Net->ShopMessage, SP + FVector2D(12, CPH - 16.f), Dim);
 	}
 }
 

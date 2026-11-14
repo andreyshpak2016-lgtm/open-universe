@@ -177,7 +177,7 @@ window.PLAN = {
         { "title": "Организации, ранги, дипломатия (гильдии: создание/вступление/выход, ранги, союзы/войны, окно O)", "title_en": "Organizations, ranks, diplomacy (guilds: create/join/leave, ranks, alliances/wars, key O)", "status": "done" },
         { "title": "Текстовый чат (каналы локальный/глобальный/организация, Enter — ввод, Tab — канал)", "title_en": "Text chat (local/global/organization channels, Enter to type, Tab for channel)", "status": "done" },
         { "title": "Голосовой чат (голосовая связь)", "title_en": "Voice chat", "status": "todo" },
-        { "title": "Внутриигровая валюта и рынок предметов (MTX)", "title_en": "In-game currency and item market (MTX)", "status": "todo" },
+        { "title": "Внутриигровая валюта и рынок предметов (MTX): премиум-кристаллы и магазин в окне рынка", "title_en": "In-game currency and item market (MTX): premium crystals and a shop in the market window", "status": "done" },
         { "title": "Таланты/прогрессия персонажа", "title_en": "Character talents and progression", "status": "todo" },
         { "title": "Обучение для новичков (tutorial)", "title_en": "New player tutorial", "status": "todo" }
       ]

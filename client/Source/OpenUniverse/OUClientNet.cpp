@@ -388,6 +388,13 @@ void UOUClientNet::SendChat(int32 Channel, const FString& Text)
 	TArray<uint8> Arr; Arr.Append(Body.data(), static_cast<int32>(Body.size())); SendPacket(Arr);
 }
 
+void UOUClientNet::SendBuyItem(int32 Item)
+{
+	if (!IsConnected()) { return; }
+	const std::vector<uint8_t> Body = OUWire::EncodeBuyItem(static_cast<uint32_t>(FMath::Max(0, Item)));
+	TArray<uint8> Arr; Arr.Append(Body.data(), static_cast<int32>(Body.size())); SendPacket(Arr);
+}
+
 void UOUClientNet::UpdateTerritoryAt(double ServerX, double ServerY, double ServerZ)
 {
 	// Точка игрока в серверных единицах; зоны тоже в серверных.
@@ -971,6 +978,43 @@ void UOUClientNet::Poll()
 					LastChatTime = W->GetTimeSeconds();
 				}
 				UE_LOG(LogOUClient, Log, TEXT("Чат: %s"), *Line);
+			}
+		}
+		else if (Body[0] == OUWire::TagWallet) // кошелёк
+		{
+			OUWire::Wallet W2;
+			if (OUWire::DecodeWallet(Body.GetData(), static_cast<size_t>(Body.Num()), W2))
+			{
+				Credits = static_cast<int64>(W2.Credits);
+				Premium = static_cast<int64>(W2.Premium);
+			}
+		}
+		else if (Body[0] == OUWire::TagShop) // каталог магазина
+		{
+			std::vector<OUWire::ShopItem> Ss;
+			if (OUWire::DecodeShop(Body.GetData(), static_cast<size_t>(Body.Num()), Ss))
+			{
+				ShopItems.Reset();
+				for (const OUWire::ShopItem& S : Ss)
+				{
+					FOUShopItem E;
+					E.Item = static_cast<int32>(S.Item);
+					E.Name = FString(UTF8_TO_TCHAR(S.Name.c_str()));
+					E.Price = static_cast<int64>(S.Price);
+					ShopItems.Add(E);
+				}
+				bShopReceived = true;
+				UE_LOG(LogOUClient, Log, TEXT("Магазин: %d предметов"), ShopItems.Num());
+			}
+		}
+		else if (Body[0] == OUWire::TagShopResult) // результат покупки
+		{
+			OUWire::ShopResult R;
+			if (OUWire::DecodeShopResult(Body.GetData(), static_cast<size_t>(Body.Num()), R))
+			{
+				ShopMessage = FString(UTF8_TO_TCHAR(R.Message.c_str()));
+				UE_LOG(LogOUClient, Log, TEXT("Магазин: %s — %s"),
+					R.Ok ? TEXT("ок") : TEXT("отказ"), *ShopMessage);
 			}
 		}
 		else if (Body[0] == OUWire::TagMarketState) // состояние экономики

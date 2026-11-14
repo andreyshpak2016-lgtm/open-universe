@@ -176,6 +176,10 @@ fn main() {
                             net.send_to(token, from, &server.org_state(next_player)).ok();
                             // Запоминаем позывной для чата.
                             server.set_name(next_player, name.clone());
+                            // Кошелёк и каталог магазина предметов.
+                            let (wc, wp) = server.wallet(next_player);
+                            net.send_to(token, from, &Message::ServerWallet { credits: wc, premium: wp }).ok();
+                            net.send_to(token, from, &Message::ServerShop { items: server.shop_catalog() }).ok();
                             next_player += 1;
                         }
                     }
@@ -369,6 +373,20 @@ fn main() {
                                     net.send_to(token, addr, &msg).ok();
                                 }
                             }
+                        }
+                    }
+                    Message::ClientBuyItem { item } => {
+                        if let Some(pid) = clients.get(&from) {
+                            let msg = match server.buy_item(*pid, item) {
+                                Ok((it, qty)) => Message::ServerShopResult {
+                                    ok: true,
+                                    item: it,
+                                    qty,
+                                    message: "куплено".to_string(),
+                                },
+                                Err(e) => Message::ServerShopResult { ok: false, item, qty: 0, message: e },
+                            };
+                            net.send_to(token, from, &msg).ok();
                         }
                     }
                     _ => {}

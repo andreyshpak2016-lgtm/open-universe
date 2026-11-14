@@ -89,6 +89,10 @@ namespace OUWire
         TagOrgResult = 48,
         TagChat = 49,
         TagServerChat = 50,
+        TagWallet = 51,
+        TagShop = 52,
+        TagBuyItem = 53,
+        TagShopResult = 54,
     };
 
     /// Действия редактора конструкций.
@@ -1371,6 +1375,82 @@ namespace OUWire
         if (!r.Str(Out.Name)) return false;
         if (!r.U8(Out.Channel)) return false;
         return r.Str(Out.Text);
+    }
+
+    /// Кошелёк игрока (сервер → клиент, тег 51): кредиты и премиум-валюта.
+    struct Wallet
+    {
+        uint64_t Credits = 0;
+        uint64_t Premium = 0;
+    };
+
+    inline bool DecodeWallet(const uint8_t* body, size_t len, Wallet& Out)
+    {
+        Reader r{body, len, 0};
+        uint8_t tag = 0;
+        if (!r.U8(tag) || tag != TagWallet) return false;
+        return r.Varint(Out.Credits) && r.Varint(Out.Premium);
+    }
+
+    /// Предмет магазина (сервер → клиент, тег 52): id, имя, цена в премиуме.
+    struct ShopItem
+    {
+        uint32_t Item = 0;
+        std::string Name;
+        uint64_t Price = 0;
+    };
+
+    inline bool DecodeShop(const uint8_t* body, size_t len, std::vector<ShopItem>& Out)
+    {
+        Reader r{body, len, 0};
+        uint8_t tag = 0;
+        if (!r.U8(tag) || tag != TagShop) return false;
+        uint64_t n = 0;
+        if (!r.Varint(n)) return false;
+        Out.clear();
+        Out.reserve(static_cast<size_t>(n));
+        for (uint64_t i = 0; i < n; ++i)
+        {
+            ShopItem S;
+            uint64_t id = 0;
+            if (!r.Varint(id)) return false;
+            S.Item = static_cast<uint32_t>(id);
+            if (!r.Str(S.Name)) return false;
+            if (!r.Varint(S.Price)) return false;
+            Out.push_back(std::move(S));
+        }
+        return true;
+    }
+
+    /// Собрать запрос покупки предмета (клиент → сервер, тег 53): [tag][item varint].
+    inline std::vector<uint8_t> EncodeBuyItem(uint32_t Item)
+    {
+        std::vector<uint8_t> out;
+        out.push_back(TagBuyItem);
+        push_varint(out, Item);
+        return out;
+    }
+
+    /// Результат покупки (сервер → клиент, тег 54).
+    struct ShopResult
+    {
+        bool Ok = false;
+        uint32_t Item = 0;
+        uint64_t Qty = 0;
+        std::string Message;
+    };
+
+    inline bool DecodeShopResult(const uint8_t* body, size_t len, ShopResult& Out)
+    {
+        Reader r{body, len, 0};
+        uint8_t tag = 0;
+        if (!r.U8(tag) || tag != TagShopResult) return false;
+        if (!r.Bool(Out.Ok)) return false;
+        uint64_t item = 0, qty = 0;
+        if (!r.Varint(item) || !r.Varint(qty)) return false;
+        Out.Item = static_cast<uint32_t>(item);
+        Out.Qty = qty;
+        return r.Str(Out.Message);
     }
 
     /// Собрать кадр ввода (клиент → сервер, тег 2).

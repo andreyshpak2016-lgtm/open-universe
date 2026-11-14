@@ -51,6 +51,22 @@ pub const DESTROY_BOUNTY: u64 = 250;
 /// Радиус слышимости локального чата (серверные единицы; 500 м).
 pub const CHAT_LOCAL_RADIUS: f64 = 500.0;
 
+/// Каталог магазина предметов: (id предмета, имя, цена в премиум-валюте).
+/// Предметы продаются за премиум-валюту; обычные кредиты — только рынок.
+pub const SHOP_ITEMS: &[(u32, &str, u64)] = &[
+    (1, "руда", 2),        // 2 кристалла → пачка руды
+    (2, "лёд", 2),
+    (5, "топливо", 1),
+    (6, "сплав", 4),
+    (7, "электроника", 6),
+];
+
+/// Сколько предметов выдаётся за одну покупку (пачка).
+pub const SHOP_PACK_QTY: u64 = 10;
+
+/// Стартовый баланс премиум-валюты у нового игрока (кристаллы).
+pub const START_PREMIUM: u64 = 20;
+
 /// Ранг участника организации.
 pub const RANK_MEMBER: u8 = 0;
 /// Офицер: может назначать ранги участникам.
@@ -185,6 +201,10 @@ pub struct Server {
     pub org_dirty: BTreeSet<NetId>,
     /// Позывной каждого игрока (для чата и подписей).
     pub names: BTreeMap<NetId, String>,
+    /// Премиум-валюта (кристаллы) каждого игрока — для магазина предметов.
+    pub premium: BTreeMap<NetId, u64>,
+    /// Игроки, чей кошелёк изменился (надо обновить интерфейс).
+    pub wallet_dirty: BTreeSet<NetId>,
     /// Конструкции сущностей: что игроки построили (права + ревизии).
     pub constructions: BTreeMap<NetId, Construction>,
     /// Корпус каждой сущности: щит, броня, критические повреждения.
@@ -296,8 +316,7 @@ impl Economy {
     /// Выдать игроку стартовый капитал (один раз при подключении).
     pub fn grant_start(&mut self, player: NetId) {
         self.credits.entry(player).or_insert(1000);
-    }
-}
+    }}
 
 /// Поза пешего персонажа (для репликации другим клиентам).
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -334,6 +353,8 @@ impl Server {
             player_org: BTreeMap::new(),
             org_dirty: BTreeSet::new(),
             names: BTreeMap::new(),
+            premium: BTreeMap::new(),
+            wallet_dirty: BTreeSet::new(),
             constructions: BTreeMap::new(),
             hulls: BTreeMap::new(),
             weapons: BTreeMap::new(),
@@ -1453,6 +1474,44 @@ impl Server {
         out
     }
 
+    // --- Премиум-валюта и магазин предметов ---
+
+    /// Каталог магазина: (id предмета, имя, цена в премиум-валюте).
+    pub fn shop_catalog(&self) -> Vec<(u32, String, u64)> {
+        SHOP_ITEMS
+            .iter()
+            .map(|(id, name, price)| (*id, name.to_string(), *price))
+            .collect()
+    }
+
+    /// Купить предмет из магазина за премиум-валюту (авторитетно).
+    ///
+    /// Списывает кристаллы и начисляет предмет в инвентарь игрока. Возвращает
+    /// (id предмета, количество) или строку-ошибку.
+    pub fn buy_item(&mut self, player: NetId, item: u32) -> Result<(u32, u64), String> {
+        let entry = SHOP_ITEMS.iter().find(|(id, _, _)| *id == item);
+        let (_, _, price) = entry.ok_or_else(|| format!("предмет {item} не продаётся"))?;
+        let have = *self.premium.get(&player).unwrap_or(&0);
+        if have < *price {
+            return Err(format!("не хватает кристаллов: есть {have}, нужно {price}"));
+        }
+        // Сколько выдаём: пропорционально цене (дешёвые — пачками).
+        let qty: u64 = SHOP_PACK_QTY;
+        *self.premium.entry(player).or_insert(0) = have - *price;
+        let sys = self.economy.system;
+        self.economy.engine.inventory.add(player, sys, item, qty);
+        self.market_dirty = true;
+        self.wallet_dirty.insert(player);
+        Ok((item, qty))
+    }
+
+    /// Кошелёк игрока для интерфейса (кредиты, премиум-валюта).
+    pub fn wallet(&self, player: NetId) -> (u64, u64) {
+        let credits = *self.economy.credits.get(&player).unwrap_or(&0);
+        let premium = *self.premium.get(&player).unwrap_or(&0);
+        (credits, premium)
+    }
+
     /// Привязать к сущности скрипт-шаблон по id игрока (авторитетно).
     ///
     /// Только владелец может управлять скриптом своего объекта. `template = 0`
@@ -1514,6 +1573,9 @@ impl Server {
         self.constructions.entry(entity_id).or_insert_with(|| Construction::new(player_id));
         // Стартовый капитал и право торговать.
         self.economy.grant_start(player_id);
+        // Стартовые кристаллы (премиум-валюта) — новичок может купить в магазине.
+        self.premium.entry(player_id).or_insert(START_PREMIUM);
+        self.wallet_dirty.insert(player_id);
         self.connections.insert(
             player_id,
             Connection {
@@ -1917,6 +1979,16 @@ impl Server {
             .map(|p| (*p, self.org_state(*p)))
             .collect();
 
+        // 3f. Кошелёк (кредиты + премиум-валюта) изменившимся игрокам.
+        let wallet_msgs: BTreeMap<NetId, Message> = self
+            .wallet_dirty
+            .iter()
+            .map(|p| {
+                let (c, pr) = self.wallet(*p);
+                (*p, Message::ServerWallet { credits: c, premium: pr })
+            })
+            .collect();
+
         // 4. Для каждого клиента — интерес‑менеджмент и дельта.
         let mut plan = SendPlan::default();
         let all_states: BTreeMap<NetId, EntityState> = self.world.snapshot_map();
@@ -2110,6 +2182,11 @@ impl Server {
                 msgs.push(m.clone());
             }
 
+            // Кошелёк (кредиты + премиум-валюта) — при изменении.
+            if let Some(m) = wallet_msgs.get(player_id) {
+                msgs.push(m.clone());
+            }
+
             plan.messages.insert(*player_id, msgs);
         }
         if self.market_dirty {
@@ -2122,6 +2199,7 @@ impl Server {
         self.combat_dirty.clear();
         self.workshop_dirty.clear();
         self.org_dirty.clear();
+        self.wallet_dirty.clear();
 
         plan
     }
@@ -3330,5 +3408,60 @@ mod tests {
         let mut s = Server::new();
         s.connect_on_planet(1);
         assert!(s.chat_as(1, 1, "   ".to_string()).is_empty());
+    }
+
+    // --- премиум-валюта и магазин предметов ---
+
+    #[test]
+    fn starter_premium_and_shop_catalog() {
+        let mut s = Server::new();
+        s.connect_on_planet(1);
+        let (_, premium) = s.wallet(1);
+        assert_eq!(premium, START_PREMIUM, "стартовые кристаллы");
+        assert!(!s.shop_catalog().is_empty(), "каталог магазина непуст");
+    }
+
+    #[test]
+    fn buying_item_spends_premium_and_grants_item() {
+        let mut s = Server::new();
+        s.connect_on_planet(1);
+        let (_c, before) = s.wallet(1);
+        let (item, price) = {
+            let cat = s.shop_catalog();
+            (cat[0].0, cat[0].2)
+        };
+        let (got, qty) = s.buy_item(1, item).unwrap();
+        assert_eq!(got, item);
+        assert!(qty > 0);
+        let (_c2, after) = s.wallet(1);
+        assert_eq!(after, before - price, "кристаллы списаны");
+        // Предмет появился в инвентаре.
+        let sys = s.economy.system;
+        let have = s.economy.engine.inventory.amount(1, sys, item);
+        assert!(have >= qty, "предмет выдан: {have}");
+    }
+
+    #[test]
+    fn buying_without_premium_fails() {
+        let mut s = Server::new();
+        s.connect_on_planet(1);
+        // Обнуляем кристаллы и пробуем купить дорогой предмет.
+        s.premium.insert(1, 0);
+        let item = s.shop_catalog()[0].0;
+        assert!(s.buy_item(1, item).is_err(), "без кристаллов покупки нет");
+        // Несуществующий предмет — тоже отказ.
+        assert!(s.buy_item(1, 999).is_err());
+    }
+
+    #[test]
+    fn wallet_is_broadcast_on_start() {
+        let mut s = Server::new();
+        s.connect_on_planet(1);
+        // Первый тик рассылает кошелёк (wallet_dirty после подключения).
+        let plan = s.tick();
+        let seen = plan.messages[&1]
+            .iter()
+            .any(|m| matches!(m, Message::ServerWallet { .. }));
+        assert!(seen, "кошелёк рассылается игроку");
     }
 }

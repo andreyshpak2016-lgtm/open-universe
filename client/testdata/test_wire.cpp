@@ -524,6 +524,46 @@ int main(int argc, char** argv)
             "поля чата совпали");
     }
 
+    // --- 6l. Магазин и премиум-валютa (теги 51–54) ---
+    std::printf("\n=== 6l. Магазин ===\n");
+    {
+        auto push_str = [](std::vector<uint8_t>& out, const std::string& s) {
+            out.push_back(static_cast<uint8_t>(s.size() & 0xFF));
+            out.push_back(static_cast<uint8_t>((s.size() >> 8) & 0xFF));
+            out.insert(out.end(), s.begin(), s.end());
+        };
+        // Кошелёк: [tag51][credits][premium].
+        std::vector<uint8_t> wb;
+        wb.push_back(OUWire::TagWallet);
+        OUWire::push_varint(wb, 1500);
+        OUWire::push_varint(wb, 25);
+        OUWire::Wallet w;
+        Check(OUWire::DecodeWallet(wb.data(), wb.size(), w), "кошелёк разобран");
+        Check(w.Credits == 1500 && w.Premium == 25, "баланс совпал");
+        // Каталог: [tag52][count]{(id,name,price)}.
+        std::vector<uint8_t> sh;
+        sh.push_back(OUWire::TagShop);
+        OUWire::push_varint(sh, 1);
+        OUWire::push_varint(sh, 1);
+        push_str(sh, "руда");
+        OUWire::push_varint(sh, 2);
+        std::vector<OUWire::ShopItem> si;
+        Check(OUWire::DecodeShop(sh.data(), sh.size(), si), "каталог разобран");
+        Check(si.size() == 1 && si[0].Item == 1 && si[0].Name == "руда" && si[0].Price == 2,
+            "предмет магазина совпал");
+        // Покупка и результат.
+        Check(OUWire::EncodeBuyItem(5)[0] == OUWire::TagBuyItem, "тег покупки = 53");
+        std::vector<uint8_t> rb;
+        rb.push_back(OUWire::TagShopResult);
+        rb.push_back(1);
+        OUWire::push_varint(rb, 5);
+        OUWire::push_varint(rb, 10);
+        push_str(rb, "куплено");
+        OUWire::ShopResult sr;
+        Check(OUWire::DecodeShopResult(rb.data(), rb.size(), sr) && sr.Ok, "результат покупки разобран");
+        Check(sr.Item == 5 && sr.Qty == 10, "поля результата совпали");
+    }
+
     // --- 7. Приветствие сервера (какой сущностью управляем) ---
     std::printf("\n=== 7. Приветствие сервера (welcome) ===\n");
     {
