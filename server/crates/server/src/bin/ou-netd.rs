@@ -80,6 +80,16 @@ fn main() {
             println!("дрон-мишень {id} в ({:.0}, {:.0}, {:.0})", p.x, p.y, p.z);
         }
     }
+
+    // Орбитальные цели у луны: космический бой вдали от поверхности. Луна —
+    // тело id 2 в (+560000,0,0), радиус 60000; цели висят на орбите вокруг неё.
+    {
+        let moon_center = Vec3::new(560_000.0, 0.0, 0.0);
+        let spawns = server.spawn_orbit_targets(moon_center, 60_000.0, 3);
+        for (i, p) in spawns.iter().enumerate() {
+            println!("орбитальная цель {i} у луны в ({:.0}, {:.0}, {:.0})", p.x, p.y, p.z);
+        }
+    }
     println!("работаю {seconds} с...\n");
 
     let mut clients: BTreeMap<SocketAddr, NetId> = BTreeMap::new();

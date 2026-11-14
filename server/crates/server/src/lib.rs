@@ -16,7 +16,7 @@ use ou_protocol::{
     ShotEvent, Snapshot, TerritoryDto, Vec3,
 };
 use ou_script::ScriptEngine;
-use ou_sim::{Dent, Terrain, World};
+use ou_sim::{det_cos, det_sin, Dent, Terrain, World};
 use ou_spatial::SpatialGrid;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -44,6 +44,9 @@ pub const EXPLOSION_ALT_LIMIT: f64 = 120.0;
 pub const EXPLOSION_SLOT_BASE: u32 = 40;
 /// Сколько слотов отведено под взрывы (циклически переиспользуются).
 pub const EXPLOSION_SLOTS: u32 = 24;
+
+/// Награда (bounty) в кредитах за уничтожение боевой цели — для HUD и экономики.
+pub const DESTROY_BOUNTY: u64 = 250;
 
 /// Конструкция: воксельная сетка плюс права и ревизии (совместная стройка).
 #[derive(Clone, Debug)]
@@ -128,6 +131,10 @@ pub struct Server {
     pub script_logs: BTreeMap<NetId, Vec<String>>,
     /// Есть изменения статуса скриптов, которые надо разослать владельцам.
     pub script_urgent: BTreeSet<NetId>,
+    /// Боевая статистика игрока: (убийства, урон, награда) — для HUD.
+    pub combat_stats: BTreeMap<NetId, (u64, u64, u64)>,
+    /// Игроки, чья боевая статистика изменилась (надо разослать).
+    pub combat_dirty: BTreeSet<NetId>,
     /// Конструкции сущностей: что игроки построили (права + ревизии).
     pub constructions: BTreeMap<NetId, Construction>,
     /// Корпус каждой сущности: щит, броня, критические повреждения.
@@ -266,6 +273,8 @@ impl Server {
             script_last_error: BTreeMap::new(),
             script_logs: BTreeMap::new(),
             script_urgent: BTreeSet::new(),
+            combat_stats: BTreeMap::new(),
+            combat_dirty: BTreeSet::new(),
             constructions: BTreeMap::new(),
             hulls: BTreeMap::new(),
             weapons: BTreeMap::new(),
@@ -794,6 +803,22 @@ impl Server {
         let destroyed = self.hulls.get(&target).map(|h| h.is_destroyed()).unwrap_or(false);
         let damage = outcome.shield_damage + outcome.armor_damage + outcome.core_damage;
 
+        // Боевая статистика стрелка: если он игрок, копим урон и награду.
+        if let Some(player) = self.connections.values().find(|c| c.entity_id == attacker).map(|c| c.player_id) {
+            let st = self.combat_stats.entry(player).or_insert((0, 0, 0));
+            st.1 += damage as u64;
+            if destroyed {
+                st.0 += 1;
+                // Награда за уничтожение цели идёт в кредиты игрока (bounty).
+                let reward = DESTROY_BOUNTY;
+                st.2 += reward;
+                *self.economy.credits.entry(player).or_insert(0) =
+                    self.economy.credits.get(&player).copied().unwrap_or(0).saturating_add(reward);
+                self.market_dirty = true;
+            }
+            self.combat_dirty.insert(player);
+        }
+
         // Уничтоженный дрон-цель убираем из мира и планируем его возрождение
         // (учебный полигон — цели возвращаются). Игрока не удаляем: срок его
         // возрождения назначит `process_respawns`.
@@ -1194,6 +1219,29 @@ impl Server {
         entity_id
     }
 
+    /// Создать боевые цели на орбите (для орбитальных сражений).
+    ///
+    /// Цели висят в космосе вокруг соседнего тела (луна/планета), на орбите,
+    /// поэтому игрок воюет не только у поверхности. Возвращает точки спавна.
+    pub fn spawn_orbit_targets(&mut self, body_center: Vec3, body_radius: f64, count: usize) -> Vec<Vec3> {
+        let mut spawns = Vec::new();
+        // Орбита в плоскости XY над телом: радиус — 1.5 радиуса тела.
+        let orbit_r = body_radius * 1.5;
+        for i in 0..count {
+            let a = 2.0 * std::f64::consts::PI * (i as f64) / (count as f64);
+            // Смещение по орбите (серверные оси): плоскость, наклонённая к XY.
+            let off = Vec3::new(
+                orbit_r * det_cos(a),
+                orbit_r * det_sin(a) * 0.4,
+                orbit_r * det_sin(a),
+            );
+            let p = body_center.add(off);
+            self.spawn_target(p);
+            spawns.push(p);
+        }
+        spawns
+    }
+
     /// Респавн уничтоженных учебных целей на их точках появления.
     fn process_target_respawns(&mut self, tick: u64) {
         let due: Vec<NetId> = self
@@ -1400,6 +1448,8 @@ impl Server {
                 .collect()
         };
 
+        // Боевая статистика считается ниже, ПОСЛЕ боя этого тика (шаг 3).
+
         // 2. Шаг симуляции.
         self.world.step(&inputs);
         let tick = self.world.tick;
@@ -1446,6 +1496,17 @@ impl Server {
                 shots.push(ev);
             }
         }
+
+        // 3c. Боевая статистика: считаем ПОСЛЕ боя этого тика (шаг 3/3b), чтобы
+        //     убийства/урон/награда были свежими, и рассылаем изменившимся.
+        let combat_msgs: BTreeMap<NetId, Message> = self
+            .combat_dirty
+            .iter()
+            .map(|p| {
+                let (k, d, b) = self.combat_stats.get(p).copied().unwrap_or((0, 0, 0));
+                (*p, Message::ServerCombat { kills: k, damage: d, bounty: b })
+            })
+            .collect();
 
         // 4. Для каждого клиента — интерес‑менеджмент и дельта.
         let mut plan = SendPlan::default();
@@ -1626,6 +1687,11 @@ impl Server {
                 msgs.push(m.clone());
             }
 
+            // Боевая статистика игрока — при изменении.
+            if let Some(m) = combat_msgs.get(player_id) {
+                msgs.push(m.clone());
+            }
+
             plan.messages.insert(*player_id, msgs);
         }
         if self.market_dirty {
@@ -1635,6 +1701,7 @@ impl Server {
             self.territory_dirty = false;
         }
         self.script_urgent.clear();
+        self.combat_dirty.clear();
 
         plan
     }
@@ -2561,5 +2628,64 @@ mod tests {
         let edits = &pending[&1].1;
         assert!(!edits.is_empty(), "есть правки шаблона");
         assert!(edits.iter().all(|x| x.action == BuildAction::Place));
+    }
+
+    // --- орбитальные сражения и боевая статистика ---
+
+    #[test]
+    fn destroying_a_target_awards_bounty_and_stats() {
+        let mut s = Server::new();
+        let a = s.connect(1, Vec3::new(100_000.0, 0.0, 0.0));
+        // Цель рядом с игроком, заведомо уничтожаемая (слабая броня).
+        let drone = s.spawn_target(Vec3::new(100_050.0, 0.0, 0.0));
+        // Стреляем, пока цель не будет уничтожена (ограничим число попыток).
+        let start_credits = *s.economy.credits.get(&1).unwrap_or(&0);
+        let mut killed = false;
+        for tick in 1..=400u64 {
+            if let Some(ev) = s.resolve_fire(a, tick) {
+                if ev.target == drone && ev.destroyed {
+                    killed = true;
+                    break;
+                }
+            }
+        }
+        assert!(killed, "цель уничтожена");
+        let (kills, damage, bounty) = s.combat_stats.get(&1).copied().unwrap_or((0, 0, 0));
+        assert_eq!(kills, 1, "одно убийство");
+        assert!(damage > 0, "урон накоплен: {damage}");
+        assert_eq!(bounty, DESTROY_BOUNTY, "награда начислена");
+        // Кредиты игрока выросли на награду.
+        let end_credits = *s.economy.credits.get(&1).unwrap_or(&0);
+        assert_eq!(end_credits, start_credits + DESTROY_BOUNTY, "bounty в кредитах");
+    }
+
+    #[test]
+    fn combat_stats_are_broadcast_to_owner() {
+        let mut s = Server::new();
+        let a = s.connect(1, Vec3::new(100_000.0, 0.0, 0.0));
+        s.spawn_target(Vec3::new(100_050.0, 0.0, 0.0));
+        // Один выстрел с уроном → статистика помечена к рассылке.
+        let _ = s.resolve_fire(a, 1);
+        let plan = s.tick();
+        let seen = plan.messages[&1]
+            .iter()
+            .any(|m| matches!(m, Message::ServerCombat { .. }));
+        assert!(seen, "боевая статистика рассылается владельцу");
+    }
+
+    #[test]
+    fn orbit_targets_spawn_around_a_body() {
+        let mut s = Server::new();
+        // Цели на орбите вокруг центра (радиус тела 1000) — по кольцу.
+        let spawns = s.spawn_orbit_targets(Vec3::new(5000.0, 0.0, 0.0), 1000.0, 4);
+        assert_eq!(spawns.len(), 4, "четыре орбитальные цели");
+        // Каждая — не в центре тела и на разумном удалении (1.5 радиуса).
+        for p in &spawns {
+            let d = p.sub(Vec3::new(5000.0, 0.0, 0.0)).length();
+            assert!(d > 100.0, "цель вне центра тела: {d}");
+            assert!(d < 3000.0, "цель вблизи орбиты: {d}");
+        }
+        // Все они — мишени с известной точкой возрождения.
+        assert_eq!(s.target_spawns.len(), 4);
     }
 }

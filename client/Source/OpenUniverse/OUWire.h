@@ -74,6 +74,7 @@ namespace OUWire
         TagScripts = 33,
         TagPlaceBlueprint = 34,
         TagBlueprints = 35,
+        TagCombat = 36,
     };
 
     /// Действия редактора конструкций.
@@ -1058,6 +1059,22 @@ namespace OUWire
             Out.push_back(std::move(T));
         }
         return true;
+    }
+
+    /// Боевая статистика игрока (сервер → клиент, тег 36): убийства, урон, награда.
+    struct CombatStats
+    {
+        uint64_t Kills = 0;
+        uint64_t Damage = 0;
+        uint64_t Bounty = 0;
+    };
+
+    inline bool DecodeCombat(const uint8_t* body, size_t len, CombatStats& Out)
+    {
+        Reader r{body, len, 0};
+        uint8_t tag = 0;
+        if (!r.U8(tag) || tag != TagCombat) return false;
+        return r.Varint(Out.Kills) && r.Varint(Out.Damage) && r.Varint(Out.Bounty);
     }
 
     /// Собрать кадр ввода (клиент → сервер, тег 2).

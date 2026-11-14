@@ -301,6 +301,11 @@ pub enum Message {
     ClientPlaceBlueprint { id: u32, origin: (i32, i32, i32), entity: NetId },
     /// Сервер: библиотека шаблонов постройки (для редактора в игре).
     ServerBlueprints { templates: Vec<(u32, String, String)> },
+    /// Сервер: боевая статистика игрока (для HUD): убийства, нанесённый урон,
+    /// заработанные наградные кредиты (bounty за уничтоженные цели).
+    ///
+    /// Шлётся при изменении: выстрел с уроном, уничтожение цели, награда.
+    ServerCombat { kills: u64, damage: u64, bounty: u64 },
 }
 
 /// Территория в сообщении (для HUD).
@@ -637,6 +642,7 @@ mod wire {
     const TAG_SCRIPTS: u8 = 33;
     const TAG_PLACE_BLUEPRINT: u8 = 34;
     const TAG_BLUEPRINTS: u8 = 35;
+    const TAG_COMBAT: u8 = 36;
 
     pub fn encode(msg: &Message) -> Vec<u8> {
         let mut w = Writer::new();
@@ -954,6 +960,12 @@ mod wire {
                     w.str(desc);
                 }
             }
+            Message::ServerCombat { kills, damage, bounty } => {
+                w.u8(TAG_COMBAT);
+                w.varint(*kills);
+                w.varint(*damage);
+                w.varint(*bounty);
+            }
         }
         w.buf
     }
@@ -1253,6 +1265,11 @@ mod wire {
                 }
                 Ok(Message::ServerBlueprints { templates })
             }
+            TAG_COMBAT => Ok(Message::ServerCombat {
+                kills: r.varint()?,
+                damage: r.varint()?,
+                bounty: r.varint()?,
+            }),
             other => Err(WireError::BadTag(other)),
         }
     }
@@ -1409,6 +1426,12 @@ mod tests {
             templates: vec![(1, "Автопилот: высота".into(), "Держит высоту".into())],
         };
         assert_eq!(decode(&encode(&lib)).unwrap(), lib);
+    }
+
+    #[test]
+    fn combat_roundtrip() {
+        let c = Message::ServerCombat { kills: 3, damage: 1240, bounty: 750 };
+        assert_eq!(decode(&encode(&c)).unwrap(), c);
     }
 
     #[test]

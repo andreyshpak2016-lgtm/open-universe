@@ -763,6 +763,17 @@ void UOUClientNet::Poll()
 				UE_LOG(LogOUClient, Log, TEXT("Шаблоны постройки: %d"), Blueprints.Num());
 			}
 		}
+		else if (Body[0] == OUWire::TagCombat) // боевая статистика
+		{
+			OUWire::CombatStats C;
+			if (OUWire::DecodeCombat(Body.GetData(), static_cast<size_t>(Body.Num()), C))
+			{
+				CombatKills = static_cast<int64>(C.Kills);
+				CombatDamage = static_cast<int64>(C.Damage);
+				CombatBounty = static_cast<int64>(C.Bounty);
+				bCombatReceived = true;
+			}
+		}
 		else if (Body[0] == OUWire::TagMarketState) // состояние экономики
 		{
 			OUWire::MarketState M;

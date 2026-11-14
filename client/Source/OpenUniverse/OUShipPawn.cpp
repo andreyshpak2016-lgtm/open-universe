@@ -155,6 +155,21 @@ void AOUShipPawn::BeginPlay()
 		// Тангаж вниз (в серверных осях Y — вверх, отрицательный — к поверхности).
 		State.Pitch = -0.9f;
 	}
+	else if (FParse::Param(FCommandLine::Get(), TEXT("OUCombatDemo")))
+	{
+		// Диагностика: корабль рядом с боевыми целями (для снимка HUD боя).
+		// Цели-дроны висят в 40/70/100 м впереди базы, ~15 м вверх.
+		const FVector Base = AOUVoxelPlanet::HomeSpawn(2.0f);
+		const FVector Up = Base.GetSafeNormal();
+		FVector Fwd = FVector::VectorPlaneProject(FVector(1.f, 0.f, 0.f), Up).GetSafeNormal();
+		if (Fwd.IsNearlyZero())
+		{
+			Fwd = FVector::VectorPlaneProject(FVector::ForwardVector, Up).GetSafeNormal();
+		}
+		const FVector SpawnUE = Base + Fwd * 3000.f;   // ~30 м впереди базы
+		State.Position = OUInterop::UEToServer(SpawnUE);
+		SetActorLocation(SpawnUE);
+	}
 	else if (GetActorLocation().IsNearlyZero())
 	{
 		const FVector SpawnUE = AOUVoxelPlanet::HomeSpawn(2.0f);
@@ -899,9 +914,10 @@ void AOUShipPawn::Tick(float DeltaSeconds)
 			}
 			// Какая территория под кораблём (для HUD и клавиши захвата T).
 			Net->UpdateTerritoryAt(State.Position.X, State.Position.Y, State.Position.Z);
-			// Диагностика `-OUMoonOrbit`: не реконсилимся — держим корабль у луны,
-			// чтобы её процедурный рельеф попал в кадр.
-			if (!FParse::Param(FCommandLine::Get(), TEXT("OUMoonOrbit")))
+			// Диагностика `-OUMoonOrbit`/`-OUCombatDemo`: не реконсилимся —
+			// держим корабль на месте для снимка.
+			if (!FParse::Param(FCommandLine::Get(), TEXT("OUMoonOrbit")) &&
+				!FParse::Param(FCommandLine::Get(), TEXT("OUCombatDemo")))
 			{
 				// Реконсиляция: принимаем авторитетное состояние своей сущности
 				// и переигрываем ещё не подтверждённые кадры.

@@ -400,6 +400,20 @@ int main(int argc, char** argv)
             "шаблон: id/имя совпали");
     }
 
+    // --- 6h. Боевая статистика (тег 36) ---
+    std::printf("\n=== 6h. Боевая статистика ===\n");
+    {
+        // [tag36][kills varint][damage varint][bounty varint].
+        std::vector<uint8_t> cb;
+        cb.push_back(OUWire::TagCombat);
+        OUWire::push_varint(cb, 3);
+        OUWire::push_varint(cb, 1240);
+        OUWire::push_varint(cb, 750);
+        OUWire::CombatStats cs;
+        Check(OUWire::DecodeCombat(cb.data(), cb.size(), cs), "статистика разобрана");
+        Check(cs.Kills == 3 && cs.Damage == 1240 && cs.Bounty == 750, "поля боя совпали");
+    }
+
     // --- 7. Приветствие сервера (какой сущностью управляем) ---
     std::printf("\n=== 7. Приветствие сервера (welcome) ===\n");
     {

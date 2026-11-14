@@ -1394,9 +1394,22 @@ void AOUPlayerMenuController::DrawGameHud(UCanvas* InCanvas)
 		}
 	}
 
-	// --- Справа сверху: состояние сети ---
-	ResolveNet();
+	// --- Боевая статистика: убийства, урон, награда (bounty) ---
+	if (Net && Net->bCombatReceived)
 	{
+		const FVector2D BP(16, 240);
+		GlassPanel(InCanvas, BP, FVector2D(230, 82), PanelB, Line);
+		DrawText(InCanvas, Tiny, TEXT("БОЙ"), BP + FVector2D(12, 8), ColAccent);
+		DrawText(InCanvas, Tiny, FString::Printf(TEXT("убито целей     %lld"), Net->CombatKills),
+			BP + FVector2D(12, 28), ColText);
+		DrawText(InCanvas, Tiny, FString::Printf(TEXT("нанесён урон    %lld"), Net->CombatDamage),
+			BP + FVector2D(12, 46), Dim);
+		DrawText(InCanvas, Tiny, FString::Printf(TEXT("награда         %lld кр"), Net->CombatBounty),
+			BP + FVector2D(12, 64), ColOk);
+	}
+
+	// --- Справа сверху: состояние сети ---
+	ResolveNet();	{
 		const bool bConnected = Net && (Net->IsConnected() || Net->bSystemReceived);
 		const FString St = bConnected ? TEXT("СВЯЗЬ  OK") : TEXT("СВЯЗЬ  НЕТ");
 		const FLinearColor C = bConnected ? ColOk : ColErr;

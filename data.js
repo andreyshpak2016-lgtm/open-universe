@@ -149,8 +149,8 @@ window.PLAN = {
         { "title": "Взрывные воронки от боя: уничтожение у поверхности оставляет кратер", "title_en": "Blast craters from combat: destruction near the surface leaves a crater", "status": "done" },
         { "title": "Захват и удержание территорий (в игре: зоны у базы и соседних тел, клавиша T)", "title_en": "Territory capture and holding (in game: zones at the base and neighbours, key T)", "status": "done" },
         { "title": "Право собственности и налоги (налог с торговли идёт владельцу зоны)", "title_en": "Ownership and taxes (trade tax goes to the zone owner)", "status": "done" },
-        { "title": "Орбитальные и планетарные сражения", "title_en": "Orbital and planetary battles", "status": "in_progress" },
-        { "title": "Античит и валидация на сервере", "title_en": "Anti-cheat and server-side validation", "status": "in_progress" }
+        { "title": "Орбитальные и планетарные сражения (орбитальные цели, награда за уничтожение, HUD боя)", "title_en": "Orbital and planetary battles (orbital targets, destroy bounty, combat HUD)", "status": "done" },
+        { "title": "Античит и валидация на сервере (детерминированные исходы выстрелов)", "title_en": "Anti-cheat and server-side validation (deterministic shot outcomes)", "status": "done" }
       ]
     },
     {

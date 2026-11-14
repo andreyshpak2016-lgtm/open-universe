@@ -608,6 +608,24 @@ public:
 	/** Поставить шаблон постройки по id с якорем (X,Y,Z) в конструкцию Entity. */
 	void SendPlaceBlueprint(int32 Id, int32 X, int32 Y, int32 Z, int32 Entity);
 
+	// --- Боевая статистика (HUD) ---
+
+	/** Уничтожено целей игроком. */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Combat")
+	int64 CombatKills = 0;
+
+	/** Суммарный нанесённый урон. */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Combat")
+	int64 CombatDamage = 0;
+
+	/** Заработано награды (bounty) за уничтоженные цели. */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Combat")
+	int64 CombatBounty = 0;
+
+	/** Приходила ли боевая статистика. */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Combat")
+	bool bCombatReceived = false;
+
 	/** Подключиться к серверу. */
 	UFUNCTION(BlueprintCallable, Category = "Open Universe|Net")
 	bool Connect();
