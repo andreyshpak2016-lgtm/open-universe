@@ -552,10 +552,59 @@ bool AOUPlayerMenuController::InputKey(const FInputKeyParams& Params)
 {
 	const FKey Key = Params.Key;
 
+	// --- Ввод чата (Enter в игре): перехватывает клавиши, пока открыт ---
+	if (!bMenuOpen && !bPauseOpen && bChatInputOpen)
+	{
+		if (Params.Event == IE_Pressed || Params.Event == IE_Repeat)
+		{
+			if (Key == EKeys::Enter)
+			{
+				SubmitChat();
+				return true;
+			}
+			if (Key == EKeys::Escape)
+			{
+				bChatInputOpen = false;
+				ChatInput.Empty();
+				SetMenuCursor(false);
+				return true;
+			}
+			if (Key == EKeys::BackSpace)
+			{
+				if (ChatInput.Len() > 0)
+				{
+					ChatInput.LeftChopInline(1);
+				}
+				return true;
+			}
+			if (Key == EKeys::Tab)
+			{
+				// Смена канала: локальный → общий → организация.
+				ChatChannel = (ChatChannel + 1) % 3;
+				return true;
+			}
+			const TCHAR Ch = KeyToChar(Key);
+			if (Ch != 0 && ChatInput.Len() < 200)
+			{
+				ChatInput.AppendChar(Ch);
+				return true;
+			}
+		}
+		return true;   // пока ввод чата открыт — не пропускаем игровой ввод
+	}
+
+	// --- Enter в игре: открыть ввод чата ---
+	if (Key == EKeys::Enter && Params.Event == IE_Pressed && !bMenuOpen && !bPauseOpen)
+	{
+		bChatInputOpen = true;
+		ChatInput.Empty();
+		SetMenuCursor(true);   // курсор для ввода (как при работе с UI)
+		return true;
+	}
+
 	// --- ESC: пауза-меню в игре ---
 	if (Key == EKeys::Escape && Params.Event == IE_Pressed)
-	{
-		if (bPauseOpen)
+	{		if (bPauseOpen)
 		{
 			if (Screen == EOUMenuScreen::Settings)
 			{
@@ -1532,6 +1581,65 @@ void AOUPlayerMenuController::DrawWorkshop(UCanvas* InCanvas)
 
 	DrawText(InCanvas, Tiny, TEXT("Свой шаблон ставится в редакторе строительства (клавиша B)."),
 		P + FVector2D(24, PH - 26), Dim);
+}
+
+void AOUPlayerMenuController::SubmitChat()
+{
+	bChatInputOpen = false;
+	ResolveNet();
+	if (Net && ChatInput.Len() > 0)
+	{
+		Net->SendChat(ChatChannel, ChatInput);
+	}
+	ChatInput.Empty();
+	SetMenuCursor(false);
+}
+
+void AOUPlayerMenuController::DrawChat(UCanvas* InCanvas)
+{
+	if (bMenuOpen || !InCanvas)
+	{
+		return;
+	}
+	ResolveNet();
+	UFont* Small = GEngine->GetMediumFont();
+	UFont* Tiny = GEngine->GetSmallFont();
+	const float W = InCanvas->SizeX;
+	const float H = InCanvas->SizeY;
+	const FLinearColor Dim(0.72f, 0.78f, 0.9f, 1.f);
+
+	// Лог — левый низ над панелью добычи/подсказкой управления.
+	if (Net && Net->ChatLog.Num() > 0)
+	{
+		const float Now = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.f;
+		// Плавное затухание: свежие сообщения ярче, старые (через 12 с) тускнеют.
+		const float Age = Now - Net->LastChatTime;
+		const float Alpha = (Age < 12.f) ? 1.f : FMath::Clamp(1.f - (Age - 12.f) / 8.f, 0.25f, 1.f);
+		const int32 N = Net->ChatLog.Num();
+		for (int32 i = 0; i < N; ++i)
+		{
+			FLinearColor C = Dim;
+			C.A = Alpha;
+			// Чем старее строка, тем выше она поднимается.
+			DrawText(InCanvas, Tiny, Net->ChatLog[i],
+				FVector2D(18, H - 250 - (N - 1 - i) * 16.f), C);
+		}
+	}
+
+	// Строка ввода (когда открыт чат) — по центру снизу.
+	if (bChatInputOpen)
+	{
+		static const TCHAR* ChName[3] = { TEXT("локальный"), TEXT("общий"), TEXT("организация") };
+		const int32 Ci = FMath::Clamp(ChatChannel, 0, 2);
+		const float BW = W - 80.f;
+		const FVector2D BP(40.f, H - 150.f);
+		FillBox(InCanvas, BP, FVector2D(BW, 30.f), FLinearColor(0.03f, 0.05f, 0.10f, 0.85f));
+		StrokeBox(InCanvas, BP, FVector2D(BW, 30.f), ColAccent2, 2.f);
+		const FString Line = FString::Printf(TEXT("[%s] %s_"), ChName[Ci], *ChatInput);
+		DrawText(InCanvas, Small, Line, BP + FVector2D(12, 7), ColText);
+		DrawText(InCanvas, Tiny, TEXT("Enter — отправить  ·  Tab — канал  ·  Esc — отмена"),
+			FVector2D(44.f, H - 116.f), Dim);
+	}
 }
 
 FString AOUPlayerMenuController::ItemName(int32 Item)

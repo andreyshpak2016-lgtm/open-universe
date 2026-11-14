@@ -48,6 +48,9 @@ pub const EXPLOSION_SLOTS: u32 = 24;
 /// Награда (bounty) в кредитах за уничтожение боевой цели — для HUD и экономики.
 pub const DESTROY_BOUNTY: u64 = 250;
 
+/// Радиус слышимости локального чата (серверные единицы; 500 м).
+pub const CHAT_LOCAL_RADIUS: f64 = 500.0;
+
 /// Ранг участника организации.
 pub const RANK_MEMBER: u8 = 0;
 /// Офицер: может назначать ранги участникам.
@@ -117,8 +120,7 @@ impl Construction {
 
 /// Подключённый игрок.
 #[derive(Clone, Debug)]
-pub struct Connection {
-    pub player_id: NetId,
+pub struct Connection {    pub player_id: NetId,
     /// Сущность, которой управляет игрок (может отличаться от player_id).
     pub entity_id: NetId,
     /// Последний кадр ввода от клиента.
@@ -181,6 +183,8 @@ pub struct Server {
     pub player_org: BTreeMap<NetId, u32>,
     /// Игроки, которым надо обновить состояние организации.
     pub org_dirty: BTreeSet<NetId>,
+    /// Позывной каждого игрока (для чата и подписей).
+    pub names: BTreeMap<NetId, String>,
     /// Конструкции сущностей: что игроки построили (права + ревизии).
     pub constructions: BTreeMap<NetId, Construction>,
     /// Корпус каждой сущности: щит, броня, критические повреждения.
@@ -329,6 +333,7 @@ impl Server {
             next_org_id: 1,
             player_org: BTreeMap::new(),
             org_dirty: BTreeSet::new(),
+            names: BTreeMap::new(),
             constructions: BTreeMap::new(),
             hulls: BTreeMap::new(),
             weapons: BTreeMap::new(),
@@ -1384,6 +1389,68 @@ impl Server {
             .map(|(oid, o)| (*oid, o.name.clone(), o.tag.clone(), o.members.len() as u32))
             .collect();
         Message::ServerOrg { id, name, tag, members, diplomacy, all }
+    }
+
+    /// Запомнить позывной игрока (для чата и подписей).
+    pub fn set_name(&mut self, player: NetId, name: String) {
+        self.names.insert(player, name);
+    }
+
+    /// Сущность игрока (или сам id, если это не игрок).
+    fn entity_of(&self, player: NetId) -> NetId {
+        self.connections.get(&player).map(|c| c.entity_id).unwrap_or(player)
+    }
+
+    /// Обработать сообщение чата от игрока (авторитетно).
+    ///
+    /// Возвращает список (получатель, сообщение): локальный канал — только тем,
+    /// кто рядом; глобальный — всем; канал организации — только участникам.
+    /// Текст обрезается (без пустых и слишком длинных).
+    pub fn chat_as(&self, player: NetId, channel: u8, text: String) -> Vec<(NetId, Message)> {
+        let text = text.trim();
+        if text.is_empty() {
+            return Vec::new();
+        }
+        let text: String = text.chars().take(200).collect();
+        let name = self.names.get(&player).cloned().unwrap_or_else(|| format!("игрок {player}"));
+        let msg = Message::ServerChat { from: player, name, channel, text };
+        let mut out = Vec::new();
+        match channel {
+            0 => {
+                // Локальный чат: только тем, кто рядом с автором.
+                let Some(me) = self.world.entities.get(&self.entity_of(player)) else {
+                    return out;
+                };
+                let my_pos = me.state.pos;
+                for conn in self.connections.values() {
+                    if let Some(e) = self.world.entities.get(&conn.entity_id) {
+                        if my_pos.distance(e.state.pos) <= CHAT_LOCAL_RADIUS {
+                            out.push((conn.player_id, msg.clone()));
+                        }
+                    }
+                }
+            }
+            1 => {
+                for conn in self.connections.values() {
+                    out.push((conn.player_id, msg.clone()));
+                }
+            }
+            _ => {
+                if let Some(org) = self.player_org.get(&player).copied() {
+                    let members: Vec<NetId> = self
+                        .orgs
+                        .get(&org)
+                        .map(|o| o.members.keys().copied().collect())
+                        .unwrap_or_default();
+                    for p in members {
+                        out.push((p, msg.clone()));
+                    }
+                } else {
+                    out.push((player, msg.clone()));
+                }
+            }
+        }
+        out
     }
 
     /// Привязать к сущности скрипт-шаблон по id игрока (авторитетно).
@@ -3212,5 +3279,56 @@ mod tests {
             .iter()
             .any(|m| matches!(m, Message::ServerOrg { id: oid, .. } if *oid == id));
         assert!(seen, "состояние организации рассылается");
+    }
+
+    // --- чат ---
+
+    #[test]
+    fn global_chat_reaches_everyone() {
+        let mut s = Server::new();
+        s.connect_on_planet(1);
+        s.connect_on_planet(2);
+        s.set_name(1, "Пилот".to_string());
+        let out = s.chat_as(1, 1, "привет".to_string());
+        // Двое получателей, оба с текстом и именем.
+        assert_eq!(out.len(), 2, "глобальный чат — всем");
+        assert!(out.iter().all(|(_, m)| matches!(
+            m, Message::ServerChat { from, text, .. } if *from == 1 && text == "привет"
+        )));
+    }
+
+    #[test]
+    fn local_chat_is_limited_by_distance() {
+        let mut s = Server::new();
+        // Двое рядом и один далеко (за радиусом слышимости).
+        s.connect(1, Vec3::ZERO);
+        s.connect(2, Vec3::new(100.0, 0.0, 0.0));
+        s.connect(3, Vec3::new(5_000.0, 0.0, 0.0));
+        let out = s.chat_as(1, 0, "локально".to_string());
+        let recipients: Vec<NetId> = out.iter().map(|(p, _)| *p).collect();
+        assert!(recipients.contains(&1), "автор слышит себя");
+        assert!(recipients.contains(&2), "сосед слышит");
+        assert!(!recipients.contains(&3), "далёкий не слышит");
+    }
+
+    #[test]
+    fn org_chat_reaches_only_members() {
+        let mut s = Server::new();
+        s.connect_on_planet(1);
+        s.connect_on_planet(2);
+        s.connect_on_planet(3);
+        let id = s.create_org(1, "Легион".to_string(), "LEG".to_string()).unwrap();
+        s.join_org(2, id).unwrap();
+        let out = s.chat_as(1, 2, "своим".to_string());
+        let recipients: Vec<NetId> = out.iter().map(|(p, _)| *p).collect();
+        assert!(recipients.contains(&1) && recipients.contains(&2), "свои слышат");
+        assert!(!recipients.contains(&3), "чужой не слышит");
+    }
+
+    #[test]
+    fn empty_chat_is_ignored() {
+        let mut s = Server::new();
+        s.connect_on_planet(1);
+        assert!(s.chat_as(1, 1, "   ".to_string()).is_empty());
     }
 }

@@ -147,7 +147,8 @@
       "goal": "Организации, прогрессия и мета-системы.",
       "tasks": [
         { "title": "Организации, ранги, дипломатия (гильдии: создание/вступление/выход, ранги, союзы/войны, окно O)", "status": "done" },
-        { "title": "Голосовой и текстовый чат", "status": "todo" },
+        { "title": "Текстовый чат (каналы локальный/глобальный/организация, Enter — ввод, Tab — канал)", "title_en": "Text chat (local/global/organization channels, Enter to type, Tab for channel)", "status": "done" },
+        { "title": "Голосовой чат (голосовая связь)", "title_en": "Voice chat", "status": "todo" },
         { "title": "Внутриигровая валюта и рынок предметов (MTX)", "status": "todo" },
         { "title": "Таланты/прогрессия персонажа", "status": "todo" },
         { "title": "Обучение для новичков (tutorial)", "status": "todo" }

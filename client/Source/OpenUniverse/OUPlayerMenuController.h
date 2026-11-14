@@ -239,6 +239,26 @@ public:
 	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Org")
 	bool bOrgOpen = false;
 
+	// --- Чат ---
+
+	/** Открыт ли ввод чата (Enter в игре). */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Chat")
+	bool bChatInputOpen = false;
+
+	/** Текущий набираемый текст чата. */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Chat")
+	FString ChatInput;
+
+	/** Канал чата: 0 локальный, 1 глобальный, 2 организация. */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Chat")
+	int32 ChatChannel = 1;
+
+	/** Отправить набранный текст чата (Enter) и закрыть ввод. */
+	void SubmitChat();
+
+	/** Нарисовать лог чата и строку ввода в HUD. */
+	void DrawChat(class UCanvas* InCanvas);
+
 	/** Имя предмета по id (дублирует серверный реестр). */
 	static FString ItemName(int32 Item);
 

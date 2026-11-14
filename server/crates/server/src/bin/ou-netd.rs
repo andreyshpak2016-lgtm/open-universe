@@ -174,6 +174,8 @@ fn main() {
                             net.send_to(token, from, &server.workshop_state(next_player)).ok();
                             // И состояние организации игрока.
                             net.send_to(token, from, &server.org_state(next_player)).ok();
+                            // Запоминаем позывной для чата.
+                            server.set_name(next_player, name.clone());
                             next_player += 1;
                         }
                     }
@@ -356,6 +358,17 @@ fn main() {
                                 Err(e) => Message::ServerOrgResult { ok: false, message: e },
                             };
                             net.send_to(token, from, &msg).ok();
+                        }
+                    }
+                    Message::ClientChat { channel, text } => {
+                        if let Some(pid) = clients.get(&from) {
+                            // Рассылаем по каналам: локально/глобально/организация.
+                            let fanout = server.chat_as(*pid, channel, text);
+                            for (to, msg) in fanout {
+                                if let Some(addr) = clients.iter().find(|(_, p)| **p == to).map(|(a, _)| *a) {
+                                    net.send_to(token, addr, &msg).ok();
+                                }
+                            }
                         }
                     }
                     _ => {}

@@ -776,6 +776,19 @@ public:
 	/** Объявить дипломатию к организации (org, стойка 0/1/2). */
 	void SendDeclareDiplomacy(int32 Org, int32 Stance);
 
+	// --- Чат ---
+
+	/** История чата (последние сообщения) для отрисовки в HUD. */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Chat")
+	TArray<FString> ChatLog;
+
+	/** Время последнего сообщения чата (мир) — для плавного затухания. */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Chat")
+	float LastChatTime = -100.f;
+
+	/** Отправить сообщение в чат (channel 0 локальный, 1 глобальный, 2 организация). */
+	void SendChat(int32 Channel, const FString& Text);
+
 	/** Подключиться к серверу. */
 	UFUNCTION(BlueprintCallable, Category = "Open Universe|Net")
 	bool Connect();

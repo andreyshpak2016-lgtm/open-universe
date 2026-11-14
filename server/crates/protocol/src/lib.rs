@@ -348,6 +348,16 @@ pub enum Message {
     },
     /// Сервер: результат операции с организацией (для подсказки игроку).
     ServerOrgResult { ok: bool, message: String },
+    /// Клиент: отправить сообщение в чат.
+    ///
+    /// `channel`: 0 локальный (радиус слышимости), 1 глобальный, 2 организация.
+    /// Сервер фильтрует и рассылает как `ServerChat`. Пустой текст игнорируется.
+    ClientChat { channel: u8, text: String },
+    /// Сервер: сообщение чата для отображения.
+    ///
+    /// `from` — id игрока-автора, `name` — его позывной, `channel` — канал,
+    /// `text` — текст. Локальный канал приходит только тем, кто рядом.
+    ServerChat { from: NetId, name: String, channel: u8, text: String },
 }
 
 /// Территория в сообщении (для HUD).
@@ -697,6 +707,8 @@ mod wire {
     const TAG_DECLARE_DIPLOMACY: u8 = 46;
     const TAG_ORG: u8 = 47;
     const TAG_ORG_RESULT: u8 = 48;
+    const TAG_CHAT: u8 = 49;
+    const TAG_SERVER_CHAT: u8 = 50;
 
     pub fn encode(msg: &Message) -> Vec<u8> {
         let mut w = Writer::new();
@@ -1108,6 +1120,18 @@ mod wire {
                 w.bool(*ok);
                 w.str(message);
             }
+            Message::ClientChat { channel, text } => {
+                w.u8(TAG_CHAT);
+                w.u8(*channel);
+                w.str(text);
+            }
+            Message::ServerChat { from, name, channel, text } => {
+                w.u8(TAG_SERVER_CHAT);
+                w.varint(*from as u64);
+                w.str(name);
+                w.u8(*channel);
+                w.str(text);
+            }
         }
         w.buf
     }
@@ -1485,6 +1509,16 @@ mod wire {
                 ok: r.bool()?,
                 message: r.str()?,
             }),
+            TAG_CHAT => Ok(Message::ClientChat {
+                channel: r.u8()?,
+                text: r.str()?,
+            }),
+            TAG_SERVER_CHAT => Ok(Message::ServerChat {
+                from: r.varint()? as NetId,
+                name: r.str()?,
+                channel: r.u8()?,
+                text: r.str()?,
+            }),
             other => Err(WireError::BadTag(other)),
         }
     }
@@ -1689,6 +1723,19 @@ mod tests {
         assert_eq!(decode(&encode(&st)).unwrap(), st);
         let rr = Message::ServerOrgResult { ok: false, message: "нет прав".into() };
         assert_eq!(decode(&encode(&rr)).unwrap(), rr);
+    }
+
+    #[test]
+    fn chat_roundtrip() {
+        let c = Message::ClientChat { channel: 1, text: "привет всем".into() };
+        assert_eq!(decode(&encode(&c)).unwrap(), c);
+        let s = Message::ServerChat {
+            from: 7,
+            name: "TestPilot".into(),
+            channel: 1,
+            text: "привет всем".into(),
+        };
+        assert_eq!(decode(&encode(&s)).unwrap(), s);
     }
 
     #[test]

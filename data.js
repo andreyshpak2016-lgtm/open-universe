@@ -175,7 +175,8 @@ window.PLAN = {
       "goal_en": "Organizations, progression and meta systems.",
       "tasks": [
         { "title": "Организации, ранги, дипломатия (гильдии: создание/вступление/выход, ранги, союзы/войны, окно O)", "title_en": "Organizations, ranks, diplomacy (guilds: create/join/leave, ranks, alliances/wars, key O)", "status": "done" },
-        { "title": "Голосовой и текстовый чат", "title_en": "Voice and text chat", "status": "todo" },
+        { "title": "Текстовый чат (каналы локальный/глобальный/организация, Enter — ввод, Tab — канал)", "title_en": "Text chat (local/global/organization channels, Enter to type, Tab for channel)", "status": "done" },
+        { "title": "Голосовой чат (голосовая связь)", "title_en": "Voice chat", "status": "todo" },
         { "title": "Внутриигровая валюта и рынок предметов (MTX)", "title_en": "In-game currency and item market (MTX)", "status": "todo" },
         { "title": "Таланты/прогрессия персонажа", "title_en": "Character talents and progression", "status": "todo" },
         { "title": "Обучение для новичков (tutorial)", "title_en": "New player tutorial", "status": "todo" }

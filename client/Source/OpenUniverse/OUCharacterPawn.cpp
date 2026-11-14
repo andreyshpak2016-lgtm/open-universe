@@ -1331,7 +1331,7 @@ void AOUCharacterPawn::Tick(float DeltaSeconds)
 	// Пауза-меню (ESC): персонаж не двигается и не смотрит, пока оно открыто.
 	if (AOUPlayerMenuController* Menu = Cast<AOUPlayerMenuController>(GetController()))
 	{
-		if (Menu->IsPauseMenuOpen())
+		if (Menu->IsPauseMenuOpen() || Menu->bChatInputOpen)
 		{
 			// Гасим накопленный ввод, чтобы при возврате не «рвануло».
 			InputForward = 0.f;
@@ -1345,7 +1345,7 @@ void AOUCharacterPawn::Tick(float DeltaSeconds)
 	else if (AOUPlayerMenuController* Menu2 = Cast<AOUPlayerMenuController>(
 		World->GetFirstPlayerController()))
 	{
-		if (Menu2->IsPauseMenuOpen())
+		if (Menu2->IsPauseMenuOpen() || Menu2->bChatInputOpen)
 		{
 			InputForward = 0.f;
 			InputRight = 0.f;
@@ -1727,6 +1727,21 @@ void AOUCharacterPawn::Tick(float DeltaSeconds)
 			{
 				Net->SendCreateOrg(TEXT("Легион TestPilot"), TEXT("LEG"));
 				UE_LOG(LogOUChar, Log, TEXT("Организация: создаю"));
+			}
+		}
+	}
+
+	// Тест чата (`-OUAutoChat`): отправить пару сообщений в глобальный чат.
+	if (FParse::Param(FCommandLine::Get(), TEXT("OUAutoChat")))
+	{
+		ChatTimer += DeltaSeconds;
+		if (ChatTimer >= 2.f && ChatCount < 6)
+		{
+			ChatTimer = 0.f;
+			++ChatCount;
+			if (Net && Net->IsConnected())
+			{
+				Net->SendChat(1, FString::Printf(TEXT("Привет, мир! Сообщение %d"), ChatCount));
 			}
 		}
 	}

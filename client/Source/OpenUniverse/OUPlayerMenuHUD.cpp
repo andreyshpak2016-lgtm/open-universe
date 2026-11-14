@@ -27,6 +27,8 @@ void AOUPlayerMenuHUD::DrawHUD()
 		Menu->DrawWorkshop(Canvas);
 		// Окно организации (O).
 		Menu->DrawOrg(Canvas);
+		// Чат (лог и строка ввода).
+		Menu->DrawChat(Canvas);
 		// Пауза-меню (ESC) — поверх всего.
 		Menu->DrawPauseMenu(Canvas);
 	}

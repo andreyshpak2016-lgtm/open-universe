@@ -500,6 +500,30 @@ int main(int argc, char** argv)
         Check(OUWire::DecodeOrgResult(orb.data(), orb.size(), ok, om) && ok, "результат орг разобран");
     }
 
+    // --- 6k. Чат (теги 49/50) ---
+    std::printf("\n=== 6k. Чат ===\n");
+    {
+        auto push_str = [](std::vector<uint8_t>& out, const std::string& s) {
+            out.push_back(static_cast<uint8_t>(s.size() & 0xFF));
+            out.push_back(static_cast<uint8_t>((s.size() >> 8) & 0xFF));
+            out.insert(out.end(), s.begin(), s.end());
+        };
+        const std::vector<uint8_t> cb = OUWire::EncodeChat(1, "привет");
+        Check(cb[0] == OUWire::TagChat, "тег чата = 49");
+        Check(cb[1] == 1, "канал чата = 1");
+        // Сообщение: [tag50][from][name][channel][text].
+        std::vector<uint8_t> sb;
+        sb.push_back(OUWire::TagServerChat);
+        OUWire::push_varint(sb, 7);
+        push_str(sb, "TestPilot");
+        sb.push_back(1);
+        push_str(sb, "привет всем");
+        OUWire::ChatMessage cm;
+        Check(OUWire::DecodeServerChat(sb.data(), sb.size(), cm), "сообщение чата разобрано");
+        Check(cm.From == 7 && cm.Name == "TestPilot" && cm.Channel == 1 && cm.Text == "привет всем",
+            "поля чата совпали");
+    }
+
     // --- 7. Приветствие сервера (какой сущностью управляем) ---
     std::printf("\n=== 7. Приветствие сервера (welcome) ===\n");
     {

@@ -379,6 +379,15 @@ void UOUClientNet::SendDeclareDiplomacy(int32 Org, int32 Stance)
 	TArray<uint8> Arr; Arr.Append(Body.data(), static_cast<int32>(Body.size())); SendPacket(Arr);
 }
 
+void UOUClientNet::SendChat(int32 Channel, const FString& Text)
+{
+	if (!IsConnected()) { return; }
+	const std::string Utf8(TCHAR_TO_UTF8(*Text));
+	const std::vector<uint8_t> Body = OUWire::EncodeChat(
+		static_cast<uint8_t>(FMath::Clamp(Channel, 0, 2)), Utf8);
+	TArray<uint8> Arr; Arr.Append(Body.data(), static_cast<int32>(Body.size())); SendPacket(Arr);
+}
+
 void UOUClientNet::UpdateTerritoryAt(double ServerX, double ServerY, double ServerZ)
 {
 	// Точка игрока в серверных единицах; зоны тоже в серверных.
@@ -940,6 +949,28 @@ void UOUClientNet::Poll()
 				bOrgReceived = true;
 				UE_LOG(LogOUClient, Log, TEXT("Организация: id %d «%s» (%d участников, всего %d)"),
 					OrgId, *OrgName, OrgMembers.Num(), AllOrgs.Num());
+			}
+		}
+		else if (Body[0] == OUWire::TagServerChat) // сообщение чата
+		{
+			OUWire::ChatMessage M;
+			if (OUWire::DecodeServerChat(Body.GetData(), static_cast<size_t>(Body.Num()), M))
+			{
+				static const TCHAR* Ch[3] = { TEXT("лок"), TEXT("общ"), TEXT("орг") };
+				const int32 Ci = FMath::Clamp(static_cast<int32>(M.Channel), 0, 2);
+				const FString Line = FString::Printf(TEXT("[%s] %s: %s"),
+					Ch[Ci], UTF8_TO_TCHAR(M.Name.c_str()), UTF8_TO_TCHAR(M.Text.c_str()));
+				ChatLog.Add(Line);
+				// Держим только последние строки.
+				if (ChatLog.Num() > 8)
+				{
+					ChatLog.RemoveAt(0, ChatLog.Num() - 8);
+				}
+				if (UWorld* W = GetWorld())
+				{
+					LastChatTime = W->GetTimeSeconds();
+				}
+				UE_LOG(LogOUClient, Log, TEXT("Чат: %s"), *Line);
 			}
 		}
 		else if (Body[0] == OUWire::TagMarketState) // состояние экономики

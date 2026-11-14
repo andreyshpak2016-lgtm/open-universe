@@ -233,6 +233,10 @@ public:
 	float OrgTimer = 0.f;
 	int32 OrgCount = 0;
 
+	/** Таймер/счётчик теста чата (`-OUAutoChat`). */
+	float ChatTimer = 0.f;
+	int32 ChatCount = 0;
+
 	/** Таймер/счётчик тестового крафта (`-OUAutoCraft`). */
 	float CraftTimer = 0.f;
 	int32 CraftCount = 0;

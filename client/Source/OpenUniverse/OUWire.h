@@ -87,6 +87,8 @@ namespace OUWire
         TagDeclareDiplomacy = 46,
         TagOrg = 47,
         TagOrgResult = 48,
+        TagChat = 49,
+        TagServerChat = 50,
     };
 
     /// Действия редактора конструкций.
@@ -1335,6 +1337,40 @@ namespace OUWire
         if (!r.U8(tag) || tag != TagOrgResult) return false;
         if (!r.Bool(Ok)) return false;
         return r.Str(Message);
+    }
+
+    /// Собрать сообщение чата (клиент → сервер, тег 49): [tag][channel u8][text].
+    inline std::vector<uint8_t> EncodeChat(uint8_t Channel, const std::string& Text)
+    {
+        std::vector<uint8_t> out;
+        out.push_back(TagChat);
+        out.push_back(Channel);
+        out.push_back(static_cast<uint8_t>(Text.size() & 0xFF));
+        out.push_back(static_cast<uint8_t>((Text.size() >> 8) & 0xFF));
+        out.insert(out.end(), Text.begin(), Text.end());
+        return out;
+    }
+
+    /// Сообщение чата (сервер → клиент, тег 50).
+    struct ChatMessage
+    {
+        uint32_t From = 0;
+        std::string Name;
+        uint8_t Channel = 0;
+        std::string Text;
+    };
+
+    inline bool DecodeServerChat(const uint8_t* body, size_t len, ChatMessage& Out)
+    {
+        Reader r{body, len, 0};
+        uint8_t tag = 0;
+        if (!r.U8(tag) || tag != TagServerChat) return false;
+        uint64_t from = 0;
+        if (!r.Varint(from)) return false;
+        Out.From = static_cast<uint32_t>(from);
+        if (!r.Str(Out.Name)) return false;
+        if (!r.U8(Out.Channel)) return false;
+        return r.Str(Out.Text);
     }
 
     /// Собрать кадр ввода (клиент → сервер, тег 2).

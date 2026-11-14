@@ -839,7 +839,7 @@ void AOUShipPawn::Tick(float DeltaSeconds)
 	// ввод не отправляется: игрок сначала выбирает персонажа и сервер.
 	if (AOUPlayerMenuController* Menu = GetMenuController())
 	{
-		if (Menu->IsMenuOpen())
+		if (Menu->IsMenuOpen() || Menu->bChatInputOpen)
 		{
 			ApplyStateToActor();
 			return;
