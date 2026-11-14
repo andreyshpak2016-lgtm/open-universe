@@ -202,6 +202,19 @@ public:
 	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Economy")
 	bool bMarketOpen = false;
 
+	/**
+	 * Окно скриптов объекта (клавиша L).
+	 *
+	 * Показывает библиотеку шаблонов (автопилот/турель/логистика), текущий
+	 * привязанный скрипт, счётчики запусков/ошибок и свежий вывод `log()`.
+	 * Клик по шаблону привязывает его к объекту игрока (сервер авторитетно).
+	 */
+	void DrawScripts(class UCanvas* InCanvas);
+
+	/** Открыто ли окно скриптов. */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Script")
+	bool bScriptsOpen = false;
+
 	/** Имя предмета по id (дублирует серверный реестр). */
 	static FString ItemName(int32 Item);
 

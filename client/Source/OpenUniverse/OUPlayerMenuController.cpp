@@ -361,6 +361,31 @@ void AOUPlayerMenuController::OnLeftClick()
 				}
 				return;
 			}
+			// Скрипты: строки шаблонов с id 300+, снятие — id 350.
+			if (bScriptsOpen && B.Id >= 300)
+			{
+				ResolveNet();
+				if (!Net)
+				{
+					return;
+				}
+				if (B.Id == 350)
+				{
+					Net->SendSetScript(0);
+					UE_LOG(LogOUMenu, Log, TEXT("Скрипты: снять скрипт"));
+				}
+				else
+				{
+					const int32 Index = B.Id - 300;
+					if (Net->ScriptTemplates.IsValidIndex(Index))
+					{
+						Net->SendSetScript(Net->ScriptTemplates[Index].Id);
+						UE_LOG(LogOUMenu, Log, TEXT("Скрипты: привязан шаблон %d"),
+							Net->ScriptTemplates[Index].Id);
+					}
+				}
+				return;
+			}
 			if (Screen == EOUMenuScreen::Character)
 			{
 				if (B.Id == 1)
@@ -1113,6 +1138,94 @@ void AOUPlayerMenuController::DrawMarket(UCanvas* InCanvas)
 	}
 }
 
+void AOUPlayerMenuController::DrawScripts(UCanvas* InCanvas)
+{
+	if (!bScriptsOpen || !InCanvas || bMenuOpen)
+	{
+		return;
+	}
+	ResolveNet();
+
+	const float W = InCanvas->SizeX;
+	const float H = InCanvas->SizeY;
+	UFont* Font = GEngine->GetLargeFont();
+	UFont* Small = GEngine->GetMediumFont();
+	UFont* Tiny = GEngine->GetSmallFont();
+	const FLinearColor PanelB(0.34f, 0.44f, 0.85f, 0.9f);
+	const FLinearColor Dim(0.66f, 0.72f, 0.86f, 1.f);
+
+	const float PW = FMath::Min(880.f, W - 80.f);
+	const float PH = FMath::Min(560.f, H - 100.f);
+	const FVector2D P((W - PW) * 0.5f, (H - PH) * 0.5f);
+	GlassPanel(InCanvas, P, FVector2D(PW, PH), PanelB, ColAccent2);
+	DrawText(InCanvas, Font, TEXT("СКРИПТЫ  ·  ОБЪЕКТ"), P + FVector2D(24, 16), ColAccent);
+	DrawText(InCanvas, Small, TEXT("L — закрыть"), P + FVector2D(PW - 130, 24), Dim);
+
+	// --- Текущий привязанный скрипт ---
+	const int32 Cur = Net ? Net->ScriptTemplate : 0;
+	const FString CurName = (Net && Net->ScriptName.Len() > 0)
+		? Net->ScriptName
+		: FString(TEXT("(скрипт не привязан)"));
+	DrawText(InCanvas, Small, FString::Printf(TEXT("Активный: %s"), *CurName), P + FVector2D(24, 60), ColText);
+	if (Net && Cur != 0)
+	{
+		DrawText(InCanvas, Tiny, FString::Printf(TEXT("запусков %lld   ·   ошибок %lld"),
+			Net->ScriptRuns, Net->ScriptErrors), P + FVector2D(24, 84), Dim);
+		if (Net->ScriptLastError.Len() > 0)
+		{
+			DrawText(InCanvas, Tiny, FString::Printf(TEXT("ошибка: %s"), *Net->ScriptLastError),
+				P + FVector2D(24, 102), ColErr);
+		}
+	}
+
+	// --- Библиотека шаблонов ---
+	const float LX = P.X + 24;
+	DrawText(InCanvas, Small, TEXT("Библиотека шаблонов (ЛКМ — привязать)"), FVector2D(LX, P.Y + 132), ColAccent);
+	const TArray<FOUScriptTemplate>& Tpls = Net ? Net->ScriptTemplates : TArray<FOUScriptTemplate>();
+	if (Tpls.Num() == 0)
+	{
+		DrawText(InCanvas, Small, TEXT("(библиотека ещё не получена)"), FVector2D(LX, P.Y + 160), Dim);
+	}
+	for (int32 i = 0; i < Tpls.Num() && i < 8; ++i)
+	{
+		const FOUScriptTemplate& T = Tpls[i];
+		const bool bActive = (T.Id == Cur);
+		const float RY = P.Y + 158 + i * 30.f;
+		FillBox(InCanvas, FVector2D(LX - 4, RY - 2), FVector2D(PW * 0.52f, 26.f),
+			bActive ? FLinearColor(0.2f, 0.4f, 0.3f, 0.8f) : FLinearColor(0.06f, 0.09f, 0.16f, 0.7f));
+		StrokeBox(InCanvas, FVector2D(LX - 4, RY - 2), FVector2D(PW * 0.52f, 26.f), bActive ? ColOk : PanelB, 1.f);
+		DrawText(InCanvas, Small, T.Name, FVector2D(LX + 4, RY), bActive ? ColOk : ColText);
+		DrawText(InCanvas, Tiny, T.Description, FVector2D(LX + 4, RY + 15), Dim);
+		Buttons.Add({ FVector2D(LX - 4, RY - 2), FVector2D(PW * 0.52f, 26.f), 300 + i });
+	}
+	// Снять скрипт.
+	{
+		const float RY = P.Y + 158 + 8 * 30.f + 6.f;
+		FillBox(InCanvas, FVector2D(LX - 4, RY - 2), FVector2D(220.f, 24.f), FLinearColor(0.16f, 0.06f, 0.08f, 0.8f));
+		StrokeBox(InCanvas, FVector2D(LX - 4, RY - 2), FVector2D(220.f, 24.f), ColErr, 1.f);
+		DrawText(InCanvas, Small, TEXT("снять скрипт"), FVector2D(LX + 4, RY + 2), ColErr);
+		Buttons.Add({ FVector2D(LX - 4, RY - 2), FVector2D(220.f, 24.f), 350 });
+	}
+
+	// --- Дисплей: свежий вывод log() ---
+	const float DX = P.X + PW * 0.56f;
+	const float DW = PW * 0.44f - 24.f;
+	GlassPanel(InCanvas, FVector2D(DX, P.Y + 132), FVector2D(DW, PH - 160.f), PanelB, ColAccent);
+	DrawText(InCanvas, Small, TEXT("ДИСПЛЕЙ  ·  log()"), FVector2D(DX + 10, P.Y + 142), ColAccent);
+	const TArray<FString>& Logs = Net ? Net->ScriptLogs : TArray<FString>();
+	if (Logs.Num() == 0)
+	{
+		DrawText(InCanvas, Tiny, TEXT("(пока пусто)"), FVector2D(DX + 10, P.Y + 170), Dim);
+	}
+	// Последние строки сверху вниз.
+	const int32 MaxRows = 18;
+	const int32 Start = FMath::Max(0, Logs.Num() - MaxRows);
+	for (int32 i = Start; i < Logs.Num(); ++i)
+	{
+		DrawText(InCanvas, Tiny, Logs[i], FVector2D(DX + 10, P.Y + 170 + (i - Start) * 16.f), ColOk);
+	}
+}
+
 FString AOUPlayerMenuController::ItemName(int32 Item)
 {
 	// Имена предметов дублируют серверный `ItemRegistry::default_universe`.
@@ -1379,8 +1492,8 @@ void AOUPlayerMenuController::DrawGameHud(UCanvas* InCanvas)
 	{
 		const bool bInShip = ShipPawn != nullptr;
 		const FString Hint = bInShip
-			? TEXT("Мышь — обзор   ·   W/S — тяга   ·   A/D — стрейф   ·   Пробел/Ctrl — вверх/вниз   ·   ЛКМ — огонь   ·   F — выход")
-			: TEXT("Мышь — обзор   ·   W/A/S/D — ходьба   ·   ЛКМ — копать   ·   M — рынок   ·   B — строительство   ·   T — захват зоны");
+			? TEXT("Мышь — обзор   ·   W/S — тяга   ·   A/D — стрейф   ·   Пробел/Ctrl — вверх/вниз   ·   ЛКМ — огонь   ·   L — скрипты   ·   F — выход")
+			: TEXT("Мышь — обзор   ·   W/A/S/D — ходьба   ·   ЛКМ — копать   ·   M — рынок   ·   B — строительство   ·   T — захват зоны   ·   L — скрипты");
 		DrawText(InCanvas, Tiny, Hint, FVector2D(18, H - 22), Dim);
 	}
 

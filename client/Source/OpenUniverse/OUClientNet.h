@@ -253,6 +253,22 @@ struct FOUSystemBody
 	float Radius = 0.f;
 };
 
+/** Шаблон скрипта из библиотеки (для окна «Скрипты»). */
+USTRUCT(BlueprintType)
+struct FOUScriptTemplate
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Script")
+	int32 Id = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Script")
+	FString Name;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Script")
+	FString Description;
+};
+
 /** Территория (зона) системы: владение, статус, налог — для HUD и миникарты. */
 USTRUCT(BlueprintType)
 struct FOUTerritory
@@ -513,6 +529,47 @@ public:
 
 	/** Отправить запрос захвата территории (id). */
 	void SendCapture(int32 Id);
+
+	// --- Скрипты (автопилоты, турели, логистика) ---
+
+	/** Библиотека шаблонов скриптов от сервера (для окна «Скрипты»). */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Script")
+	TArray<FOUScriptTemplate> ScriptTemplates;
+
+	/** Приходила ли библиотека скриптов. */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Script")
+	bool bScriptsReceived = false;
+
+	/** Id шаблона, привязанного к объекту игрока (0 — нет). */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Script")
+	int32 ScriptTemplate = 0;
+
+	/** Имя привязанного скрипта. */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Script")
+	FString ScriptName;
+
+	/** Сколько раз скрипт исполнился. */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Script")
+	int64 ScriptRuns = 0;
+
+	/** Сколько раз скрипт ошибся. */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Script")
+	int64 ScriptErrors = 0;
+
+	/** Последняя ошибка скрипта (пусто, если её нет). */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Script")
+	FString ScriptLastError;
+
+	/** Свежий вывод `log()` скрипта (для внутриигрового дисплея). */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Script")
+	TArray<FString> ScriptLogs;
+
+	/** Пришёл ли хоть раз статус скрипта. */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Script")
+	bool bScriptStatusReceived = false;
+
+	/** Отправить запрос привязки скрипта-шаблона (0 — снять). */
+	void SendSetScript(int32 Template);
 
 	/** Подключиться к серверу. */
 	UFUNCTION(BlueprintCallable, Category = "Open Universe|Net")

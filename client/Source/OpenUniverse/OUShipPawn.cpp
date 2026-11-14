@@ -353,6 +353,8 @@ void AOUShipPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 	PlayerInputComponent->BindAction(TEXT("ExitShip"), IE_Pressed, this, &AOUShipPawn::OnExitPressed);
 	PlayerInputComponent->BindAction(TEXT("ExitShip"), IE_Released, this, &AOUShipPawn::OnExitReleased);
 	PlayerInputComponent->BindAction(TEXT("CursorToggle"), IE_Pressed, this, &AOUShipPawn::OnCursorToggle);
+	// Скрипты: L — окно скриптов объекта.
+	PlayerInputComponent->BindAction(TEXT("ScriptMenu"), IE_Pressed, this, &AOUShipPawn::ToggleScripts);
 	// Захват территории: T — объявить текущую зону своей (и в корабле).
 	PlayerInputComponent->BindAction(TEXT("TerritoryCapture"), IE_Pressed, this, &AOUShipPawn::CaptureTerritory);
 	// Сверхсвет: удержание Shift — сверхскоростной перелёт между телами системы.
@@ -437,6 +439,26 @@ void AOUShipPawn::CaptureTerritory()
 	}
 	Net->SendCapture(Net->CurrentTerritoryId);
 	UE_LOG(LogOUShip, Log, TEXT("Территория: запрос захвата зоны %d"), Net->CurrentTerritoryId);
+}
+
+void AOUShipPawn::ToggleScripts()
+{
+	// Окно скриптов объекта (клавиша L) — работает и из корабля.
+	AOUPlayerMenuController* Menu = Cast<AOUPlayerMenuController>(GetController());
+	if (!Menu)
+	{
+		Menu = Cast<AOUPlayerMenuController>(GetWorld() ? GetWorld()->GetFirstPlayerController() : nullptr);
+	}
+	if (Menu)
+	{
+		Menu->bScriptsOpen = !Menu->bScriptsOpen;
+		if (Menu->bScriptsOpen)
+		{
+			Menu->bMarketOpen = false;
+		}
+		Menu->SetMenuCursor(Menu->bScriptsOpen);
+		UE_LOG(LogOUShip, Log, TEXT("Скрипты: %s"), Menu->bScriptsOpen ? TEXT("открыто") : TEXT("закрыто"));
+	}
 }
 
 void AOUShipPawn::ExitShip()

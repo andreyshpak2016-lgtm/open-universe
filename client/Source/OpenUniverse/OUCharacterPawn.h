@@ -172,6 +172,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Open Universe|Territory")
 	void CaptureTerritory();
 
+	/** Открыть/закрыть окно скриптов объекта (клавиша L). */
+	void ToggleScripts();
+
 	/** Быстрая сделка: продать (`bSell`) или купить 1 руду по фиксированной цене. */
 	void MarketQuickTrade(bool bSell);
 	void OnMarketSell() { MarketQuickTrade(true); }
@@ -192,6 +195,10 @@ public:
 	/** Таймер/счётчик тестовой торговли (`-OUAutoTrade`). */
 	float TradeTimer = 0.f;
 	int32 TradeCount = 0;
+
+	/** Таймер/счётчик теста скриптов (`-OUAutoScript`). */
+	float ScriptTimer = 0.f;
+	int32 ScriptCount = 0;
 
 	/** Таймер/счётчик тестового крафта (`-OUAutoCraft`). */
 	float CraftTimer = 0.f;

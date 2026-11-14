@@ -69,6 +69,9 @@ namespace OUWire
         TagCraftResult = 28,
         TagTerritory = 29,
         TagCapture = 30,
+        TagSetScript = 31,
+        TagScript = 32,
+        TagScripts = 33,
     };
 
     /// Действия редактора конструкций.
@@ -919,6 +922,81 @@ namespace OUWire
         out.push_back(TagCapture);
         push_varint(out, Id);
         return out;
+    }
+
+    /// Собрать запрос привязки скрипта-шаблона (клиент → сервер, тег 31).
+    inline std::vector<uint8_t> EncodeSetScript(uint32_t Template)
+    {
+        std::vector<uint8_t> out;
+        out.push_back(TagSetScript);
+        push_varint(out, Template);
+        return out;
+    }
+
+    /// Статус скрипта на объекте игрока (сервер → клиент, тег 32).
+    struct ScriptStatus
+    {
+        uint32_t Entity = 0;
+        uint32_t Template = 0;   // 0 — скрипта нет
+        std::string Name;
+        uint64_t Runs = 0;
+        uint64_t Errors = 0;
+        std::string Last;
+        std::vector<std::string> Logs;
+    };
+
+    inline bool DecodeScriptStatus(const uint8_t* body, size_t len, ScriptStatus& Out)
+    {
+        Reader r{body, len, 0};
+        uint8_t tag = 0;
+        if (!r.U8(tag) || tag != TagScript) return false;
+        uint64_t entity = 0, tpl = 0;
+        if (!r.Varint(entity) || !r.Varint(tpl)) return false;
+        Out.Entity = static_cast<uint32_t>(entity);
+        Out.Template = static_cast<uint32_t>(tpl);
+        if (!r.Str(Out.Name)) return false;
+        if (!r.Varint(Out.Runs) || !r.Varint(Out.Errors)) return false;
+        if (!r.Str(Out.Last)) return false;
+        uint64_t n = 0;
+        if (!r.Varint(n)) return false;
+        Out.Logs.clear();
+        Out.Logs.reserve(static_cast<size_t>(n));
+        for (uint64_t i = 0; i < n; ++i)
+        {
+            std::string s;
+            if (!r.Str(s)) return false;
+            Out.Logs.push_back(std::move(s));
+        }
+        return true;
+    }
+
+    /// Шаблон скрипта из библиотеки (сервер → клиент, тег 33).
+    struct ScriptTemplateInfo
+    {
+        uint32_t Id = 0;
+        std::string Name;
+        std::string Description;
+    };
+
+    inline bool DecodeScripts(const uint8_t* body, size_t len, std::vector<ScriptTemplateInfo>& Out)
+    {
+        Reader r{body, len, 0};
+        uint8_t tag = 0;
+        if (!r.U8(tag) || tag != TagScripts) return false;
+        uint64_t n = 0;
+        if (!r.Varint(n)) return false;
+        Out.clear();
+        Out.reserve(static_cast<size_t>(n));
+        for (uint64_t i = 0; i < n; ++i)
+        {
+            ScriptTemplateInfo T;
+            uint64_t id = 0;
+            if (!r.Varint(id)) return false;
+            T.Id = static_cast<uint32_t>(id);
+            if (!r.Str(T.Name) || !r.Str(T.Description)) return false;
+            Out.push_back(std::move(T));
+        }
+        return true;
     }
 
     /// Собрать кадр ввода (клиент → сервер, тег 2).

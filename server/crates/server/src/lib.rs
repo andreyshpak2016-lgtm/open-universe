@@ -118,6 +118,16 @@ pub struct Server {
     pub scripts: ScriptEngine,
     /// Сущность → имя скрипта, который ей управляет.
     pub scripted: BTreeMap<NetId, String>,
+    /// Сущность → id шаблона скрипта (для окна «Скрипты» и статуса).
+    pub script_template: BTreeMap<NetId, u32>,
+    /// Сущность → статистика скрипта: (запусков, ошибок) и последняя ошибка.
+    pub script_stats: BTreeMap<NetId, (u64, u64)>,
+    /// Сущность → последняя ошибка скрипта.
+    pub script_last_error: BTreeMap<NetId, String>,
+    /// Сущность → свежий вывод `log()` (для внутриигрового дисплея).
+    pub script_logs: BTreeMap<NetId, Vec<String>>,
+    /// Есть изменения статуса скриптов, которые надо разослать владельцам.
+    pub script_urgent: BTreeSet<NetId>,
     /// Конструкции сущностей: что игроки построили (права + ревизии).
     pub constructions: BTreeMap<NetId, Construction>,
     /// Корпус каждой сущности: щит, броня, критические повреждения.
@@ -251,6 +261,11 @@ impl Server {
             grid: SpatialGrid::new(CELL_SIZE),
             scripts: ScriptEngine::new(),
             scripted: BTreeMap::new(),
+            script_template: BTreeMap::new(),
+            script_stats: BTreeMap::new(),
+            script_last_error: BTreeMap::new(),
+            script_logs: BTreeMap::new(),
+            script_urgent: BTreeSet::new(),
             constructions: BTreeMap::new(),
             hulls: BTreeMap::new(),
             weapons: BTreeMap::new(),
@@ -951,6 +966,61 @@ impl Server {
         Ok(())
     }
 
+    /// Список шаблонов скриптов для окна «Скрипты»: (id, имя, описание).
+    pub fn script_templates(&self) -> Vec<(u32, String, String)> {
+        ou_script::SCRIPT_TEMPLATES
+            .iter()
+            .map(|t| (t.id, t.name.to_string(), t.description.to_string()))
+            .collect()
+    }
+
+    /// Привязать к сущности скрипт-шаблон по id игрока (авторитетно).
+    ///
+    /// Только владелец может управлять скриптом своего объекта. `template = 0`
+    /// снимает скрипт (объект снова слушает игрока). Возвращает результат.
+    pub fn set_script_template(&mut self, player: NetId, template: u32) -> Result<u32, String> {
+        // Игрок привязывает скрипт к своей сущности (своему кораблю/объекту).
+        let entity = self
+            .connections
+            .get(&player)
+            .map(|c| c.entity_id)
+            .ok_or_else(|| "игрок не в мире".to_string())?;
+        if template == 0 {
+            self.scripted.remove(&entity);
+            self.script_template.remove(&entity);
+            self.script_stats.remove(&entity);
+            self.script_last_error.remove(&entity);
+            self.script_logs.remove(&entity);
+            self.script_urgent.insert(entity);
+            return Ok(0);
+        }
+        let tpl = ou_script::template_by_id(template)
+            .ok_or_else(|| format!("шаблон {template} не найден"))?;
+        let name = ou_script::template_name(tpl.id);
+        self.scripts.compile(&name, tpl.source).map_err(|e| e.to_string())?;
+        self.scripted.insert(entity, name.clone());
+        self.script_template.insert(entity, tpl.id);
+        self.script_stats.insert(entity, (0, 0));
+        self.script_last_error.remove(&entity);
+        self.script_logs.insert(entity, Vec::new());
+        self.script_urgent.insert(entity);
+        Ok(tpl.id)
+    }
+
+    /// Статус скрипта сущности для сообщения `ServerScript`.
+    pub fn script_status(&self, entity: NetId) -> Message {
+        let template = self.script_template.get(&entity).copied().unwrap_or(0);
+        let name = if template != 0 {
+            ou_script::template_by_id(template).map(|t| t.name.to_string()).unwrap_or_default()
+        } else {
+            String::new()
+        };
+        let (runs, errors) = self.script_stats.get(&entity).copied().unwrap_or((0, 0));
+        let last = self.script_last_error.get(&entity).cloned().unwrap_or_default();
+        let logs = self.script_logs.get(&entity).cloned().unwrap_or_default();
+        Message::ServerScript { entity, template, name, runs, errors, last, logs }
+    }
+
     /// Подключение игрока: создаёт его сущность и точку интереса.
     pub fn connect(&mut self, player_id: NetId, spawn: Vec3) -> NetId {
         let entity_id = self.next_entity_id;
@@ -1172,6 +1242,9 @@ impl Server {
             None
         };
 
+        // Статус скриптов игроков (запусков/ошибок/логов) считается ниже,
+        // после того как скрипты отработали в этом тике (шаг 1b).
+
         // 1. Собрать вводы по сущностям.
         let mut inputs: BTreeMap<NetId, InputFrame> = BTreeMap::new();
         for conn in self.connections.values() {
@@ -1190,28 +1263,80 @@ impl Server {
             let Some(ent) = self.world.entities.get(&entity) else {
                 continue;
             };
+            // Цель — ближайшая другая сущность (для турели): скрипт получает
+            // расстояние до ближайшей цели, чтобы решать, стрелять ли.
+            let mut target_distance = 0.0f64;
+            {
+                let mut best = f64::MAX;
+                for (id, other) in self.world.entities.iter() {
+                    if *id == entity {
+                        continue;
+                    }
+                    let d = ent.state.pos.distance(other.state.pos);
+                    if d < best {
+                        best = d;
+                    }
+                }
+                if best < f64::MAX {
+                    target_distance = best;
+                }
+            }
             let state = ou_script::ScriptState {
                 speed: ent.state.vel.length(),
-                altitude: ent.state.pos.length(),
+                // Высота над поверхностью домашней планеты (в ед. длины).
+                altitude: ent.state.pos.length() - self.planet.params.radius,
                 heading: ent.state.yaw as f64,
-                target_distance: 0.0,
+                target_distance,
             };
             let seq = self.world.tick as u32;
             match self.scripts.run_ship(&script, state, seq) {
                 Ok(out) => {
+                    // Статистика и свежий вывод `log()` для владельца.
+                    let stats = self.script_stats.entry(entity).or_insert((0, 0));
+                    stats.0 += 1;
+                    if !out.logs.is_empty() {
+                        let logs = self.script_logs.entry(entity).or_default();
+                        // Держим только последние строки (окно дисплея).
+                        for l in out.logs {
+                            logs.push(l);
+                        }
+                        if logs.len() > 16 {
+                            let cut = logs.len() - 16;
+                            logs.drain(0..cut);
+                        }
+                    }
                     inputs.insert(entity, out.input);
                 }
                 Err(e) => {
                     // Ошибка скрипта не должна ронять мир: логируем и продолжаем.
                     eprintln!("[скрипт '{script}'] {e}");
+                    let stats = self.script_stats.entry(entity).or_insert((0, 0));
+                    stats.1 += 1;
+                    self.script_last_error.insert(entity, e.to_string());
+                    if self.script_template.contains_key(&entity) {
+                        // Ошибку владелец видит сразу (вне периодического ритма).
+                        self.script_urgent.insert(entity);
+                    }
                 }
             }
         }
 
+        // 1b. Статус скриптов для окна «Скрипты»: считаем ПОСЛЕ прогона скриптов
+        //     (шаг 1a), чтобы счётчики и вывод `log()` были свежими. Рассылаем
+        //     с ритмом ~2 Гц, чтобы не забивать канал, плюс срочно при смене.
+        let script_msgs: BTreeMap<NetId, Message> = {
+            let periodic = tick_now % 15 == 0;
+            self.scripted
+                .keys()
+                .copied()
+                .filter(|e| periodic || self.script_urgent.contains(e))
+                .map(|e| (e, self.script_status(e)))
+                .collect()
+        };
+
         // 2. Шаг симуляции.
         self.world.step(&inputs);
         let tick = self.world.tick;
-
         // 3. Обновить пространственный индекс под новые позиции.
         for (id, ent) in self.world.entities.iter() {
             self.grid.update(*id, ent.state.pos);
@@ -1430,6 +1555,11 @@ impl Server {
                 msgs.push(t.clone());
             }
 
+            // Статус скрипта на объекте игрока — при изменении.
+            if let Some(m) = script_msgs.get(&conn.entity_id) {
+                msgs.push(m.clone());
+            }
+
             plan.messages.insert(*player_id, msgs);
         }
         if self.market_dirty {
@@ -1438,6 +1568,7 @@ impl Server {
         if self.territory_dirty {
             self.territory_dirty = false;
         }
+        self.script_urgent.clear();
 
         plan
     }
@@ -2238,5 +2369,77 @@ mod tests {
         assert_eq!(*s.territory_tax.get(&2).unwrap_or(&0), 100, "налог накоплен");
         // Вне зоны налога нет.
         assert!(s.tax_for_trade(Vec3::new(50_000_000.0, 0.0, 0.0), 1000).is_none());
+    }
+
+    // --- скриптинг в игре (шаблоны, привязка, статус) ---
+
+    #[test]
+    fn script_templates_are_available() {
+        let s = Server::new();
+        let list = s.script_templates();
+        assert!(list.len() >= 4, "есть библиотека скриптов: {}", list.len());
+        // Все шаблоны имеют непустые имя и описание.
+        for (id, name, desc) in &list {
+            assert!(*id > 0);
+            assert!(!name.is_empty(), "у шаблона {id} есть имя");
+            assert!(!desc.is_empty(), "у шаблона {id} есть описание");
+        }
+    }
+
+    #[test]
+    fn player_can_attach_and_detach_script() {
+        let mut s = Server::new();
+        let e = s.connect_on_planet(1);
+        // Библиотека непуста; берём первый шаблон.
+        let tid = s.script_templates()[0].0;
+        assert_eq!(s.set_script_template(1, tid).unwrap(), tid);
+        assert!(s.scripted.contains_key(&e), "скрипт привязан к объекту игрока");
+        assert_eq!(s.script_template.get(&e).copied(), Some(tid));
+        // Статус содержит имя привязанного шаблона.
+        match s.script_status(e) {
+            Message::ServerScript { template, name, .. } => {
+                assert_eq!(template, tid);
+                assert!(!name.is_empty());
+            }
+            other => panic!("ожидали ServerScript, получено {other:?}"),
+        }
+        // Снятие скрипта.
+        assert_eq!(s.set_script_template(1, 0).unwrap(), 0);
+        assert!(!s.scripted.contains_key(&e), "скрипт снят");
+        // Несуществующий шаблон — ошибка.
+        assert!(s.set_script_template(1, 999).is_err());
+    }
+
+    #[test]
+    fn autopilot_script_moves_the_ship() {
+        let mut s = Server::new();
+        s.build_system();
+        let e = s.connect_on_planet(1);
+        // Автопилот «крейсер» (id 2): включает тягу, объект должен набрать скорость.
+        assert_eq!(s.set_script_template(1, 2).unwrap(), 2);
+        // Первый тик применяет управление скрипта.
+        s.tick();
+        for _ in 0..30 {
+            s.tick();
+        }
+        let speed = s.world.entities[&e].state.vel.length();
+        assert!(speed > 1.0, "автопилот разогнал объект: {speed}");
+    }
+
+    #[test]
+    fn script_status_is_broadcast_to_owner() {
+        let mut s = Server::new();
+        s.build_system();
+        let e = s.connect_on_planet(1);
+        let tid = s.script_templates()[0].0;
+        s.set_script_template(1, tid).unwrap();
+        // После тика владелец получает статус скрипта.
+        let plan = s.tick();
+        let seen = plan.messages[&1].iter().any(|m| matches!(
+            m,
+            Message::ServerScript { template, .. } if *template == tid
+        ));
+        assert!(seen, "статус скрипта рассылается владельцу");
+        let _ = e;
     }
 }

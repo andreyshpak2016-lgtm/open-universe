@@ -332,6 +332,50 @@ int main(int argc, char** argv)
         Check(cb[0] == OUWire::TagCapture, "тег захвата = 30");
     }
 
+    // --- 6f. Скрипты (теги 31/32/33) ---
+    std::printf("\n=== 6f. Скрипты ===\n");
+    {
+        // Запрос привязки шаблона: [tag31][template varint].
+        const std::vector<uint8_t> sb = OUWire::EncodeSetScript(3);
+        Check(sb[0] == OUWire::TagSetScript, "тег привязки скрипта = 31");
+        Check(sb.size() == 2 && sb[1] == 3, "id шаблона = 3");
+
+        // Библиотека шаблонов: [tag33][count]{[id][name str][desc str]}.
+        std::vector<uint8_t> lb;
+        lb.push_back(OUWire::TagScripts);
+        OUWire::push_varint(lb, 1);
+        OUWire::push_varint(lb, 3);
+        auto push_str = [](std::vector<uint8_t>& out, const std::string& s) {
+            out.push_back(static_cast<uint8_t>(s.size() & 0xFF));
+            out.push_back(static_cast<uint8_t>((s.size() >> 8) & 0xFF));
+            out.insert(out.end(), s.begin(), s.end());
+        };
+        push_str(lb, "Турель");
+        push_str(lb, "Стреляет по цели");
+        std::vector<OUWire::ScriptTemplateInfo> tpls;
+        Check(OUWire::DecodeScripts(lb.data(), lb.size(), tpls), "библиотека скриптов разобрана");
+        Check(tpls.size() == 1 && tpls[0].Id == 3 && tpls[0].Name == "Турель",
+            "шаблон: id/имя совпали");
+
+        // Статус скрипта: [tag32][entity][template][name][runs][errors][last][count]{logs}.
+        std::vector<uint8_t> stb;
+        stb.push_back(OUWire::TagScript);
+        OUWire::push_varint(stb, 5);       // entity
+        OUWire::push_varint(stb, 3);       // template
+        push_str(stb, "Турель");           // name
+        OUWire::push_varint(stb, 120);     // runs
+        OUWire::push_varint(stb, 1);       // errors
+        push_str(stb, "деление на ноль"); // last
+        OUWire::push_varint(stb, 2);       // logs count
+        push_str(stb, "огонь по цели");
+        push_str(stb, "готово");
+        OUWire::ScriptStatus st;
+        Check(OUWire::DecodeScriptStatus(stb.data(), stb.size(), st), "статус скрипта разобран");
+        Check(st.Entity == 5 && st.Template == 3 && st.Runs == 120 && st.Errors == 1,
+            "статус: entity/template/runs/errors");
+        Check(st.Logs.size() == 2 && st.Logs[1] == "готово", "статус: вывод log()");
+    }
+
     // --- 7. Приветствие сервера (какой сущностью управляем) ---
     std::printf("\n=== 7. Приветствие сервера (welcome) ===\n");
     {

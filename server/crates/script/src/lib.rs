@@ -72,7 +72,7 @@ impl From<ScriptError> for Error {
 }
 
 /// Результат одного запуска скрипта корабля.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct ScriptOutput {
     /// Управляющий ввод, который скрипт «попросил» применить.
     pub input: InputFrame,
@@ -80,6 +80,8 @@ pub struct ScriptOutput {
     pub fire: bool,
     /// Число шагов интерпретатора (для статистики и лимитов).
     pub steps: u64,
+    /// Строки, накопленные `log()` — вывод на внутриигровой дисплей.
+    pub logs: Vec<String>,
 }
 
 /// Скомпилированный скрипт.
@@ -290,6 +292,7 @@ impl ScriptEngine {
             },
             fire: acc.fire,
             steps: 0,
+            logs: acc.logs.clone(),
         })
     }
 }
@@ -351,6 +354,108 @@ end
 
 tick(state)
 "#;
+
+// ---------------------------------------------------------------------------
+// Библиотека готовых скриптов (для привязки к объектам в игре)
+// ---------------------------------------------------------------------------
+
+/// Готовый скрипт-шаблон, который игрок может привязать к своему объекту.
+///
+/// Движок на сервере компилирует шаблоны под стабильными именами
+/// (`tpl_<id>`), а игрок выбирает их по `id` в игре — так исходники скриптов
+/// не нужно присылать по сети повторно и они всегда совпадают с сервером.
+#[derive(Clone, Copy, Debug)]
+pub struct ScriptTemplate {
+    /// Стабильный id шаблона (0 зарезервирован под «снять скрипт»).
+    pub id: u32,
+    /// Имя для интерфейса.
+    pub name: &'static str,
+    /// Короткое описание, что делает скрипт.
+    pub description: &'static str,
+    /// Исходник на Lua-подобном языке.
+    pub source: &'static str,
+}
+
+/// Библиотека готовых скриптов: автопилоты, турель, логистика, патруль.
+pub const SCRIPT_TEMPLATES: &[ScriptTemplate] = &[
+    ScriptTemplate {
+        id: 1,
+        name: "Автопилот: высота",
+        description: "Держит высоту около 100 над поверхностью",
+        source: AUTOPILOT_SCRIPT,
+    },
+    ScriptTemplate {
+        id: 2,
+        name: "Автопилот: крейсер",
+        description: "Разгон до крейсерской скорости и удержание",
+        source: r#"
+-- Крейсерский автопилот: разгон до 80, затем поддержание.
+local cruise = 80
+
+function tick(state)
+    local s = speed()
+    if s < cruise then
+        thrust(1)
+    else
+        thrust(0.1)
+    end
+    log("скорость " .. floor(s))
+end
+
+tick(state)
+"#,
+    },
+    ScriptTemplate {
+        id: 3,
+        name: "Турель",
+        description: "Стреляет по цели, когда она ближе 800",
+        source: TURRET_SCRIPT,
+    },
+    ScriptTemplate {
+        id: 4,
+        name: "Патруль",
+        description: "Облёт по кругу: постоянное рыскание и малая тяга",
+        source: r#"
+-- Патруль: медленно кружим, сообщая курс.
+function tick(state)
+    thrust(0.3)
+    yaw(0.5)
+    log("курс " .. floor(heading()))
+end
+
+tick(state)
+"#,
+    },
+    ScriptTemplate {
+        id: 5,
+        name: "Логистика",
+        description: "Считает такты и сообщает о «полном трюме»",
+        source: r#"
+-- Логистика: накапливаем счётчик и периодически логируем.
+local hold = 0
+
+function tick(state)
+    hold = hold + 1
+    if hold >= 100 then
+        log("трюм полон: " .. hold)
+        hold = 0
+    end
+end
+
+tick(state)
+"#,
+    },
+];
+
+/// Имя, под которым компилируется шаблон (стабильно между запусками).
+pub fn template_name(id: u32) -> String {
+    format!("tpl_{id}")
+}
+
+/// Найти шаблон по id.
+pub fn template_by_id(id: u32) -> Option<&'static ScriptTemplate> {
+    SCRIPT_TEMPLATES.iter().find(|t| t.id == id)
+}
 
 #[cfg(test)]
 mod tests {
@@ -512,5 +617,28 @@ log(a .. " " .. b .. " " .. c)
         assert_eq!(out_a.input.yaw, 0.0);
         assert_eq!(out_b.input.throttle, 0.0);
         assert_eq!(out_b.input.yaw, -1.0);
+    }
+
+    #[test]
+    fn script_logs_are_returned() {
+        // Вывод `log()` доступен потребителю (для внутриигрового дисплея).
+        let mut e = engine_with(r#"log("привет") log(1 + 2)"#);
+        let out = e.run_ship("test", ScriptState::default(), 1).unwrap();
+        assert_eq!(out.logs, vec!["привет".to_string(), "3".to_string()]);
+    }
+
+    #[test]
+    fn templates_compile_and_run() {
+        // Все шаблоны библиотеки компилируются и выполняются без ошибок.
+        let mut e = ScriptEngine::new();
+        for t in SCRIPT_TEMPLATES {
+            let name = template_name(t.id);
+            e.compile(&name, t.source).unwrap_or_else(|err| panic!("шаблон {}: {err}", t.id));
+            let out = e.run_ship(&name, ScriptState::default(), 1)
+                .unwrap_or_else(|err| panic!("запуск шаблона {}: {err}", t.id));
+            let _ = out;
+        }
+        assert!(template_by_id(3).is_some(), "турель есть в библиотеке");
+        assert!(template_by_id(999).is_none(), "несуществующий id не найден");
     }
 }

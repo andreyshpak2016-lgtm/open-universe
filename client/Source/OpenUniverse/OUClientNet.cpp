@@ -276,6 +276,18 @@ void UOUClientNet::SendCapture(int32 Id)
 	SendPacket(Arr);
 }
 
+void UOUClientNet::SendSetScript(int32 Template)
+{
+	if (!IsConnected())
+	{
+		return;
+	}
+	const std::vector<uint8_t> Body = OUWire::EncodeSetScript(static_cast<uint32_t>(FMath::Max(0, Template)));
+	TArray<uint8> Arr;
+	Arr.Append(Body.data(), static_cast<int32>(Body.size()));
+	SendPacket(Arr);
+}
+
 void UOUClientNet::UpdateTerritoryAt(double ServerX, double ServerY, double ServerZ)
 {
 	// Точка игрока в серверных единицах; зоны тоже в серверных.
@@ -681,6 +693,42 @@ void UOUClientNet::Poll()
 					LastTerritoryTime = W->GetTimeSeconds();
 				}
 				UE_LOG(LogOUClient, Log, TEXT("Территории: %d зон"), Territories.Num());
+			}
+		}
+		else if (Body[0] == OUWire::TagScripts) // библиотека скриптов
+		{
+			std::vector<OUWire::ScriptTemplateInfo> Ts;
+			if (OUWire::DecodeScripts(Body.GetData(), static_cast<size_t>(Body.Num()), Ts))
+			{
+				ScriptTemplates.Reset();
+				for (const OUWire::ScriptTemplateInfo& T : Ts)
+				{
+					FOUScriptTemplate E;
+					E.Id = static_cast<int32>(T.Id);
+					E.Name = FString(UTF8_TO_TCHAR(T.Name.c_str()));
+					E.Description = FString(UTF8_TO_TCHAR(T.Description.c_str()));
+					ScriptTemplates.Add(E);
+				}
+				bScriptsReceived = true;
+				UE_LOG(LogOUClient, Log, TEXT("Скрипты: %d шаблонов"), ScriptTemplates.Num());
+			}
+		}
+		else if (Body[0] == OUWire::TagScript) // статус скрипта на объекте
+		{
+			OUWire::ScriptStatus S;
+			if (OUWire::DecodeScriptStatus(Body.GetData(), static_cast<size_t>(Body.Num()), S))
+			{
+				ScriptTemplate = static_cast<int32>(S.Template);
+				ScriptName = FString(UTF8_TO_TCHAR(S.Name.c_str()));
+				ScriptRuns = static_cast<int64>(S.Runs);
+				ScriptErrors = static_cast<int64>(S.Errors);
+				ScriptLastError = FString(UTF8_TO_TCHAR(S.Last.c_str()));
+				ScriptLogs.Reset();
+				for (const std::string& L : S.Logs)
+				{
+					ScriptLogs.Add(FString(UTF8_TO_TCHAR(L.c_str())));
+				}
+				bScriptStatusReceived = true;
 			}
 		}
 		else if (Body[0] == OUWire::TagMarketState) // состояние экономики

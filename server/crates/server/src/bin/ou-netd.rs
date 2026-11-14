@@ -146,6 +146,13 @@ fn main() {
                                 &Message::ServerTerritory { territories: server.territory_list() },
                             )
                             .ok();
+                            // И библиотека скриптов (окно «Скрипты»).
+                            net.send_to(
+                                token,
+                                from,
+                                &Message::ServerScripts { templates: server.script_templates() },
+                            )
+                            .ok();
                             next_player += 1;
                         }
                     }
@@ -230,6 +237,15 @@ fn main() {
                             match server.capture_as(*pid, id) {
                                 Ok(tid) => println!("территория: игрок {pid} захватил зону {tid}"),
                                 Err(e) => println!("территория: захват игроком {pid} отклонён: {e}"),
+                            }
+                        }
+                    }
+                    Message::ClientSetScript { template } => {
+                        if let Some(pid) = clients.get(&from) {
+                            match server.set_script_template(*pid, template) {
+                                Ok(0) => println!("скрипт: игрок {pid} снял скрипт"),
+                                Ok(tid) => println!("скрипт: игрок {pid} привязал шаблон {tid}"),
+                                Err(e) => println!("скрипт: привязка игроком {pid} отклонена: {e}"),
                             }
                         }
                     }

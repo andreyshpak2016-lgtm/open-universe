@@ -159,10 +159,10 @@ window.PLAN = {
       "goal": "Игроки программируют свои конструкции.",
       "goal_en": "Players program their own constructions.",
       "tasks": [
-        { "title": "Lua-подобный скриптинг (движок есть; в игре скрипты не привязаны)", "title_en": "Lua-like scripting (engine exists; no scripts are wired into the game)", "status": "in_progress" },
-        { "title": "Автопилоты, турели, логистика на скриптах", "title_en": "Scripted autopilots, turrets and logistics", "status": "in_progress" },
+        { "title": "Lua-подобный скриптинг (шаблоны привязываются в игре, клавиша L)", "title_en": "Lua-like scripting (templates are bound in game, key L)", "status": "done" },
+        { "title": "Автопилоты, турели, логистика на скриптах (библиотека + авторитетный запуск)", "title_en": "Scripted autopilots, turrets and logistics (library + authoritative run)", "status": "done" },
         { "title": "Sandbox-ограничения и безопасность", "title_en": "Sandbox limits and security", "status": "done" },
-        { "title": "Внутриигровые экраны и дисплеи", "title_en": "In-game screens and displays", "status": "in_progress" },
+        { "title": "Внутриигровые экраны и дисплеи (окно «Скрипты» с выводом log())", "title_en": "In-game screens and displays (Scripts window with log() output)", "status": "done" },
         { "title": "Мастерская и торговля шаблонами", "title_en": "Workshop and blueprint trading", "status": "todo" }
       ]
     },

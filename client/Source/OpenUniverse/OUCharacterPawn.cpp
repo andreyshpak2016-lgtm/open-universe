@@ -447,6 +447,8 @@ void AOUCharacterPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputCom
 	PlayerInputComponent->BindAction(TEXT("BuildPrev"), IE_Pressed, this, &AOUCharacterPawn::OnBuildPrev);
 	// Захват территории: T — объявить текущую зону своей.
 	PlayerInputComponent->BindAction(TEXT("TerritoryCapture"), IE_Pressed, this, &AOUCharacterPawn::CaptureTerritory);
+	// Скрипты: L — окно скриптов объекта.
+	PlayerInputComponent->BindAction(TEXT("ScriptMenu"), IE_Pressed, this, &AOUCharacterPawn::ToggleScripts);
 	// Alt — отпустить/вернуть курсор (обзор мышью / работа с интерфейсом).
 	PlayerInputComponent->BindAction(TEXT("CursorToggle"), IE_Pressed, this, &AOUCharacterPawn::OnCursorToggle);
 }
@@ -1076,6 +1078,31 @@ void AOUCharacterPawn::CaptureTerritory()
 	UE_LOG(LogOUChar, Log, TEXT("Территория: запрос захвата зоны %d"), Net->CurrentTerritoryId);
 }
 
+void AOUCharacterPawn::ToggleScripts()
+{
+	// Окно скриптов объекта (клавиша L): автопилоты, турель, логистика.
+	if (bBuildMenuOpen)
+	{
+		return;
+	}
+	AOUPlayerMenuController* Menu = Cast<AOUPlayerMenuController>(GetController());
+	if (!Menu)
+	{
+		Menu = Cast<AOUPlayerMenuController>(GetWorld() ? GetWorld()->GetFirstPlayerController() : nullptr);
+	}
+	if (Menu)
+	{
+		// Взаимоисключающие окна: рынок и скрипты не открыты одновременно.
+		Menu->bScriptsOpen = !Menu->bScriptsOpen;
+		if (Menu->bScriptsOpen)
+		{
+			Menu->bMarketOpen = false;
+		}
+		Menu->SetMenuCursor(Menu->bScriptsOpen);
+		UE_LOG(LogOUChar, Log, TEXT("Скрипты: %s"), Menu->bScriptsOpen ? TEXT("открыто") : TEXT("закрыто"));
+	}
+}
+
 void AOUCharacterPawn::MarketQuickTrade(bool bSell)
 {
 	Net = Net ? Net : FindComponentByClass<UOUClientNet>();
@@ -1487,10 +1514,36 @@ void AOUCharacterPawn::Tick(float DeltaSeconds)
 		}
 	}
 
+	// Тестовая привязка скрипта (`-OUAutoScript`): открыть окно скриптов и
+	// привязать «крейсерский» автопилот, затем периодически логировать.
+	if (FParse::Param(FCommandLine::Get(), TEXT("OUAutoScript")))
+	{
+		ScriptTimer += DeltaSeconds;
+		if (ScriptTimer >= 1.5f && ScriptCount < 20)
+		{
+			ScriptTimer = 0.f;
+			++ScriptCount;
+			if (ScriptCount == 1)
+			{
+				ToggleScripts();
+			}
+			if (ScriptCount == 3 && Net && Net->ScriptTemplates.Num() > 0)
+			{
+				// Выбираем «крейсерский» автопилот (id 2) — он пишет в log(),
+				// так что на снимке виден и дисплей.
+				int32 Pick = 0;
+				for (int32 i = 0; i < Net->ScriptTemplates.Num(); ++i)
+				{
+					if (Net->ScriptTemplates[i].Id == 2) { Pick = i; break; }
+				}
+				Net->SendSetScript(Net->ScriptTemplates[Pick].Id);
+			}
+		}
+	}
+
 	// Тестовое строительство: открыть меню, поставить блоки и проверить
 	// удаление/покраску (всё через сервер — правки авторитетные).
-	if (bAutoBuild)
-	{
+	if (bAutoBuild)	{
 		if (!bBuildMenuOpen)
 		{
 			ToggleBuildMenu();

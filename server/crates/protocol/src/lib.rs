@@ -270,6 +270,30 @@ pub enum Message {
     /// Сервер проверяет, что игрок **внутри** территории, и передаёт владение
     /// ему (статус — «спорная»). Возвращает новое состояние всем.
     ClientCapture { id: u32 },
+    /// Клиент: привязать к своему объекту скрипт-шаблон по id (0 — снять).
+    ///
+    /// Сервер компилирует выбранный шаблон и с этого момента управляет объектом
+    /// авторитетно (автопилот/турель/логистика), рассылая статус владельцу.
+    ClientSetScript { template: u32 },
+    /// Сервер: статус скрипта на объекте игрока (для окна «Скрипты»).
+    ///
+    /// `template` — id привязанного шаблона (0 — скрипта нет), `name` — его имя,
+    /// `runs` — сколько раз скрипт исполнился, `errors` — сколько ошибок, `last`
+    /// — последняя ошибка (пусто, если её нет), `logs` — свежий вывод `log()`.
+    ServerScript {
+        entity: NetId,
+        template: u32,
+        name: String,
+        runs: u64,
+        errors: u64,
+        last: String,
+        logs: Vec<String>,
+    },
+    /// Сервер: библиотека готовых скриптов-шаблонов (для окна «Скрипты»).
+    ///
+    /// Шлётся при подключении: игрок выбирает шаблон по `id`. Исходники на
+    /// сервере и клиенте не дублируются — клиент знает только имя/описание.
+    ServerScripts { templates: Vec<(u32, String, String)> },
 }
 
 /// Территория в сообщении (для HUD).
@@ -597,6 +621,9 @@ mod wire {
     const TAG_CRAFT_RESULT: u8 = 28;
     const TAG_TERRITORY: u8 = 29;
     const TAG_CAPTURE: u8 = 30;
+    const TAG_SET_SCRIPT: u8 = 31;
+    const TAG_SCRIPT: u8 = 32;
+    const TAG_SCRIPTS: u8 = 33;
 
     pub fn encode(msg: &Message) -> Vec<u8> {
         let mut w = Writer::new();
@@ -869,6 +896,32 @@ mod wire {
                 w.u8(TAG_CAPTURE);
                 w.varint(*id as u64);
             }
+            Message::ClientSetScript { template } => {
+                w.u8(TAG_SET_SCRIPT);
+                w.varint(*template as u64);
+            }
+            Message::ServerScript { entity, template, name, runs, errors, last, logs } => {
+                w.u8(TAG_SCRIPT);
+                w.varint(*entity as u64);
+                w.varint(*template as u64);
+                w.str(name);
+                w.varint(*runs);
+                w.varint(*errors);
+                w.str(last);
+                w.varint(logs.len() as u64);
+                for l in logs {
+                    w.str(l);
+                }
+            }
+            Message::ServerScripts { templates } => {
+                w.u8(TAG_SCRIPTS);
+                w.varint(templates.len() as u64);
+                for (id, name, desc) in templates {
+                    w.varint(*id as u64);
+                    w.str(name);
+                    w.str(desc);
+                }
+            }
         }
         w.buf
     }
@@ -1124,6 +1177,32 @@ mod wire {
                 Ok(Message::ServerTerritory { territories })
             }
             TAG_CAPTURE => Ok(Message::ClientCapture { id: r.varint()? as u32 }),
+            TAG_SET_SCRIPT => Ok(Message::ClientSetScript { template: r.varint()? as u32 }),
+            TAG_SCRIPT => {
+                let entity = r.varint()? as NetId;
+                let template = r.varint()? as u32;
+                let name = r.str()?;
+                let runs = r.varint()?;
+                let errors = r.varint()?;
+                let last = r.str()?;
+                let n = r.varint()? as usize;
+                let mut logs = Vec::with_capacity(n.min(64));
+                for _ in 0..n {
+                    logs.push(r.str()?);
+                }
+                Ok(Message::ServerScript { entity, template, name, runs, errors, last, logs })
+            }
+            TAG_SCRIPTS => {
+                let n = r.varint()? as usize;
+                let mut templates = Vec::with_capacity(n.min(64));
+                for _ in 0..n {
+                    let id = r.varint()? as u32;
+                    let name = r.str()?;
+                    let desc = r.str()?;
+                    templates.push((id, name, desc));
+                }
+                Ok(Message::ServerScripts { templates })
+            }
             other => Err(WireError::BadTag(other)),
         }
     }
@@ -1249,6 +1328,37 @@ mod tests {
         assert_eq!(decode(&encode(&t)).unwrap(), t);
         let cap = Message::ClientCapture { id: 1 };
         assert_eq!(decode(&encode(&cap)).unwrap(), cap);
+    }
+
+    #[test]
+    fn script_roundtrip() {
+        let set = Message::ClientSetScript { template: 3 };
+        assert_eq!(decode(&encode(&set)).unwrap(), set);
+        let st = Message::ServerScript {
+            entity: 5,
+            template: 3,
+            name: "Турель".into(),
+            runs: 120,
+            errors: 1,
+            last: "деление на ноль".into(),
+            logs: vec!["огонь по цели".into(), "готово".into()],
+        };
+        assert_eq!(decode(&encode(&st)).unwrap(), st);
+        // Пустой скрипт (снятие) и без логов.
+        let off = Message::ServerScript {
+            entity: 5,
+            template: 0,
+            name: String::new(),
+            runs: 0,
+            errors: 0,
+            last: String::new(),
+            logs: Vec::new(),
+        };
+        assert_eq!(decode(&encode(&off)).unwrap(), off);
+        let lib = Message::ServerScripts {
+            templates: vec![(1, "Автопилот: высота".into(), "Держит высоту".into())],
+        };
+        assert_eq!(decode(&encode(&lib)).unwrap(), lib);
     }
 
     #[test]
