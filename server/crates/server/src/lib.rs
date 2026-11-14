@@ -33,6 +33,18 @@ pub const RESPAWN_TICKS: u64 = 120;   // 4 секунды при 30 Гц
 /// Сколько тиков после возрождения игрок неуязвим.
 pub const RESPAWN_INVULN_TICKS: u64 = 90;   // 3 секунды
 
+// --- Взрывы боя: крупная воронка в рельефе при уничтожении у поверхности ---
+/// Радиус кратера от взрыва (серверные единицы; 25 м).
+pub const EXPLOSION_RADIUS: f64 = 25.0;
+/// Глубина кратера от взрыва (серверные единицы; 12 м).
+pub const EXPLOSION_DEPTH: f64 = 12.0;
+/// Насколько низко над землёй должен быть взрыв (иначе в космосе рельефа нет).
+pub const EXPLOSION_ALT_LIMIT: f64 = 120.0;
+/// Первый слот воронок, отданный взрывам (копание занимает 0..63).
+pub const EXPLOSION_SLOT_BASE: u32 = 40;
+/// Сколько слотов отведено под взрывы (циклически переиспользуются).
+pub const EXPLOSION_SLOTS: u32 = 24;
+
 /// Конструкция: воксельная сетка плюс права и ревизии (совместная стройка).
 #[derive(Clone, Debug)]
 pub struct Construction {
@@ -132,6 +144,10 @@ pub struct Server {
     pub economy: Economy,
     /// Экономика изменилась с прошлого тика (надо разослать состояние рынка).
     pub market_dirty: bool,
+    /// Воронки от взрывов этого тика: (слот, воронка) — для рассылки как dig.
+    pub pending_explosions: Vec<(u32, Dent)>,
+    /// Счётчик взрывов (выбор слота воронки, чтобы ямы не затирали друг друга).
+    pub explosion_seq: u32,
     next_entity_id: NetId,
 }
 
@@ -240,6 +256,8 @@ impl Server {
             planet: ou_sim::home_planet(),
             economy: Economy::new(),
             market_dirty: true,
+            pending_explosions: Vec::new(),
+            explosion_seq: 0,
             next_entity_id: 1,
         }
     }
@@ -263,6 +281,29 @@ impl Server {
         dent
     }
 
+    /// Взрыв: крупная воронка в точке `center` (серверные единицы).
+    ///
+    /// В отличие от копания, взрыв бьёт **по точке** (а не по направлению):
+    /// находим направление от центра планеты к этой точке, считаем угловой
+    /// радиус большого кратера и вычитаем его из рельефа. Используется боевыми
+    /// попаданиями/уничтожением у поверхности. Возвращает применённую воронку.
+    pub fn explode(&mut self, slot: u32, center: Vec3, radius_units: f64, depth_units: f64) -> Dent {
+        let c = self.planet.center;
+        let rel = center.sub(c);
+        let dir = ou_sim::normalize(rel);
+        // Радиус планеты (в серверных единицах) — из параметров рельефа.
+        let r = self.planet.params.radius;
+        // Косинус углового радиуса кратера: чем больше радиус, тем меньше cos.
+        let cos_r = (1.0 - (radius_units * radius_units) / (2.0 * r * r)).clamp(-1.0, 1.0);
+        let dent = Dent { x: dir.x, y: dir.y, z: dir.z, cos_r, depth: depth_units };
+        Dent::place(&mut self.planet.dents, &mut self.planet.dent_count, slot as usize, dent);
+        for ent in self.world.entities.values_mut() {
+            if ent.terrain.is_some() {
+                ent.terrain = Some(self.planet);
+            }
+        }
+        dent
+    }
     /// Выкопать грунт игроком: рельеф + добыча руды.
     ///
     /// Возвращает (применённая воронка, что добыто): (id предмета, количество).
@@ -568,6 +609,7 @@ impl Server {
                 });
             }
         };
+        let target_pos = self.world.entities.get(&target)?.state.pos;
 
         let target_hull = *self.hulls.get(&target)?;
         let outcome = ou_combat::resolve_shot(&target_hull, &w, dist, seed);
@@ -584,6 +626,21 @@ impl Server {
             self.despawn(target);
             if self.target_spawns.contains_key(&target) {
                 self.target_respawn_tick.insert(target, tick + RESPAWN_TICKS);
+            }
+        }
+
+        // Взрыв у поверхности: уничтоженная цель оставляет крупную воронку в
+        // рельефе (как `dig`, но по точке и крупнее). Только если цель низко над
+        // землёй — в космосе рельефа нет.
+        if destroyed {
+            let dir = ou_sim::normalize(target_pos.sub(self.planet.center));
+            let r = self.planet.params.radius;
+            let surf = self.planet.height(dir);
+            if target_pos.length() - (r + surf) < EXPLOSION_ALT_LIMIT {
+                let slot = EXPLOSION_SLOT_BASE + (self.explosion_seq % EXPLOSION_SLOTS);
+                self.explosion_seq += 1;
+                let dent = self.explode(slot, target_pos, EXPLOSION_RADIUS, EXPLOSION_DEPTH);
+                self.pending_explosions.push((slot, dent));
             }
         }
 
@@ -1052,9 +1109,11 @@ impl Server {
             }
         }
 
+        // Взрывы этого тика — снимок для рассылки (все, кто видит место).
+        let explosions: Vec<(u32, Dent)> = std::mem::take(&mut self.pending_explosions);
+
         for (player_id, conn) in self.connections.iter_mut() {
             let visible = visible_by_player[player_id].clone();
-
             let baseline = conn.known.is_empty();
             let mut changed: Vec<EntityState> = Vec::new();
             for id in &visible {
@@ -1110,6 +1169,15 @@ impl Server {
                         });
                     }
                 }
+            }
+            // Взрывы: воронки от боя рассылаем тем же сообщением, что и копание.
+            for (slot, dent) in &explosions {
+                msgs.push(Message::ServerTerrainDig {
+                    slot: *slot,
+                    dir: Vec3::new(dent.x, dent.y, dent.z),
+                    cos_radius: dent.cos_r,
+                    depth: dent.depth,
+                });
             }
             // Смерть и возрождение: шлём владельцу сущности (и тем, кто видит).
             for e in &died {
@@ -1653,6 +1721,24 @@ mod tests {
         // Крафт без входов — отказ (без падения).
         let bad = s.craft_as(1, 9999);
         assert!(bad.is_err(), "несуществующий рецепт должен быть отклонён");
+    }
+
+    #[test]
+    fn explosion_carves_crater_in_terrain() {
+        // Взрыв оставляет крупную воронку в рельефе (та же механика, что у боя).
+        let mut s = Server::new();
+        s.connect_on_planet(1);
+        let dir = ou_sim::home_spawn_direction();
+        let r = s.planet.params.radius;
+        let ground = r + s.planet.height(dir);
+        // Точка на земле (в серверных единицах).
+        let center = dir.scale(ground);
+        let before = s.planet.height(dir);
+        let dent = s.explode(40, center, EXPLOSION_RADIUS, EXPLOSION_DEPTH);
+        assert!(dent.depth > 0.0);
+        let after = s.planet.height(dir);
+        assert!(after < before, "взрыв должен углубить рельеф: {before} -> {after}");
+        assert!(before - after > 1.0, "воронка заметная: {before} -> {after}");
     }
 
     #[test]
