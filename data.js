@@ -7,7 +7,7 @@ window.PLAN = {
   "project": "Open Universe",
   "tagline": "Один общий космос. Построен игроками.",
   "tagline_en": "One shared universe. Built by players.",
-  "updated": "2026-11-14",
+  "updated": "2026-11-15",
   "rule": "«Готово» ставится только тому, что игрок реально видит в игре (клиент UE5 + живой сервер). Написано и протестировано, но к игре не подключено — это «в работе».",
   "rule_en": "\"Done\" is only for what the player actually sees in the game (UE5 client + live server). Written and tested but not wired into the game counts as \"in progress\".",
   "phases": [
@@ -46,7 +46,7 @@ window.PLAN = {
         { "title": "Клиентский каркас: сетевой рендер мира", "title_en": "Client skeleton: networked world rendering", "status": "done" },
         { "title": "Копание грунта в игре (ЛКМ, сервер-авторитетно, с репликацией)", "title_en": "Terrain digging in game (LMB, server-authoritative, replicated)", "status": "done" },
         { "title": "Стартовый комплекс: площадка, лестницы, постройки, единый цвет пола", "title_en": "Start complex: pad, staircases, buildings, single-colour floor", "status": "done" },
-        { "title": "Система небесных тел (генератор есть; в игре одна планета)", "title_en": "Celestial body system (generator exists; the game has one planet)", "status": "in_progress" }
+        { "title": "Система небесных тел: луна, соседняя планета, звезда, газовый гигант (видны и с рельефом)", "title_en": "Celestial bodies: moon, neighbouring planet, star, gas giant (visible and with terrain)", "status": "done" }
       ]
     },
     {
