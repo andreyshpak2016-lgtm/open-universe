@@ -414,6 +414,47 @@ int main(int argc, char** argv)
         Check(cs.Kills == 3 && cs.Damage == 1240 && cs.Bounty == 750, "поля боя совпали");
     }
 
+    // --- 6i. Мастерская (теги 37–41) ---
+    std::printf("\n=== 6i. Мастерская ===\n");
+    {
+        auto push_str = [](std::vector<uint8_t>& out, const std::string& s) {
+            out.push_back(static_cast<uint8_t>(s.size() & 0xFF));
+            out.push_back(static_cast<uint8_t>((s.size() >> 8) & 0xFF));
+            out.insert(out.end(), s.begin(), s.end());
+        };
+        const std::vector<uint8_t> pb = OUWire::EncodePublishBlueprint("Дом", 600);
+        Check(pb[0] == OUWire::TagPublishBlueprint, "тег публикации = 37");
+        const std::vector<uint8_t> bb = OUWire::EncodeBuyBlueprint(5);
+        Check(bb[0] == OUWire::TagBuyBlueprint, "тег покупки = 38");
+        const std::vector<uint8_t> ob = OUWire::EncodePlaceOwnBlueprint(5, 1, -2, 3, 9);
+        Check(ob[0] == OUWire::TagPlaceOwnBlueprint, "тег постановки своего = 39");
+        // Витрина: [tag40][count]{(id,name,author,voxels,price)}[owned]{(id,name)}.
+        std::vector<uint8_t> wb;
+        wb.push_back(OUWire::TagWorkshop);
+        OUWire::push_varint(wb, 1);
+        OUWire::push_varint(wb, 5);
+        push_str(wb, "Дом");
+        OUWire::push_varint(wb, 1);       // автор
+        OUWire::push_varint(wb, 42);      // блоков
+        OUWire::push_varint(wb, 1200);    // цена
+        OUWire::push_varint(wb, 1);       // owned count
+        OUWire::push_varint(wb, 5);
+        push_str(wb, "Дом");
+        std::vector<OUWire::WorkshopListing> ls;
+        std::vector<OUWire::OwnBlueprint> os;
+        Check(OUWire::DecodeWorkshop(wb.data(), wb.size(), ls, os), "витрина разобрана");
+        Check(ls.size() == 1 && ls[0].Id == 5 && ls[0].Name == "Дом" && ls[0].Price == 1200,
+            "объявление совпало");
+        Check(os.size() == 1 && os[0].Id == 5, "личная библиотека совпала");
+        // Результат.
+        std::vector<uint8_t> rb;
+        rb.push_back(OUWire::TagWorkshopResult);
+        rb.push_back(1);
+        push_str(rb, "шаблон куплен");
+        OUWire::WorkshopResult wr;
+        Check(OUWire::DecodeWorkshopResult(rb.data(), rb.size(), wr) && wr.Ok, "результат разобран");
+    }
+
     // --- 7. Приветствие сервера (какой сущностью управляем) ---
     std::printf("\n=== 7. Приветствие сервера (welcome) ===\n");
     {

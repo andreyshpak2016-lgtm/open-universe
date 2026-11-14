@@ -23,6 +23,8 @@ void AOUPlayerMenuHUD::DrawHUD()
 		Menu->DrawMarket(Canvas);
 		// Окно скриптов (L) — там же, поверх HUD.
 		Menu->DrawScripts(Canvas);
+		// Окно мастерской (K).
+		Menu->DrawWorkshop(Canvas);
 		// Пауза-меню (ESC) — поверх всего.
 		Menu->DrawPauseMenu(Canvas);
 	}

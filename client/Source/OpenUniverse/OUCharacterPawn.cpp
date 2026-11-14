@@ -453,6 +453,8 @@ void AOUCharacterPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputCom
 	PlayerInputComponent->BindAction(TEXT("BlueprintPlace"), IE_Pressed, this, &AOUCharacterPawn::BlueprintPlace);
 	// Скрипты: L — окно скриптов объекта.
 	PlayerInputComponent->BindAction(TEXT("ScriptMenu"), IE_Pressed, this, &AOUCharacterPawn::ToggleScripts);
+	// Мастерская: K — обмен шаблонами.
+	PlayerInputComponent->BindAction(TEXT("WorkshopMenu"), IE_Pressed, this, &AOUCharacterPawn::ToggleWorkshop);
 	// Alt — отпустить/вернуть курсор (обзор мышью / работа с интерфейсом).
 	PlayerInputComponent->BindAction(TEXT("CursorToggle"), IE_Pressed, this, &AOUCharacterPawn::OnCursorToggle);
 }
@@ -1145,8 +1147,7 @@ void AOUCharacterPawn::CaptureTerritory()
 }
 
 void AOUCharacterPawn::ToggleScripts()
-{
-	// Окно скриптов объекта (клавиша L): автопилоты, турель, логистика.
+{	// Окно скриптов объекта (клавиша L): автопилоты, турель, логистика.
 	if (bBuildMenuOpen)
 	{
 		return;
@@ -1163,9 +1164,35 @@ void AOUCharacterPawn::ToggleScripts()
 		if (Menu->bScriptsOpen)
 		{
 			Menu->bMarketOpen = false;
+			Menu->bWorkshopOpen = false;
 		}
 		Menu->SetMenuCursor(Menu->bScriptsOpen);
 		UE_LOG(LogOUChar, Log, TEXT("Скрипты: %s"), Menu->bScriptsOpen ? TEXT("открыто") : TEXT("закрыто"));
+	}
+}
+
+void AOUCharacterPawn::ToggleWorkshop()
+{
+	// Окно мастерской (клавиша K): обмен шаблонами построек.
+	if (bBuildMenuOpen)
+	{
+		return;
+	}
+	AOUPlayerMenuController* Menu = Cast<AOUPlayerMenuController>(GetController());
+	if (!Menu)
+	{
+		Menu = Cast<AOUPlayerMenuController>(GetWorld() ? GetWorld()->GetFirstPlayerController() : nullptr);
+	}
+	if (Menu)
+	{
+		Menu->bWorkshopOpen = !Menu->bWorkshopOpen;
+		if (Menu->bWorkshopOpen)
+		{
+			Menu->bMarketOpen = false;
+			Menu->bScriptsOpen = false;
+		}
+		Menu->SetMenuCursor(Menu->bWorkshopOpen);
+		UE_LOG(LogOUChar, Log, TEXT("Мастерская: %s"), Menu->bWorkshopOpen ? TEXT("открыто") : TEXT("закрыто"));
 	}
 }
 
@@ -1608,8 +1635,7 @@ void AOUCharacterPawn::Tick(float DeltaSeconds)
 
 	// Тестовая постановка шаблона (`-OUAutoBlueprint`): открыть строительство и
 	// поставить шаблон «Куб 5×5×5» рядом с базой — проверка blueprints вживую.
-	if (FParse::Param(FCommandLine::Get(), TEXT("OUAutoBlueprint")))
-	{
+	if (FParse::Param(FCommandLine::Get(), TEXT("OUAutoBlueprint")))	{
 		BlueprintTimer += DeltaSeconds;
 		if (BlueprintTimer >= 2.f && BlueprintCount < 10)
 		{
@@ -1624,6 +1650,33 @@ void AOUCharacterPawn::Tick(float DeltaSeconds)
 				// Ставим куб (id 2) в якорь сетки — прямо перед игроком.
 				Net->SendPlaceBlueprint(2, 0, 0, 0, Net->OwnEntityId);
 				UE_LOG(LogOUChar, Log, TEXT("Шаблон: поставлен куб 5×5×5"));
+			}
+		}
+	}
+
+	// Тест мастерской (`-OUAutoWorkshop`): открыть окно, опубликовать постройку,
+	// затем показать витрину — проверка обмена вживую.
+	if (FParse::Param(FCommandLine::Get(), TEXT("OUAutoWorkshop")))
+	{
+		WorkshopTimer += DeltaSeconds;
+		if (WorkshopTimer >= 1.5f && WorkshopCount < 12)
+		{
+			WorkshopTimer = 0.f;
+			++WorkshopCount;
+			if (WorkshopCount == 1)
+			{
+				ToggleWorkshop();
+			}
+			// Сначала строим что-то, чтобы было что публиковать.
+			if (WorkshopCount >= 3 && WorkshopCount <= 6)
+			{
+				if (!bBuildMenuOpen) { ToggleBuildMenu(); }
+				PlaceBuildBlock();
+			}
+			if (WorkshopCount == 8 && Net && Net->OwnEntityId != 0)
+			{
+				Net->SendPublishBlueprint(TEXT("Шаблон TestPilot"), 600);
+				UE_LOG(LogOUChar, Log, TEXT("Мастерская: публикую постройку"));
 			}
 		}
 	}

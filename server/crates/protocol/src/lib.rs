@@ -306,6 +306,22 @@ pub enum Message {
     ///
     /// Шлётся при изменении: выстрел с уроном, уничтожение цели, награда.
     ServerCombat { kills: u64, damage: u64, bounty: u64 },
+    /// Клиент: опубликовать свою постройку как шаблон в мастерской.
+    ///
+    /// Сервер снимает воксели текущей конструкции игрока и выставляет их в
+    /// мастерскую с ценой. Автор — игрок; покупатели платят ему кредитами.
+    ClientPublishBlueprint { name: String, price: u64 },
+    /// Клиент: купить шаблон из мастерской по id.
+    ClientBuyBlueprint { id: u32 },
+    /// Клиент: поставить свой (купленный) шаблон по id.
+    ClientPlaceOwnBlueprint { id: u32, origin: (i32, i32, i32), entity: NetId },
+    /// Сервер: мастерская — витрина шаблонов и личная библиотека игрока.
+    ///
+    /// `listings` — объявления: (id, имя, автор, вокселей, цена).
+    /// `owned` — купленные/созданные шаблоны игрока: (id, имя).
+    ServerWorkshop { listings: Vec<(u32, String, u32, u32, u64)>, owned: Vec<(u32, String)> },
+    /// Сервер: результат операции мастерской (публикация/покупка).
+    ServerWorkshopResult { ok: bool, message: String },
 }
 
 /// Территория в сообщении (для HUD).
@@ -643,6 +659,11 @@ mod wire {
     const TAG_PLACE_BLUEPRINT: u8 = 34;
     const TAG_BLUEPRINTS: u8 = 35;
     const TAG_COMBAT: u8 = 36;
+    const TAG_PUBLISH_BP: u8 = 37;
+    const TAG_BUY_BP: u8 = 38;
+    const TAG_PLACE_OWN_BP: u8 = 39;
+    const TAG_WORKSHOP: u8 = 40;
+    const TAG_WORKSHOP_RESULT: u8 = 41;
 
     pub fn encode(msg: &Message) -> Vec<u8> {
         let mut w = Writer::new();
@@ -966,6 +987,44 @@ mod wire {
                 w.varint(*damage);
                 w.varint(*bounty);
             }
+            Message::ClientPublishBlueprint { name, price } => {
+                w.u8(TAG_PUBLISH_BP);
+                w.str(name);
+                w.varint(*price);
+            }
+            Message::ClientBuyBlueprint { id } => {
+                w.u8(TAG_BUY_BP);
+                w.varint(*id as u64);
+            }
+            Message::ClientPlaceOwnBlueprint { id, origin, entity } => {
+                w.u8(TAG_PLACE_OWN_BP);
+                w.varint(*id as u64);
+                w.i32(origin.0);
+                w.i32(origin.1);
+                w.i32(origin.2);
+                w.u32(*entity);
+            }
+            Message::ServerWorkshop { listings, owned } => {
+                w.u8(TAG_WORKSHOP);
+                w.varint(listings.len() as u64);
+                for (id, name, author, voxels, price) in listings {
+                    w.varint(*id as u64);
+                    w.str(name);
+                    w.varint(*author as u64);
+                    w.varint(*voxels as u64);
+                    w.varint(*price);
+                }
+                w.varint(owned.len() as u64);
+                for (id, name) in owned {
+                    w.varint(*id as u64);
+                    w.str(name);
+                }
+            }
+            Message::ServerWorkshopResult { ok, message } => {
+                w.u8(TAG_WORKSHOP_RESULT);
+                w.bool(*ok);
+                w.str(message);
+            }
         }
         w.buf
     }
@@ -1270,6 +1329,39 @@ mod wire {
                 damage: r.varint()?,
                 bounty: r.varint()?,
             }),
+            TAG_PUBLISH_BP => Ok(Message::ClientPublishBlueprint {
+                name: r.str()?,
+                price: r.varint()?,
+            }),
+            TAG_BUY_BP => Ok(Message::ClientBuyBlueprint { id: r.varint()? as u32 }),
+            TAG_PLACE_OWN_BP => Ok(Message::ClientPlaceOwnBlueprint {
+                id: r.varint()? as u32,
+                origin: (r.i32()?, r.i32()?, r.i32()?),
+                entity: r.u32()?,
+            }),
+            TAG_WORKSHOP => {
+                let nl = r.varint()? as usize;
+                let mut listings = Vec::with_capacity(nl.min(256));
+                for _ in 0..nl {
+                    listings.push((
+                        r.varint()? as u32,
+                        r.str()?,
+                        r.varint()? as u32,
+                        r.varint()? as u32,
+                        r.varint()?,
+                    ));
+                }
+                let no = r.varint()? as usize;
+                let mut owned = Vec::with_capacity(no.min(256));
+                for _ in 0..no {
+                    owned.push((r.varint()? as u32, r.str()?));
+                }
+                Ok(Message::ServerWorkshop { listings, owned })
+            }
+            TAG_WORKSHOP_RESULT => Ok(Message::ServerWorkshopResult {
+                ok: r.bool()?,
+                message: r.str()?,
+            }),
             other => Err(WireError::BadTag(other)),
         }
     }
@@ -1432,6 +1524,23 @@ mod tests {
     fn combat_roundtrip() {
         let c = Message::ServerCombat { kills: 3, damage: 1240, bounty: 750 };
         assert_eq!(decode(&encode(&c)).unwrap(), c);
+    }
+
+    #[test]
+    fn workshop_roundtrip() {
+        let pubm = Message::ClientPublishBlueprint { name: "Мой дом".into(), price: 1200 };
+        assert_eq!(decode(&encode(&pubm)).unwrap(), pubm);
+        let buy = Message::ClientBuyBlueprint { id: 5 };
+        assert_eq!(decode(&encode(&buy)).unwrap(), buy);
+        let place = Message::ClientPlaceOwnBlueprint { id: 5, origin: (1, -2, 3), entity: 9 };
+        assert_eq!(decode(&encode(&place)).unwrap(), place);
+        let shop = Message::ServerWorkshop {
+            listings: vec![(5, "Мой дом".into(), 1, 42, 1200)],
+            owned: vec![(5, "Мой дом".into())],
+        };
+        assert_eq!(decode(&encode(&shop)).unwrap(), shop);
+        let res = Message::ServerWorkshopResult { ok: true, message: "готово".into() };
+        assert_eq!(decode(&encode(&res)).unwrap(), res);
     }
 
     #[test]

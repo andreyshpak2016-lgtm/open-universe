@@ -170,6 +170,8 @@ fn main() {
                                 &Message::ServerBlueprints { templates: server.blueprint_templates() },
                             )
                             .ok();
+                            // И витрина мастерской (шаблоны игроков).
+                            net.send_to(token, from, &server.workshop_state(next_player)).ok();
                             next_player += 1;
                         }
                     }
@@ -271,6 +273,38 @@ fn main() {
                             match server.place_blueprint_as(*pid, entity, id, origin) {
                                 Ok(n) => println!("шаблон: игрок {pid} поставил {n} блоков (шаблон {id})"),
                                 Err(e) => println!("шаблон: игрок {pid}: {e}"),
+                            }
+                        }
+                    }
+                    Message::ClientPublishBlueprint { name, price } => {
+                        if let Some(pid) = clients.get(&from) {
+                            let msg = match server.publish_blueprint(*pid, name, price) {
+                                Ok(id) => Message::ServerWorkshopResult {
+                                    ok: true,
+                                    message: format!("шаблон опубликован (id {id})"),
+                                },
+                                Err(e) => Message::ServerWorkshopResult { ok: false, message: e },
+                            };
+                            net.send_to(token, from, &msg).ok();
+                        }
+                    }
+                    Message::ClientBuyBlueprint { id } => {
+                        if let Some(pid) = clients.get(&from) {
+                            let msg = match server.buy_blueprint(*pid, id) {
+                                Ok(()) => Message::ServerWorkshopResult {
+                                    ok: true,
+                                    message: "шаблон куплен".to_string(),
+                                },
+                                Err(e) => Message::ServerWorkshopResult { ok: false, message: e },
+                            };
+                            net.send_to(token, from, &msg).ok();
+                        }
+                    }
+                    Message::ClientPlaceOwnBlueprint { id, origin, entity } => {
+                        if let Some(pid) = clients.get(&from) {
+                            match server.place_own_blueprint(*pid, entity, id, origin) {
+                                Ok(n) => println!("мастерская: игрок {pid} поставил свой шаблон {id} ({n} блоков)"),
+                                Err(e) => println!("мастерская: игрок {pid}: {e}"),
                             }
                         }
                     }

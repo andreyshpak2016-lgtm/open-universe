@@ -75,6 +75,11 @@ namespace OUWire
         TagPlaceBlueprint = 34,
         TagBlueprints = 35,
         TagCombat = 36,
+        TagPublishBlueprint = 37,
+        TagBuyBlueprint = 38,
+        TagPlaceOwnBlueprint = 39,
+        TagWorkshop = 40,
+        TagWorkshopResult = 41,
     };
 
     /// Действия редактора конструкций.
@@ -1075,6 +1080,113 @@ namespace OUWire
         uint8_t tag = 0;
         if (!r.U8(tag) || tag != TagCombat) return false;
         return r.Varint(Out.Kills) && r.Varint(Out.Damage) && r.Varint(Out.Bounty);
+    }
+
+    /// Опубликовать постройку в мастерской (клиент → сервер, тег 37).
+    inline std::vector<uint8_t> EncodePublishBlueprint(const std::string& Name, uint64_t Price)
+    {
+        std::vector<uint8_t> out;
+        out.push_back(TagPublishBlueprint);
+        // Строка: u16 длина + UTF-8.
+        out.push_back(static_cast<uint8_t>(Name.size() & 0xFF));
+        out.push_back(static_cast<uint8_t>((Name.size() >> 8) & 0xFF));
+        out.insert(out.end(), Name.begin(), Name.end());
+        push_varint(out, Price);
+        return out;
+    }
+
+    /// Купить шаблон (клиент → сервер, тег 38): [tag][id varint].
+    inline std::vector<uint8_t> EncodeBuyBlueprint(uint32_t Id)
+    {
+        std::vector<uint8_t> out;
+        out.push_back(TagBuyBlueprint);
+        push_varint(out, Id);
+        return out;
+    }
+
+    /// Поставить свой шаблон (клиент → сервер, тег 39): [tag][id][x][y][z][entity].
+    inline std::vector<uint8_t> EncodePlaceOwnBlueprint(uint32_t Id, int32_t X, int32_t Y, int32_t Z, uint32_t Entity)
+    {
+        std::vector<uint8_t> out;
+        out.push_back(TagPlaceOwnBlueprint);
+        push_varint(out, Id);
+        auto push_i32 = [&out](int32_t v) {
+            const uint32_t u = static_cast<uint32_t>(v);
+            for (int i = 0; i < 4; ++i) { out.push_back(static_cast<uint8_t>((u >> (8 * i)) & 0xFF)); }
+        };
+        push_i32(X); push_i32(Y); push_i32(Z);
+        for (int i = 0; i < 4; ++i) { out.push_back(static_cast<uint8_t>((Entity >> (8 * i)) & 0xFF)); }
+        return out;
+    }
+
+    /// Объявление мастерской и личная библиотека (сервер → клиент, тег 40).
+    struct WorkshopListing
+    {
+        uint32_t Id = 0;
+        std::string Name;
+        uint32_t Author = 0;
+        uint32_t Voxels = 0;
+        uint64_t Price = 0;
+    };
+    struct OwnBlueprint
+    {
+        uint32_t Id = 0;
+        std::string Name;
+    };
+
+    inline bool DecodeWorkshop(const uint8_t* body, size_t len,
+        std::vector<WorkshopListing>& OutListings, std::vector<OwnBlueprint>& OutOwned)
+    {
+        Reader r{body, len, 0};
+        uint8_t tag = 0;
+        if (!r.U8(tag) || tag != TagWorkshop) return false;
+        uint64_t nl = 0;
+        if (!r.Varint(nl)) return false;
+        OutListings.clear();
+        OutListings.reserve(static_cast<size_t>(nl));
+        for (uint64_t i = 0; i < nl; ++i)
+        {
+            WorkshopListing L;
+            uint64_t id = 0, author = 0, voxels = 0;
+            if (!r.Varint(id)) return false;
+            L.Id = static_cast<uint32_t>(id);
+            if (!r.Str(L.Name)) return false;
+            if (!r.Varint(author) || !r.Varint(voxels)) return false;
+            L.Author = static_cast<uint32_t>(author);
+            L.Voxels = static_cast<uint32_t>(voxels);
+            if (!r.Varint(L.Price)) return false;
+            OutListings.push_back(std::move(L));
+        }
+        uint64_t no = 0;
+        if (!r.Varint(no)) return false;
+        OutOwned.clear();
+        OutOwned.reserve(static_cast<size_t>(no));
+        for (uint64_t i = 0; i < no; ++i)
+        {
+            OwnBlueprint O;
+            uint64_t id = 0;
+            if (!r.Varint(id)) return false;
+            O.Id = static_cast<uint32_t>(id);
+            if (!r.Str(O.Name)) return false;
+            OutOwned.push_back(std::move(O));
+        }
+        return true;
+    }
+
+    /// Результат операции мастерской (сервер → клиент, тег 41).
+    struct WorkshopResult
+    {
+        bool Ok = false;
+        std::string Message;
+    };
+
+    inline bool DecodeWorkshopResult(const uint8_t* body, size_t len, WorkshopResult& Out)
+    {
+        Reader r{body, len, 0};
+        uint8_t tag = 0;
+        if (!r.U8(tag) || tag != TagWorkshopResult) return false;
+        if (!r.Bool(Out.Ok)) return false;
+        return r.Str(Out.Message);
     }
 
     /// Собрать кадр ввода (клиент → сервер, тег 2).

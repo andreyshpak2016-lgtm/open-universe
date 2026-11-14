@@ -386,6 +386,33 @@ void AOUPlayerMenuController::OnLeftClick()
 				}
 				return;
 			}
+			// Мастерская: 500 — опубликовать, 600+ — купить шаблон.
+			if (bWorkshopOpen && B.Id >= 500)
+			{
+				ResolveNet();
+				if (!Net)
+				{
+					return;
+				}
+				if (B.Id == 500)
+				{
+					AOUCharacterPawn* WChar = Cast<AOUCharacterPawn>(GetPawn());
+					const FString Name = WChar ? FString::Printf(TEXT("Шаблон %s"), *Profile.Name) : TEXT("Шаблон");
+					Net->SendPublishBlueprint(Name, 600);
+					UE_LOG(LogOUMenu, Log, TEXT("Мастерская: публикую «%s»"), *Name);
+				}
+				else
+				{
+					const int32 Index = B.Id - 600;
+					if (Net->WorkshopListings.IsValidIndex(Index))
+					{
+						Net->SendBuyBlueprint(Net->WorkshopListings[Index].Id);
+						UE_LOG(LogOUMenu, Log, TEXT("Мастерская: покупаю id %d"),
+							Net->WorkshopListings[Index].Id);
+					}
+				}
+				return;
+			}
 			if (Screen == EOUMenuScreen::Character)
 			{
 				if (B.Id == 1)
@@ -1253,6 +1280,82 @@ void AOUPlayerMenuController::DrawScripts(UCanvas* InCanvas)
 	}
 }
 
+void AOUPlayerMenuController::DrawWorkshop(UCanvas* InCanvas)
+{
+	if (!bWorkshopOpen || !InCanvas || bMenuOpen)
+	{
+		return;
+	}
+	ResolveNet();
+
+	const float W = InCanvas->SizeX;
+	const float H = InCanvas->SizeY;
+	UFont* Font = GEngine->GetLargeFont();
+	UFont* Small = GEngine->GetMediumFont();
+	UFont* Tiny = GEngine->GetSmallFont();
+	const FLinearColor PanelB(0.34f, 0.44f, 0.85f, 0.9f);
+	const FLinearColor Dim(0.66f, 0.72f, 0.86f, 1.f);
+
+	const float PW = FMath::Min(900.f, W - 80.f);
+	const float PH = FMath::Min(580.f, H - 100.f);
+	const FVector2D P((W - PW) * 0.5f, (H - PH) * 0.5f);
+	GlassPanel(InCanvas, P, FVector2D(PW, PH), PanelB, ColAccent2);
+	DrawText(InCanvas, Font, TEXT("МАСТЕРСКАЯ  ·  ШАБЛОНЫ"), P + FVector2D(24, 16), ColAccent);
+	DrawText(InCanvas, Small, TEXT("K — закрыть"), P + FVector2D(PW - 130, 24), Dim);
+
+	// Опубликовать свою постройку.
+	{
+		const FVector2D PubPos(P.X + 24, P.Y + 56);
+		const FVector2D PubSize(300, 30);
+		FillBox(InCanvas, PubPos, PubSize, ColAccent2);
+		DrawText(InCanvas, Small, TEXT("Опубликовать постройку (600 кр)"), PubPos + FVector2D(12, 7),
+			FLinearColor(0.02f, 0.06f, 0.1f, 1.f));
+		Buttons.Add({ PubPos, PubSize, 500 });
+	}
+	if (Net && Net->WorkshopMessage.Len() > 0)
+	{
+		DrawText(InCanvas, Tiny, Net->WorkshopMessage, P + FVector2D(340, 64), Dim);
+	}
+
+	// Витрина (левая колонка).
+	const float LX = P.X + 24;
+	DrawText(InCanvas, Small, TEXT("Витрина (ЛКМ — купить)"), FVector2D(LX, P.Y + 100), ColAccent);
+	const TArray<FOUWorkshopListing>& List = Net ? Net->WorkshopListings : TArray<FOUWorkshopListing>();
+	if (List.Num() == 0)
+	{
+		DrawText(InCanvas, Tiny, TEXT("(пока никто не публиковал шаблоны)"), FVector2D(LX, P.Y + 126), Dim);
+	}
+	for (int32 i = 0; i < List.Num() && i < 12; ++i)
+	{
+		const FOUWorkshopListing& L = List[i];
+		const float RY = P.Y + 124 + i * 26.f;
+		FillBox(InCanvas, FVector2D(LX - 4, RY - 2), FVector2D(PW * 0.54f, 24.f),
+			FLinearColor(0.06f, 0.09f, 0.16f, 0.8f));
+		StrokeBox(InCanvas, FVector2D(LX - 4, RY - 2), FVector2D(PW * 0.54f, 24.f), ColPanelBorder, 1.f);
+		DrawText(InCanvas, Small, FString::Printf(TEXT("%s  ·  автор #%d, %d блоков  ·  %lld кр"),
+			*L.Name, L.Author, L.Voxels, L.Price), FVector2D(LX + 4, RY + 3), ColText);
+		Buttons.Add({ FVector2D(LX - 4, RY - 2), FVector2D(PW * 0.54f, 24.f), 600 + i });
+	}
+
+	// Личная библиотека (правая колонка).
+	const float RX = P.X + PW * 0.58f;
+	DrawText(InCanvas, Small, TEXT("Мои шаблоны"), FVector2D(RX, P.Y + 100), ColAccent);
+	const TArray<FOUOwnBlueprint>& Own = Net ? Net->OwnBlueprints : TArray<FOUOwnBlueprint>();
+	if (Own.Num() == 0)
+	{
+		DrawText(InCanvas, Tiny, TEXT("(пусто — купите или опубликуйте)"), FVector2D(RX, P.Y + 126), Dim);
+	}
+	for (int32 i = 0; i < Own.Num() && i < 12; ++i)
+	{
+		const FOUOwnBlueprint& O = Own[i];
+		DrawText(InCanvas, Small, FString::Printf(TEXT("%s  (id %d)"), *O.Name, O.Id),
+			FVector2D(RX, P.Y + 124 + i * 24.f), ColOk);
+	}
+
+	DrawText(InCanvas, Tiny, TEXT("Свой шаблон ставится в редакторе строительства (клавиша B)."),
+		P + FVector2D(24, PH - 26), Dim);
+}
+
 FString AOUPlayerMenuController::ItemName(int32 Item)
 {
 	// Имена предметов дублируют серверный `ItemRegistry::default_universe`.
@@ -1533,7 +1636,7 @@ void AOUPlayerMenuController::DrawGameHud(UCanvas* InCanvas)
 		const bool bInShip = ShipPawn != nullptr;
 		const FString Hint = bInShip
 			? TEXT("Мышь — обзор   ·   W/S — тяга   ·   A/D — стрейф   ·   Пробел/Ctrl — вверх/вниз   ·   ЛКМ — огонь   ·   L — скрипты   ·   F — выход")
-			: TEXT("Мышь — обзор   ·   W/A/S/D — ходьба   ·   ЛКМ — копать   ·   M — рынок   ·   B — строительство   ·   T — захват зоны   ·   L — скрипты");
+			: TEXT("Мышь — обзор   ·   W/A/S/D — ходьба   ·   ЛКМ — копать   ·   M — рынок   ·   B — строительство   ·   T — захват зоны   ·   L — скрипты   ·   K — мастерская");
 		DrawText(InCanvas, Tiny, Hint, FVector2D(18, H - 22), Dim);
 	}
 

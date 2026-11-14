@@ -215,6 +215,18 @@ public:
 	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Script")
 	bool bScriptsOpen = false;
 
+	/**
+	 * Окно мастерской (клавиша K): обмен шаблонами построек.
+	 *
+	 * Показывает витрину (шаблоны игроков с ценой) и личную библиотеку. Клик по
+	 * объявлению покупает шаблон; своя постройка публикуется кнопкой.
+	 */
+	void DrawWorkshop(class UCanvas* InCanvas);
+
+	/** Открыто ли окно мастерской. */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Workshop")
+	bool bWorkshopOpen = false;
+
 	/** Имя предмета по id (дублирует серверный реестр). */
 	static FString ItemName(int32 Item);
 

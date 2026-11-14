@@ -261,6 +261,41 @@ struct FOUSystemBody
 	int64 Seed = 0;
 };
 
+/** Объявление мастерской: шаблон игрока на продажу. */
+USTRUCT(BlueprintType)
+struct FOUWorkshopListing
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Workshop")
+	int32 Id = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Workshop")
+	FString Name;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Workshop")
+	int32 Author = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Workshop")
+	int32 Voxels = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Workshop")
+	int64 Price = 0;
+};
+
+/** Свой (купленный/созданный) шаблон игрока. */
+USTRUCT(BlueprintType)
+struct FOUOwnBlueprint
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Workshop")
+	int32 Id = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Workshop")
+	FString Name;
+};
+
 /** Шаблон постройки (blueprint) для редактора в игре. */
 USTRUCT(BlueprintType)
 struct FOUBlueprint
@@ -625,6 +660,33 @@ public:
 	/** Приходила ли боевая статистика. */
 	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Combat")
 	bool bCombatReceived = false;
+
+	// --- Мастерская (обмен шаблонами) ---
+
+	/** Витрина мастерской: шаблоны игроков на продажу. */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Workshop")
+	TArray<FOUWorkshopListing> WorkshopListings;
+
+	/** Личные (купленные/созданные) шаблоны игрока. */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Workshop")
+	TArray<FOUOwnBlueprint> OwnBlueprints;
+
+	/** Последний результат операции мастерской (для подсказки). */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Workshop")
+	FString WorkshopMessage;
+
+	/** Приходила ли витрина мастерской. */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Workshop")
+	bool bWorkshopReceived = false;
+
+	/** Опубликовать постройку в мастерскую (имя, цена). */
+	void SendPublishBlueprint(const FString& Name, int64 Price);
+
+	/** Купить шаблон из мастерской по id. */
+	void SendBuyBlueprint(int32 Id);
+
+	/** Поставить свой шаблон по id с якорем (X,Y,Z) в конструкцию Entity. */
+	void SendPlaceOwnBlueprint(int32 Id, int32 X, int32 Y, int32 Z, int32 Entity);
 
 	/** Подключиться к серверу. */
 	UFUNCTION(BlueprintCallable, Category = "Open Universe|Net")

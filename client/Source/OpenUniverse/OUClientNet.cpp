@@ -301,6 +301,45 @@ void UOUClientNet::SendPlaceBlueprint(int32 Id, int32 X, int32 Y, int32 Z, int32
 	SendPacket(Arr);
 }
 
+void UOUClientNet::SendPublishBlueprint(const FString& Name, int64 Price)
+{
+	if (!IsConnected())
+	{
+		return;
+	}
+	const std::string Utf8(TCHAR_TO_UTF8(*Name));
+	const std::vector<uint8_t> Body = OUWire::EncodePublishBlueprint(
+		Utf8, static_cast<uint64_t>(FMath::Max<int64>(0, Price)));
+	TArray<uint8> Arr;
+	Arr.Append(Body.data(), static_cast<int32>(Body.size()));
+	SendPacket(Arr);
+}
+
+void UOUClientNet::SendBuyBlueprint(int32 Id)
+{
+	if (!IsConnected())
+	{
+		return;
+	}
+	const std::vector<uint8_t> Body = OUWire::EncodeBuyBlueprint(static_cast<uint32_t>(FMath::Max(0, Id)));
+	TArray<uint8> Arr;
+	Arr.Append(Body.data(), static_cast<int32>(Body.size()));
+	SendPacket(Arr);
+}
+
+void UOUClientNet::SendPlaceOwnBlueprint(int32 Id, int32 X, int32 Y, int32 Z, int32 Entity)
+{
+	if (!IsConnected())
+	{
+		return;
+	}
+	const std::vector<uint8_t> Body = OUWire::EncodePlaceOwnBlueprint(
+		static_cast<uint32_t>(FMath::Max(0, Id)), X, Y, Z, static_cast<uint32_t>(FMath::Max(0, Entity)));
+	TArray<uint8> Arr;
+	Arr.Append(Body.data(), static_cast<int32>(Body.size()));
+	SendPacket(Arr);
+}
+
 void UOUClientNet::UpdateTerritoryAt(double ServerX, double ServerY, double ServerZ)
 {
 	// Точка игрока в серверных единицах; зоны тоже в серверных.
@@ -772,6 +811,46 @@ void UOUClientNet::Poll()
 				CombatDamage = static_cast<int64>(C.Damage);
 				CombatBounty = static_cast<int64>(C.Bounty);
 				bCombatReceived = true;
+			}
+		}
+		else if (Body[0] == OUWire::TagWorkshopResult) // результат мастерской
+		{
+			OUWire::WorkshopResult R;
+			if (OUWire::DecodeWorkshopResult(Body.GetData(), static_cast<size_t>(Body.Num()), R))
+			{
+				WorkshopMessage = FString(UTF8_TO_TCHAR(R.Message.c_str()));
+				UE_LOG(LogOUClient, Log, TEXT("Мастерская: %s — %s"),
+					R.Ok ? TEXT("ок") : TEXT("отказ"), *WorkshopMessage);
+			}
+		}
+		else if (Body[0] == OUWire::TagWorkshop) // витрина мастерской
+		{
+			std::vector<OUWire::WorkshopListing> Ls;
+			std::vector<OUWire::OwnBlueprint> Os;
+			if (OUWire::DecodeWorkshop(Body.GetData(), static_cast<size_t>(Body.Num()), Ls, Os))
+			{
+				WorkshopListings.Reset();
+				for (const OUWire::WorkshopListing& L : Ls)
+				{
+					FOUWorkshopListing E;
+					E.Id = static_cast<int32>(L.Id);
+					E.Name = FString(UTF8_TO_TCHAR(L.Name.c_str()));
+					E.Author = static_cast<int32>(L.Author);
+					E.Voxels = static_cast<int32>(L.Voxels);
+					E.Price = static_cast<int64>(L.Price);
+					WorkshopListings.Add(E);
+				}
+				OwnBlueprints.Reset();
+				for (const OUWire::OwnBlueprint& O : Os)
+				{
+					FOUOwnBlueprint E;
+					E.Id = static_cast<int32>(O.Id);
+					E.Name = FString(UTF8_TO_TCHAR(O.Name.c_str()));
+					OwnBlueprints.Add(E);
+				}
+				bWorkshopReceived = true;
+				UE_LOG(LogOUClient, Log, TEXT("Мастерская: %d объявлений, %d своих"),
+					WorkshopListings.Num(), OwnBlueprints.Num());
 			}
 		}
 		else if (Body[0] == OUWire::TagMarketState) // состояние экономики

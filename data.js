@@ -164,7 +164,7 @@ window.PLAN = {
         { "title": "Автопилоты, турели, логистика на скриптах (библиотека + авторитетный запуск)", "title_en": "Scripted autopilots, turrets and logistics (library + authoritative run)", "status": "done" },
         { "title": "Sandbox-ограничения и безопасность", "title_en": "Sandbox limits and security", "status": "done" },
         { "title": "Внутриигровые экраны и дисплеи (окно «Скрипты» с выводом log())", "title_en": "In-game screens and displays (Scripts window with log() output)", "status": "done" },
-        { "title": "Мастерская и торговля шаблонами", "title_en": "Workshop and blueprint trading", "status": "todo" }
+        { "title": "Мастерская и торговля шаблонами (публикация постройки за кредиты, покупка, окно K)", "title_en": "Workshop and blueprint trading (publish a build for credits, buy, key K)", "status": "done" }
       ]
     },
     {

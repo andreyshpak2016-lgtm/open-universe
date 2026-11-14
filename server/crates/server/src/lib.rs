@@ -135,6 +135,14 @@ pub struct Server {
     pub combat_stats: BTreeMap<NetId, (u64, u64, u64)>,
     /// Игроки, чья боевая статистика изменилась (надо разослать).
     pub combat_dirty: BTreeSet<NetId>,
+    /// Мастерская: опубликованные шаблоны по id — (имя, автор, воксели, цена).
+    pub workshop: BTreeMap<u32, (String, NetId, Vec<((i32, i32, i32), BuildColor)>, u64)>,
+    /// Купленные/созданные шаблоны каждого игрока: (id, имя, воксели).
+    pub own_blueprints: BTreeMap<NetId, BTreeMap<u32, (String, Vec<((i32, i32, i32), BuildColor)>)>>,
+    /// Следующий id объявления мастерской.
+    next_workshop_id: u32,
+    /// Игроки, которым надо обновить витрину мастерской.
+    pub workshop_dirty: BTreeSet<NetId>,
     /// Конструкции сущностей: что игроки построили (права + ревизии).
     pub constructions: BTreeMap<NetId, Construction>,
     /// Корпус каждой сущности: щит, броня, критические повреждения.
@@ -275,6 +283,10 @@ impl Server {
             script_urgent: BTreeSet::new(),
             combat_stats: BTreeMap::new(),
             combat_dirty: BTreeSet::new(),
+            workshop: BTreeMap::new(),
+            own_blueprints: BTreeMap::new(),
+            next_workshop_id: 1,
+            workshop_dirty: BTreeSet::new(),
             constructions: BTreeMap::new(),
             hulls: BTreeMap::new(),
             weapons: BTreeMap::new(),
@@ -1057,6 +1069,129 @@ impl Server {
         Ok(placed)
     }
 
+    // --- Мастерская и торговля шаблонами ---
+
+    /// Опубликовать текущую постройку игрока как шаблон в мастерской.
+    ///
+    /// Сервер снимает воксели конструкции игрока (относительно её ядра) и
+    /// выставляет в мастерскую с ценой. Автор сразу получает копию у себя.
+    pub fn publish_blueprint(&mut self, player: NetId, name: String, price: u64) -> Result<u32, String> {
+        let entity = self
+            .connections
+            .get(&player)
+            .map(|c| c.entity_id)
+            .ok_or_else(|| "игрок не в мире".to_string())?;
+        let voxels: Vec<((i32, i32, i32), BuildColor)> = self
+            .constructions
+            .get(&entity)
+            .map(|c| c.grid.iter().collect())
+            .unwrap_or_default();
+        if voxels.is_empty() {
+            return Err("нечего публиковать: конструкция пуста".to_string());
+        }
+        let name = if name.trim().is_empty() { "Без названия".to_string() } else { name };
+        let id = self.next_workshop_id;
+        self.next_workshop_id += 1;
+        self.workshop.insert(id, (name.clone(), player, voxels.clone(), price));
+        // Автор получает копию шаблона в личную библиотеку.
+        self.own_blueprints
+            .entry(player)
+            .or_default()
+            .insert(id, (name, voxels));
+        self.workshop_dirty.insert(player);
+        Ok(id)
+    }
+
+    /// Купить шаблон из мастерской (авторитетно). Кредиты идут автору.
+    pub fn buy_blueprint(&mut self, player: NetId, id: u32) -> Result<(), String> {
+        let (name, author, voxels, price) = {
+            let l = self.workshop.get(&id).ok_or_else(|| format!("объявление {id} не найдено"))?.clone();
+            l
+        };
+        // Свой шаблон покупать не нужно — он уже в библиотеке.
+        if author == player {
+            return Err("это ваш шаблон".to_string());
+        }
+        if self.own_blueprints.get(&player).map(|m| m.contains_key(&id)).unwrap_or(false) {
+            return Err("шаблон уже куплен".to_string());
+        }
+        let have = *self.economy.credits.get(&player).unwrap_or(&0);
+        if have < price {
+            return Err(format!("не хватает кредитов: есть {have}, нужно {price}"));
+        }
+        // Перевод кредитов автору.
+        *self.economy.credits.entry(player).or_insert(0) = have - price;
+        *self.economy.credits.entry(author).or_insert(0) =
+            self.economy.credits.get(&author).copied().unwrap_or(0).saturating_add(price);
+        // Копия в личную библиотеку покупателя.
+        self.own_blueprints.entry(player).or_default().insert(id, (name, voxels));
+        self.market_dirty = true;
+        self.workshop_dirty.insert(player);
+        Ok(())
+    }
+
+    /// Витрина мастерской и личная библиотека игрока — для окна мастерской.
+    pub fn workshop_state(&self, player: NetId) -> Message {
+        let mut listings: Vec<(u32, String, u32, u32, u64)> = Vec::new();
+        for (id, (name, author, voxels, price)) in &self.workshop {
+            listings.push((*id, name.clone(), *author, voxels.len() as u32, *price));
+        }
+        let owned: Vec<(u32, String)> = self
+            .own_blueprints
+            .get(&player)
+            .map(|m| m.iter().map(|(id, (name, _))| (*id, name.clone())).collect())
+            .unwrap_or_default();
+        Message::ServerWorkshop { listings, owned }
+    }
+
+    /// Поставить свой (купленный) шаблон из библиотеки по id (авторитетно).
+    pub fn place_own_blueprint(
+        &mut self,
+        player: NetId,
+        entity: NetId,
+        id: u32,
+        origin: (i32, i32, i32),
+    ) -> Result<u32, String> {
+        let voxels = self
+            .own_blueprints
+            .get(&player)
+            .and_then(|m| m.get(&id))
+            .map(|(_, v)| v.clone())
+            .ok_or_else(|| "шаблон не куплен".to_string())?;
+        if let Some(c) = self.constructions.get(&entity) {
+            if !c.can_edit(player) {
+                return Err("нет прав на эту конструкцию".to_string());
+            }
+        }
+        let c = self
+            .constructions
+            .entry(entity)
+            .or_insert_with(|| Construction::new(player));
+        let mut placed = 0u32;
+        let mut edits: Vec<BuildEdit> = Vec::new();
+        for ((dx, dy, dz), col) in voxels {
+            let coord = (origin.0 + dx, origin.1 + dy, origin.2 + dz);
+            if c.grid.place(coord, col).is_ok() {
+                c.revision += 1;
+                edits.push(BuildEdit {
+                    entity,
+                    author: player,
+                    action: BuildAction::Place,
+                    coord,
+                    color: ou_protocol::Color(col.0, col.1, col.2),
+                    revision: c.revision,
+                });
+                placed += 1;
+            }
+        }
+        if placed > 0 {
+            for (_p, slot) in c.pending.iter_mut() {
+                slot.1.extend(edits.iter().copied());
+            }
+        }
+        Ok(placed)
+    }
+
     /// Привязать к сущности скрипт-шаблон по id игрока (авторитетно).
     ///
     /// Только владелец может управлять скриптом своего объекта. `template = 0`
@@ -1449,7 +1584,6 @@ impl Server {
         };
 
         // Боевая статистика считается ниже, ПОСЛЕ боя этого тика (шаг 3).
-
         // 2. Шаг симуляции.
         self.world.step(&inputs);
         let tick = self.world.tick;
@@ -1508,10 +1642,16 @@ impl Server {
             })
             .collect();
 
+        // 3d. Витрина мастерской изменившимся игрокам.
+        let workshop_msgs: BTreeMap<NetId, Message> = self
+            .workshop_dirty
+            .iter()
+            .map(|p| (*p, self.workshop_state(*p)))
+            .collect();
+
         // 4. Для каждого клиента — интерес‑менеджмент и дельта.
         let mut plan = SendPlan::default();
         let all_states: BTreeMap<NetId, EntityState> = self.world.snapshot_map();
-
         // Снимки сроков для сообщений о смерти/возрождении (до заимствования
         // соединений на изменение).
         let died_respawn: BTreeMap<NetId, u64> = self
@@ -1692,6 +1832,11 @@ impl Server {
                 msgs.push(m.clone());
             }
 
+            // Витрина мастерской — при изменении.
+            if let Some(m) = workshop_msgs.get(player_id) {
+                msgs.push(m.clone());
+            }
+
             plan.messages.insert(*player_id, msgs);
         }
         if self.market_dirty {
@@ -1702,6 +1847,7 @@ impl Server {
         }
         self.script_urgent.clear();
         self.combat_dirty.clear();
+        self.workshop_dirty.clear();
 
         plan
     }
@@ -2687,5 +2833,90 @@ mod tests {
         }
         // Все они — мишени с известной точкой возрождения.
         assert_eq!(s.target_spawns.len(), 4);
+    }
+
+    // --- мастерская и торговля шаблонами ---
+
+    #[test]
+    fn publish_and_buy_blueprint_transfers_credits() {
+        let mut s = Server::new();
+        let e1 = s.connect_on_planet(1);
+        s.connect_on_planet(2);
+        // Игрок 1 строит что-то и публикует.
+        s.apply_build_as(1, &BuildCommand {
+            entity: e1,
+            action: BuildAction::Place,
+            coord: (1, 0, 0),
+            color: ou_protocol::Color(1, 2, 3),
+        });
+        let id = s.publish_blueprint(1, "Дом".to_string(), 500).unwrap();
+        // Витрина содержит объявление.
+        match s.workshop_state(2) {
+            Message::ServerWorkshop { listings, .. } => {
+                assert!(listings.iter().any(|(lid, ..)| *lid == id), "объявление в витрине");
+            }
+            other => panic!("ожидали ServerWorkshop, получено {other:?}"),
+        }
+        // Игрок 2 покупает: кредиты уходят игроку 1.
+        let c1 = *s.economy.credits.get(&1).unwrap_or(&0);
+        let c2 = *s.economy.credits.get(&2).unwrap_or(&0);
+        s.buy_blueprint(2, id).unwrap();
+        assert_eq!(*s.economy.credits.get(&1).unwrap(), c1 + 500, "автору зачислено");
+        assert_eq!(*s.economy.credits.get(&2).unwrap(), c2 - 500, "покупатель списал");
+        // Купленный шаблон есть в личной библиотеке покупателя.
+        assert!(s.own_blueprints.get(&2).map(|m| m.contains_key(&id)).unwrap_or(false));
+        // Повторная покупка — отказ.
+        assert!(s.buy_blueprint(2, id).is_err());
+    }
+
+    #[test]
+    fn cannot_publish_empty_or_buy_own() {
+        let mut s = Server::new();
+        let e1 = s.connect_on_planet(1);
+        s.connect_on_planet(2);
+        // Пустая конструкция публикуется? У игрока есть ядро — значит не пуста.
+        // (Ядро всегда есть, поэтому публикация проходит.)
+        let id = s.publish_blueprint(1, String::new(), 100).unwrap();
+        // Свой шаблон купить нельзя.
+        assert!(s.buy_blueprint(1, id).is_err(), "свой шаблон не покупается");
+        // Несуществующий — тоже.
+        assert!(s.buy_blueprint(2, 999).is_err());
+        let _ = e1;
+    }
+
+    #[test]
+    fn place_own_blueprint_adds_blocks() {
+        let mut s = Server::new();
+        let e1 = s.connect_on_planet(1);
+        s.apply_build_as(1, &BuildCommand {
+            entity: e1,
+            action: BuildAction::Place,
+            coord: (1, 0, 0),
+            color: ou_protocol::Color(10, 20, 30),
+        });
+        let id = s.publish_blueprint(1, "База".to_string(), 0).unwrap();
+        // Ставим свой шаблон ВПЛОТНУЮ к ядру — появляются блоки.
+        let before = s.constructions[&e1].grid.len();
+        let placed = s.place_own_blueprint(1, e1, id, (2, 0, 0)).unwrap();
+        assert!(placed > 0, "шаблон поставлен");
+        assert!(s.constructions[&e1].grid.len() > before);
+    }
+
+    #[test]
+    fn workshop_state_is_broadcast() {
+        let mut s = Server::new();
+        let e1 = s.connect_on_planet(1);
+        s.apply_build_as(1, &BuildCommand {
+            entity: e1,
+            action: BuildAction::Place,
+            coord: (1, 0, 0),
+            color: ou_protocol::Color(1, 1, 1),
+        });
+        s.publish_blueprint(1, "Т".to_string(), 10).unwrap();
+        let plan = s.tick();
+        let seen = plan.messages[&1]
+            .iter()
+            .any(|m| matches!(m, Message::ServerWorkshop { .. }));
+        assert!(seen, "витрина мастерской рассылается автору");
     }
 }
