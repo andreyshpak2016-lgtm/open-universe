@@ -346,6 +346,10 @@ void AOUPlayerMenuController::OnLeftClick()
 					{
 						LeaveServer();
 					}
+					else if (B.Id == 4)
+					{
+						DisableTutorial();
+					}
 				}
 				return;
 			}
@@ -1201,6 +1205,10 @@ void AOUPlayerMenuController::DrawPauseMenu(UCanvas* InCanvas)
 	MenuRow(1, TEXT("Продолжить"), ColAccent2);
 	MenuRow(2, TEXT("Настройки"), ColAccent);
 	MenuRow(3, TEXT("Отлучиться от сервера"), ColErr);
+	if (bTutorialEnabled && !bTutorialDone)
+	{
+		MenuRow(4, TEXT("Отключить обучение"), FLinearColor(0.9f, 0.75f, 0.3f));
+	}
 
 	DrawText(InCanvas, Small, TEXT("ESC — закрыть  ·  ЛКМ — выбрать"),
 		FVector2D(PanelPos.X + 28, PanelPos.Y + PanelH - 28), ColMuted);
@@ -1717,6 +1725,80 @@ void AOUPlayerMenuController::SubmitChat()
 	}
 	ChatInput.Empty();
 	SetMenuCursor(false);
+}
+
+void AOUPlayerMenuController::NotifyTutorial(const FString& Kind)
+{
+	if (!bTutorialEnabled || bTutorialDone)
+	{
+		return;
+	}
+	static const TCHAR* Steps[] = {
+		TEXT("move"), TEXT("dig"), TEXT("build"), TEXT("market"),
+		TEXT("craft"), TEXT("combat"), TEXT("talent"),
+	};
+	const int32 Count = UE_ARRAY_COUNT(Steps);
+	if (TutorialStep >= Count)
+	{
+		bTutorialDone = true;
+		return;
+	}
+	if (Kind == Steps[TutorialStep])
+	{
+		++TutorialStep;
+		if (TutorialStep >= Count)
+		{
+			bTutorialDone = true;
+			UE_LOG(LogOUMenu, Log, TEXT("Обучение пройдено (все %d шагов)"), Count);
+		}
+		else
+		{
+			UE_LOG(LogOUMenu, Log, TEXT("Обучение: шаг %d/%d пройден по «%s»"),
+				TutorialStep, Count, *Kind);
+		}
+	}
+}
+
+void AOUPlayerMenuController::DisableTutorial()
+{
+	bTutorialEnabled = false;
+	UE_LOG(LogOUMenu, Log, TEXT("Обучение отключено игроком"));
+}
+
+void AOUPlayerMenuController::DrawTutorial(UCanvas* InCanvas)
+{
+	if (bMenuOpen || !bTutorialEnabled || bTutorialDone || !InCanvas)
+	{
+		return;
+	}
+	UFont* Small = GEngine->GetMediumFont();
+	UFont* Tiny = GEngine->GetSmallFont();
+	const float W = InCanvas->SizeX;
+	static const TCHAR* Steps[] = {
+		TEXT("Пройдитесь/пролетите (W/A/S/D или тяга)"),
+		TEXT("Добудьте руду: ЛКМ по земле"),
+		TEXT("Постройте блок: B — режим, ЛКМ — поставить"),
+		TEXT("Загляните на рынок: M"),
+		TEXT("Изготовьте предмет: M — рецепты, ЛКМ"),
+		TEXT("Поучаствуйте в бою: ЛКМ по цели"),
+		TEXT("Откройте персонажа: P"),
+	};
+	const int32 Count = UE_ARRAY_COUNT(Steps);
+	if (TutorialStep >= Count)
+	{
+		return;
+	}
+
+	// Панель сверху по центру (ниже компаса).
+	const float PW = 460.f;
+	const float PH = 58.f;
+	const FVector2D P((W - PW) * 0.5f, 56.f);
+	GlassPanel(InCanvas, P, FVector2D(PW, PH), FLinearColor(0.34f, 0.44f, 0.85f, 0.9f),
+		FLinearColor(0.6f, 0.85f, 1.f));
+	DrawText(InCanvas, Small, FString::Printf(TEXT("Обучение  %d/%d"), TutorialStep + 1, Count),
+		P + FVector2D(12, 6), ColAccent);
+	DrawText(InCanvas, Small, Steps[TutorialStep], P + FVector2D(12, 28), ColText);
+	DrawText(InCanvas, Tiny, TEXT("Отключить: ESC — пауза"), P + FVector2D(12, 44), FLinearColor(0.66f, 0.72f, 0.86f));
 }
 
 void AOUPlayerMenuController::DrawChat(UCanvas* InCanvas)

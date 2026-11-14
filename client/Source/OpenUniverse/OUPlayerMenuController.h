@@ -250,6 +250,36 @@ public:
 	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Progress")
 	bool bTalentsOpen = false;
 
+	// --- Обучение для новичков (tutorial) ---
+
+	/** Включено ли обучение (по умолчанию да; можно отключить в пауза-меню). */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Tutorial")
+	bool bTutorialEnabled = true;
+
+	/** Индекс текущего шага обучения. */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Tutorial")
+	int32 TutorialStep = 0;
+
+	/** Завершён ли туториал (все шаги пройдены). */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Tutorial")
+	bool bTutorialDone = false;
+
+	/**
+	 * Засчитать событие обучения. `kind` — вид действия, случившегося в игре:
+	 * "move" (полетел/пошёл), "dig" (добыл руду), "build" (поставил блок),
+	 * "market" (сходил на рынок), "craft" (изготовил), "combat" (участвовал в бою),
+	 * "talent" (открыл окно персонажа). Шаг засчитывается, когда совпал с целью.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Open Universe|Tutorial")
+	void NotifyTutorial(const FString& Kind);
+
+	/** Отключить обучение (кнопка в пауза-меню). */
+	UFUNCTION(BlueprintCallable, Category = "Open Universe|Tutorial")
+	void DisableTutorial();
+
+	/** Нарисовать панель обучения в HUD. */
+	void DrawTutorial(class UCanvas* InCanvas);
+
 	// --- Чат ---
 
 	/** Открыт ли ввод чата (Enter в игре). */

@@ -662,6 +662,11 @@ void AOUCharacterPawn::PlaceBuildBlock()
 		BuiltCoords.Add(Target);
 		++BuiltCount;
 		UE_LOG(LogOUChar, Log, TEXT("Строительство: поставить (%d,%d,%d)"), Target.X, Target.Y, Target.Z);
+		// Обучение: строительство.
+		if (AOUPlayerMenuController* MenuB = Cast<AOUPlayerMenuController>(GetController()))
+		{
+			MenuB->NotifyTutorial(TEXT("build"));
+		}
 		return;
 	}
 
@@ -1088,6 +1093,11 @@ void AOUCharacterPawn::DigTerrain()
 		Net->SendDig(Slot, DirServer.X, DirServer.Y, DirServer.Z, CosRadius, DepthServer);
 		UE_LOG(LogOUChar, Log, TEXT("Копание: слот %d, радиус %.0f см, глубина %.0f см"),
 			Slot, DigRadiusCm, DigDepthCm);
+		// Обучение: копание.
+		if (AOUPlayerMenuController* MenuD = Cast<AOUPlayerMenuController>(GetController()))
+		{
+			MenuD->NotifyTutorial(TEXT("dig"));
+		}
 	}
 }
 
@@ -1117,6 +1127,11 @@ void AOUCharacterPawn::ToggleMarket()
 	if (bBuildMenuOpen)
 	{
 		return;
+	}
+	// Обучение: посещение рынка.
+	if (AOUPlayerMenuController* MenuM = Cast<AOUPlayerMenuController>(GetController()))
+	{
+		MenuM->NotifyTutorial(TEXT("market"));
 	}
 	AOUPlayerMenuController* Menu = Cast<AOUPlayerMenuController>(
 		GetController() ? GetController() : nullptr);
@@ -1246,6 +1261,8 @@ void AOUCharacterPawn::ToggleTalents()
 			Menu->bScriptsOpen = false;
 			Menu->bWorkshopOpen = false;
 			Menu->bOrgOpen = false;
+			// Обучение: открытие окна персонажа.
+			Menu->NotifyTutorial(TEXT("talent"));
 		}
 		Menu->SetMenuCursor(Menu->bTalentsOpen);
 		UE_LOG(LogOUChar, Log, TEXT("Таланты: %s"), Menu->bTalentsOpen ? TEXT("открыто") : TEXT("закрыто"));
@@ -1271,6 +1288,12 @@ void AOUCharacterPawn::FireWeapon()
 		return;
 	}
 	FireTimer = FireCooldown;
+
+	// Обучение: участие в бою.
+	if (AOUPlayerMenuController* MenuF = Cast<AOUPlayerMenuController>(GetController()))
+	{
+		MenuF->NotifyTutorial(TEXT("combat"));
+	}
 
 	// Точка вылета — у дула оружия; направление — «вперёд» персонажа (по курсу).
 	const FVector Muzzle = MuzzleFlash ? MuzzleFlash->GetComponentLocation() : GunMesh->GetComponentLocation();
@@ -1410,6 +1433,14 @@ void AOUCharacterPawn::Tick(float DeltaSeconds)
 	if (bAutoWalk && !bAutoBuild)
 	{
 		ViewYaw += 1.5f * DeltaSeconds;
+	}
+	// Обучение: первое движение (ходьба).
+	if (FMath::Abs(FwdInput) > 0.1f || FMath::Abs(InputRight) > 0.1f)
+	{
+		if (AOUPlayerMenuController* MenuT = Cast<AOUPlayerMenuController>(GetController()))
+		{
+			MenuT->NotifyTutorial(TEXT("move"));
+		}
 	}
 
 	// Базис на поверхности: forward — по касательной в сторону курса.

@@ -29,6 +29,8 @@ void AOUPlayerMenuHUD::DrawHUD()
 		Menu->DrawOrg(Canvas);
 		// Окно персонажа (P): опыт, уровень, таланты.
 		Menu->DrawTalents(Canvas);
+		// Обучение для новичков (панель сверху по центру).
+		Menu->DrawTutorial(Canvas);
 		// Чат (лог и строка ввода).
 		Menu->DrawChat(Canvas);
 		// Пауза-меню (ESC) — поверх всего.

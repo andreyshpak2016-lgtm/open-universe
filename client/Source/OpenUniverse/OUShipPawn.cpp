@@ -639,6 +639,14 @@ void AOUShipPawn::EnterShip(AOUCharacterPawn* FromCharacter)
 void AOUShipPawn::AxisThrottle(float Value)
 {
 	CurrentInput.Throttle = FMath::Clamp(Value, -1.f, 1.f);
+	// Обучение: первое движение (полёт).
+	if (FMath::Abs(CurrentInput.Throttle) > 0.1f)
+	{
+		if (AOUPlayerMenuController* MenuT = Cast<AOUPlayerMenuController>(GetController()))
+		{
+			MenuT->NotifyTutorial(TEXT("move"));
+		}
+	}
 }
 
 void AOUShipPawn::AxisYaw(float Value)
@@ -654,6 +662,11 @@ void AOUShipPawn::AxisPitch(float Value)
 void AOUShipPawn::StartFire()
 {
 	CurrentInput.bFire = true;
+	// Обучение: участие в бою (корабль).
+	if (AOUPlayerMenuController* MenuF = Cast<AOUPlayerMenuController>(GetController()))
+	{
+		MenuF->NotifyTutorial(TEXT("combat"));
+	}
 }
 
 void AOUShipPawn::StopFire()
