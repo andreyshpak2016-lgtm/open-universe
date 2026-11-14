@@ -7,7 +7,7 @@ window.PLAN = {
   "project": "Open Universe",
   "tagline": "Один общий космос. Построен игроками.",
   "tagline_en": "One shared universe. Built by players.",
-  "updated": "2026-11-13",
+  "updated": "2026-11-14",
   "rule": "«Готово» ставится только тому, что игрок реально видит в игре (клиент UE5 + живой сервер). Написано и протестировано, но к игре не подключено — это «в работе».",
   "rule_en": "\"Done\" is only for what the player actually sees in the game (UE5 client + live server). Written and tested but not wired into the game counts as \"in progress\".",
   "phases": [
@@ -40,10 +40,12 @@ window.PLAN = {
         { "title": "Floating origin / double-precision (AUOOriginManager)", "title_en": "Floating origin / double-precision (AUOOriginManager)", "status": "done" },
         { "title": "Сферическая планета с рельефом (общая формула с сервером)", "title_en": "Spherical planet with terrain (formula shared with the server)", "status": "done" },
         { "title": "Ландшафт: континенты, равнины, горы; биомы", "title_en": "Terrain: continents, plains, mountains; biomes", "status": "done" },
+        { "title": "Землеподобный рельеф: зоны по высоте, камень на склонах, клиентские детали", "title_en": "Earth-like terrain: height zones, rock on slopes, client-side relief detail", "status": "done" },
         { "title": "Атмосфера, скайбокс и постобработка", "title_en": "Atmosphere, skybox and post-processing", "status": "done" },
         { "title": "Вид от первого лица (персонаж и корабль)", "title_en": "First-person view (character and ship)", "status": "done" },
         { "title": "Клиентский каркас: сетевой рендер мира", "title_en": "Client skeleton: networked world rendering", "status": "done" },
         { "title": "Копание грунта в игре (ЛКМ, сервер-авторитетно, с репликацией)", "title_en": "Terrain digging in game (LMB, server-authoritative, replicated)", "status": "done" },
+        { "title": "Стартовый комплекс: площадка, лестницы, постройки, единый цвет пола", "title_en": "Start complex: pad, staircases, buildings, single-colour floor", "status": "done" },
         { "title": "Система небесных тел (генератор есть; в игре одна планета)", "title_en": "Celestial body system (generator exists; the game has one planet)", "status": "in_progress" }
       ]
     },
@@ -63,7 +65,9 @@ window.PLAN = {
         { "title": "Выход из корабля (удержание F) и пешие прогулки по планете", "title_en": "Exit ship (hold F) and walk on the planet", "status": "done" },
         { "title": "Interest management (репликация только нужного)", "title_en": "Interest management (replicate only what is needed)", "status": "done" },
         { "title": "Базовые сетевые протоколы (бинарный + дельты + varint)", "title_en": "Base network protocols (binary + deltas + varint)", "status": "done" },
-        { "title": "UE5-клиент в сети: подключение, ввод, реконсиляция, другие игроки", "title_en": "UE5 client online: connect, input, reconciliation, other players", "status": "done" }
+        { "title": "UE5-клиент в сети: подключение, ввод, реконсиляция, другие игроки", "title_en": "UE5 client online: connect, input, reconciliation, other players", "status": "done" },
+        { "title": "Реальная задержка игрока (ping/pong) в HUD", "title_en": "Real player latency (ping/pong) in the HUD", "status": "done" },
+        { "title": "Меню ESC: продолжить / настройки / отлучиться от сервера", "title_en": "ESC menu: continue / settings / leave server", "status": "done" }
       ]
     },
     {
@@ -94,6 +98,7 @@ window.PLAN = {
         { "title": "Валидация физической целостности", "title_en": "Physical integrity validation", "status": "done" },
         { "title": "Совместное строительство: репликация правок, права, подтверждения", "title_en": "Co-op building: edit replication, permissions, confirmations", "status": "done" },
         { "title": "Редактор в игре: ставить / удалять / красить (прицел, Е/R)", "title_en": "In-game editor: place / remove / paint (crosshair, E/R)", "status": "done" },
+        { "title": "Призрак блока под прицелом и постановка «куда смотришь» (как в DU)", "title_en": "Ghost block under the crosshair, place where you look (like DU)", "status": "done" },
         { "title": "Дублирование и шаблоны (blueprints) — в игру не подключено", "title_en": "Duplication and blueprints — not wired into the game", "status": "in_progress" }
       ]
     },
@@ -103,12 +108,13 @@ window.PLAN = {
       "title_en": "Economy and production",
       "goal": "Экономика, которую двигают сами игроки.",
       "goal_en": "An economy driven by the players themselves.",
-      "note": "Реализовано как библиотека + офлайн-демо; к игровому серверу пока не подключено.",
-      "note_en": "Implemented as a library + offline demo; not yet wired into the game server.",
+      "note": "Петля замкнута в игре: копание даёт руду, рынок (M) и производство работают на живом сервере.",
+      "note_en": "The loop is closed in-game: digging yields ore, and the market (M) and production run on the live server.",
       "tasks": [
-        { "title": "Добыча ресурсов (копание грунта даёт руду)", "title_en": "Resource extraction (digging yields ore)", "status": "done" },
-        { "title": "Переработка и производственные цепочки", "title_en": "Refining and production chains", "status": "in_progress" },
+        { "title": "Добыча ресурсов (копание даёт руду слоями по глубине)", "title_en": "Resource extraction (digging yields ore in depth layers)", "status": "done" },
+        { "title": "Переработка и производственные цепочки (в игре, окно M)", "title_en": "Refining and production chains (in game, window M)", "status": "done" },
         { "title": "Игрок-рынок: ордера, стакан, сделки (в игре, клавиша M)", "title_en": "Player market: orders, order book, trades (in game, key M)", "status": "done" },
+        { "title": "Отображение добычи и производства в HUD", "title_en": "Digging and production shown in the HUD", "status": "done" },
         { "title": "Модули контейнеров, топлива, энергии", "title_en": "Container, fuel and energy modules", "status": "in_progress" },
         { "title": "Экономическая симуляция и баланс", "title_en": "Economic simulation and balance", "status": "in_progress" }
       ]
@@ -136,6 +142,7 @@ window.PLAN = {
       "tasks": [
         { "title": "Щиты, броня, урон по секциям; смерть и возрождение (в игре)", "title_en": "Shields, armor, sectional damage; death and respawn (in game)", "status": "done" },
         { "title": "Дроны-цели: спавн, отстрел, возрождение (в игре)", "title_en": "Target drones: spawn, shoot, respawn (in game)", "status": "done" },
+        { "title": "Взрывные воронки от боя (explode) — в коде пока только dig", "title_en": "Blast craters from combat (explode) — the code only has dig so far", "status": "todo" },
         { "title": "Захват и удержание территорий (есть в combat, к игре не подключено)", "title_en": "Territory capture and holding (exists in combat, not wired into the game)", "status": "in_progress" },
         { "title": "Право собственности и налоги (есть в библиотеке)", "title_en": "Ownership and taxes (exists in the library)", "status": "in_progress" },
         { "title": "Орбитальные и планетарные сражения", "title_en": "Orbital and planetary battles", "status": "in_progress" },
