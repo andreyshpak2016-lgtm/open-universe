@@ -6,7 +6,7 @@
   <title data-i18n="rep.title">Open Universe — development report</title>
   <meta name="description" content="Open Universe development report: what is done, engine screenshots, metrics and test results." />
   <link rel="icon" href="assets/blackhole.svg" type="image/svg+xml" />
-  <link rel="stylesheet" href="styles.css?v=0.74.0" />
+  <link rel="stylesheet" href="styles.css?v=0.75.0" />
   <style>
     .report { max-width: 1100px; margin: 0 auto; padding: 0 24px 80px; }
     .report h1 { font-size: clamp(2rem, 5vw, 3rem); margin: 40px 0 8px; letter-spacing: -1px;
@@ -51,13 +51,13 @@
 
   <main class="report">
     <h1 data-i18n="rep.h1">Development report</h1>
-    <p style="font-size:1.05rem" data-i18n="rep.intro">What already works, with evidence: engine screenshots, metrics and test results. Version <b id="ver">0.74.0</b>.</p>
+    <p style="font-size:1.05rem" data-i18n="rep.intro">What already works, with evidence: engine screenshots, metrics and test results. Version <b id="ver">0.75.0</b>.</p>
 
     <div class="meta">
       <div><b id="m-tests">223</b><span data-i18n="rep.m.tests">core tests (Rust)</span></div>
       <div><b id="m-crates">13</b><span data-i18n="rep.m.crates">modules (crates)</span></div>
       <div><b id="m-progress">73%</b><span data-i18n="rep.m.progress">plan complete</span></div>
-      <div><b id="m-version">v0.74.0</b><span data-i18n="rep.m.version">latest release</span></div>
+      <div><b id="m-version">v0.75.0</b><span data-i18n="rep.m.version">latest release</span></div>
     </div>
 
     <!-- ================= 1. What is done ================= -->
@@ -132,6 +132,7 @@
       <li data-i18n="rep.done67"><b>Terrain on the neighbouring bodies</b> - the moon and the neighbouring planet are no longer smooth spheres: they now have real landscape. The server gives each body an amplitude and a seed, and the client builds the surface with the very same height formula as the home planet, so the picture and the physics agree; you can see mountains, valleys and shorelines. Landing on a neighbour now respects the actual surface height instead of a smooth sphere. Stars and gas giants stay smooth (they have no terrain). Because it is the same deterministic generator as the home planet, the server and the client always compute the same surface.</li>
       <li data-i18n="rep.done68"><b>Orbital battles</b> - combat has moved into orbit: combat targets now appear in orbit around the moon, so you can fight away from the surface too. The targets weave along their orbit and shoot back, and destroying one pays a bounty of 250 credits into your economy. A new Combat panel in the HUD shows the targets you have destroyed, the damage you have dealt and the bounty you have earned. Shot outcomes are still decided only by the server, deterministically from the tick seed, so hits and damage cannot be forged.</li>
       <li data-i18n="rep.done69"><b>Workshop and blueprint trading</b> - a build is no longer just yours to keep: you can publish it as a template with a price, and other players can buy it for credits, which go to the author. The Workshop window opens with the K key and shows the storefront (name, author, block count, price) alongside your own library; clicking a listing buys that template, and a button publishes your current build. A bought template can be placed from the build editor (key B). Because the server stamps the template's voxels authoritatively, the shape cannot be forged.</li>
+      <li data-i18n="rep.done70"><b>Organizations with ranks and diplomacy</b> - players can now form guilds. You create an organization with a name and a tag and become its leader; others join by id, and anyone can leave. If the leader leaves, leadership passes to the senior member, and an empty guild is disbanded. Ranks are member, officer and leader: the leader assigns any rank, an officer can promote a member to officer, and the server enforces all of it. A leader can also set a stance towards another organization - neutral, an alliance or a war. The Organization window opens with the O key and shows the roster with ranks, the list of guilds to join, diplomacy, and create/leave buttons.</li>
     </ul>
 
     <p style="margin-top:14px" data-i18n="rep.sync">The client skeleton mirrors the server logic: C++ kinematics over 1 s gives <b>z = 23.101</b> versus the server's <b>23.10086</b> — the same number. Details: <code>client/README.md</code>.</p>
@@ -332,7 +333,7 @@ $ cargo run -p ou-render --release --bin ou-netrender -- 127.0.0.1:7777 8 4
     </div>
   </footer>
 
-  <script src="i18n.js?v=0.74.0"></script>
+  <script src="i18n.js?v=0.75.0"></script>
   <script>
     (function () {
       "use strict";
