@@ -6,7 +6,7 @@
   <title data-i18n="rep.title">Open Universe — development report</title>
   <meta name="description" content="Open Universe development report: what is done, engine screenshots, metrics and test results." />
   <link rel="icon" href="assets/blackhole.svg" type="image/svg+xml" />
-  <link rel="stylesheet" href="styles.css?v=0.80.0" />
+  <link rel="stylesheet" href="styles.css?v=0.81.0" />
   <style>
     .report { max-width: 1100px; margin: 0 auto; padding: 0 24px 80px; }
     .report h1 { font-size: clamp(2rem, 5vw, 3rem); margin: 40px 0 8px; letter-spacing: -1px;
@@ -51,13 +51,13 @@
 
   <main class="report">
     <h1 data-i18n="rep.h1">Development report</h1>
-    <p style="font-size:1.05rem" data-i18n="rep.intro">What already works, with evidence: engine screenshots, metrics and test results. Version <b id="ver">0.80.0</b>.</p>
+    <p style="font-size:1.05rem" data-i18n="rep.intro">What already works, with evidence: engine screenshots, metrics and test results. Version <b id="ver">0.81.0</b>.</p>
 
     <div class="meta">
       <div><b id="m-tests">223</b><span data-i18n="rep.m.tests">core tests (Rust)</span></div>
       <div><b id="m-crates">13</b><span data-i18n="rep.m.crates">modules (crates)</span></div>
       <div><b id="m-progress">73%</b><span data-i18n="rep.m.progress">plan complete</span></div>
-      <div><b id="m-version">v0.80.0</b><span data-i18n="rep.m.version">latest release</span></div>
+      <div><b id="m-version">v0.81.0</b><span data-i18n="rep.m.version">latest release</span></div>
     </div>
 
     <!-- ================= 1. What is done ================= -->
@@ -138,6 +138,7 @@
       <li data-i18n="rep.fix73"><b>Fixed manual server connect</b> - connecting with the "Connect" button (rather than auto-connect) used to leave the game stuck on the server-list screen: while the menu was open it did not poll the network, so the server's reply (the welcome and the snapshots) was never read. The menu now polls the network itself and enters the game as soon as the connection is up.</li>
       <li data-i18n="rep.done74"><b>A sharded backend, an auth service and Kubernetes deploy</b> - the daemon now supports sharding: start it with <code>--shard N --nodes 1,2,3</code> and it splits the zones (star systems) between nodes by consistent hashing, so each node only simulates its own zones; the client shows its node in the HUD (for example <code>shard 1-&gt;2</code> when the zone belongs to another node, which is the signal to migrate). A new auth microservice issues and verifies session tickets (deterministic signature, expiry, one session per player, renewal). The repo also ships Kubernetes manifests (a StatefulSet of shard nodes, the auth deployment, services) with autoscaling (HPA), described in docs/deploy.md.</li>
       <li data-i18n="rep.done75"><b>The design document and a full plan audit</b> - a game design document (docs/gdd.md) now lays out the idea, pillars, core loop, world and scale, roles and progression, economy, combat and territories, scripting, the control scheme and the technical principles - so the concept lives in the repo, not only in the plan. The whole plan was then checked against the actual code, feature by feature, and every mismatch was fixed: the plan and the project now agree, and stale numbers in the README (test counts) were corrected.</li>
+      <li data-i18n="rep.done76"><b>Co-op building in UE</b> - building together now actually works in the game. In build mode press <b>H</b> to let the nearest other player build in your construction (the server authoritatively grants the right). If the server has not granted you rights, the build menu shows a red &quot;NO RIGHTS to this construction&quot; warning, and placing, removing and painting blocks and blueprints are blocked - so shared buildings are protected while the owner can hand out access.</li>
     </ul>
 
     <p style="margin-top:14px" data-i18n="rep.sync">The client skeleton mirrors the server logic: C++ kinematics over 1 s gives <b>z = 23.101</b> versus the server's <b>23.10086</b> — the same number. Details: <code>client/README.md</code>.</p>
@@ -338,7 +339,7 @@ $ cargo run -p ou-render --release --bin ou-netrender -- 127.0.0.1:7777 8 4
     </div>
   </footer>
 
-  <script src="i18n.js?v=0.80.0"></script>
+  <script src="i18n.js?v=0.81.0"></script>
   <script>
     (function () {
       "use strict";
