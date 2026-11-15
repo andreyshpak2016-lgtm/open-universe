@@ -448,6 +448,8 @@ void AOUCharacterPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputCom
 	// Размер кисти постановки: C — следующий, V — предыдущий.
 	PlayerInputComponent->BindAction(TEXT("BuildBrush"), IE_Pressed, this, &AOUCharacterPawn::BuildBrushNext);
 	PlayerInputComponent->BindAction(TEXT("BuildBrushPrev"), IE_Pressed, this, &AOUCharacterPawn::BuildBrushPrev);
+	// Отдельное окно размеров вокселя: V — открыть/закрыть.
+	PlayerInputComponent->BindAction(TEXT("VoxelMenu"), IE_Pressed, this, &AOUCharacterPawn::ToggleVoxelMenu);
 	// Захват территории: T — объявить текущую зону своей.
 	PlayerInputComponent->BindAction(TEXT("TerritoryCapture"), IE_Pressed, this, &AOUCharacterPawn::CaptureTerritory);
 	// Совместная стройка: H — разрешить ближайшему игроку строить.
@@ -632,6 +634,25 @@ void AOUCharacterPawn::ToggleBuildMenu()
 		bBuildMenuOpen ? TEXT("открыто") : TEXT("закрыто"), *BuildPartName(BuildSelection));
 }
 
+void AOUCharacterPawn::ToggleVoxelMenu()
+{
+	// Отдельное окно «ВОКСЕЛИ» (клавиша V): выбор размера кисти квадратами.
+	AOUPlayerMenuController* Menu = Cast<AOUPlayerMenuController>(
+		GetController() ? GetController() : nullptr);
+	if (!Menu)
+	{
+		Menu = Cast<AOUPlayerMenuController>(GetWorld() ? GetWorld()->GetFirstPlayerController() : nullptr);
+	}
+	if (!Menu)
+	{
+		return;
+	}
+	Menu->bVoxelsOpen = !Menu->bVoxelsOpen;
+	// Пока окно открыто — курсор свободен, чтобы кликать по квадратам.
+	Menu->SetMenuCursor(Menu->bVoxelsOpen);
+	UE_LOG(LogOUChar, Log, TEXT("Воксели: окно %s"), Menu->bVoxelsOpen ? TEXT("открыто") : TEXT("закрыто"));
+}
+
 bool AOUCharacterPawn::CanBuildHere()
 {
 	// Права авторитетны на сервере: если он сообщил, что редактировать нельзя —
@@ -674,6 +695,12 @@ FString AOUCharacterPawn::BuildBrushName() const
 	case 3: return TEXT("большой");
 	default: return TEXT("малый");
 	}
+}
+
+void AOUCharacterPawn::SetBuildBrush(int32 Size)
+{
+	BuildBrush = FMath::Clamp(Size, 1, 3);
+	UE_LOG(LogOUChar, Log, TEXT("Кисть строительства: %s (%d)"), *BuildBrushName(), BuildBrush);
 }
 
 FString AOUCharacterPawn::BuildPartName(int32 Index)
@@ -1949,9 +1976,20 @@ void AOUCharacterPawn::Tick(float DeltaSeconds)
 		}
 	}
 
+	if (FParse::Param(FCommandLine::Get(), TEXT("OUVoxels")))
+	{
+		// Диагностика: открыть окно размеров вокселя (снимок окна).
+		if (AOUPlayerMenuController* MV = Cast<AOUPlayerMenuController>(GetController()))
+		{
+			MV->bVoxelsOpen = true;
+			MV->SetMenuCursor(true);
+		}
+	}
+
 	// Тестовое строительство: открыть меню, поставить блоки и проверить
 	// удаление/покраску (всё через сервер — правки авторитетные).
-	if (bAutoBuild)	{
+	if (bAutoBuild)
+	{
 		if (!bBuildMenuOpen)
 		{
 			ToggleBuildMenu();

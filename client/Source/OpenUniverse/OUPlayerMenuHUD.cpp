@@ -29,6 +29,8 @@ void AOUPlayerMenuHUD::DrawHUD()
 		Menu->DrawOrg(Canvas);
 		// Окно персонажа (P): опыт, уровень, таланты.
 		Menu->DrawTalents(Canvas);
+		// Окно размеров вокселя (V): квадраты малый/средний/большой.
+		Menu->DrawVoxels(Canvas);
 		// Обучение для новичков (панель сверху по центру).
 		Menu->DrawTutorial(Canvas);
 		// Чат (лог и строка ввода).

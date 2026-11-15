@@ -250,6 +250,18 @@ public:
 	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Progress")
 	bool bTalentsOpen = false;
 
+	/**
+	 * Окно размеров вокселя (клавиша V): три квадрата — малый/средний/большой.
+	 *
+	 * Клик по квадрату задаёт размер кисти постановки (1×1 / 2×2 / 3×3). Это
+	 * отдельное окно, чтобы выбор размера был наглядным (не только клавишами).
+	 */
+	void DrawVoxels(class UCanvas* InCanvas);
+
+	/** Открыто ли окно размеров вокселя. */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Build")
+	bool bVoxelsOpen = false;
+
 	// --- Обучение для новичков (tutorial) ---
 
 	/** Включено ли обучение (по умолчанию да; можно отключить в пауза-меню). */

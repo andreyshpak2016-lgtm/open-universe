@@ -153,7 +153,7 @@ void AOUPlayerMenuController::SetupInputComponent()
 bool AOUPlayerMenuController::IsAnyUiOpen() const
 {
 	return bMenuOpen || bPauseOpen || bMarketOpen || bScriptsOpen || bWorkshopOpen
-		|| bOrgOpen || bTalentsOpen || bChatInputOpen;
+		|| bOrgOpen || bTalentsOpen || bChatInputOpen || bVoxelsOpen;
 }
 
 void AOUPlayerMenuController::ResolveNet()
@@ -475,6 +475,16 @@ void AOUPlayerMenuController::OnLeftClick()
 				if (Net)
 				{
 					Net->SendSpendTalent(B.Id - 900);
+				}
+				return;
+			}
+			// Воксели: 1000+ — размер кисти (1001 малый, 1002 средний, 1003 большой).
+			if (bVoxelsOpen && B.Id >= 1000)
+			{
+				if (AOUCharacterPawn* VChar = Cast<AOUCharacterPawn>(GetPawn()))
+				{
+					VChar->SetBuildBrush(B.Id - 1000);
+					UE_LOG(LogOUMenu, Log, TEXT("Воксели: размер %d"), B.Id - 1000);
 				}
 				return;
 			}
@@ -1580,6 +1590,77 @@ void AOUPlayerMenuController::DrawTalents(UCanvas* InCanvas)
 	}
 }
 
+void AOUPlayerMenuController::DrawVoxels(UCanvas* InCanvas)
+{
+	if (!bVoxelsOpen || !InCanvas || bMenuOpen)
+	{
+		return;
+	}
+	AOUCharacterPawn* Char = Cast<AOUCharacterPawn>(GetPawn());
+	if (!Char)
+	{
+		return;
+	}
+
+	const float W = InCanvas->SizeX;
+	const float H = InCanvas->SizeY;
+	UFont* Font = GEngine->GetLargeFont();
+	UFont* Small = GEngine->GetMediumFont();
+	UFont* Tiny = GEngine->GetSmallFont();
+	const FLinearColor PanelB(0.34f, 0.44f, 0.85f, 0.9f);
+	const FLinearColor Dim(0.66f, 0.72f, 0.86f, 1.f);
+
+	const float PW = FMath::Min(560.f, W - 80.f);
+	const float PH = 300.f;
+	const FVector2D P((W - PW) * 0.5f, (H - PH) * 0.5f);
+	GlassPanel(InCanvas, P, FVector2D(PW, PH), PanelB, ColAccent2);
+	DrawText(InCanvas, Font, TEXT("ВОКСЕЛИ  ·  РАЗМЕР"), P + FVector2D(24, 16), ColAccent);
+	DrawText(InCanvas, Small, TEXT("V — закрыть"), P + FVector2D(PW - 120, 24), Dim);
+	DrawText(InCanvas, Small, TEXT("Квадрат = размер кисти постановки (1×1, 2×2, 3×3). Клик — выбрать."),
+		P + FVector2D(24, 52), ColText);
+
+	// Три кликабельных квадрата: малый, средний, большой. Внутри — сетка N×N,
+	// показывающая размер. Выбранный подсвечен.
+	const float Box = 96.f, Gap = 26.f;
+	const float TotalW = 3.f * Box + 2.f * Gap;
+	float X = P.X + (PW - TotalW) * 0.5f;
+	const float Y = P.Y + 92.f;
+	static const TCHAR* Names[3] = { TEXT("малый"), TEXT("средний"), TEXT("большой") };
+
+	for (int32 i = 0; i < 3; ++i)
+	{
+		const int32 Size = i + 1;
+		const bool bSel = (Char->BuildBrush == Size);
+		const FVector2D BP(X, Y);
+		FillBox(InCanvas, BP, FVector2D(Box, Box),
+			bSel ? FLinearColor(0.16f, 0.22f, 0.44f, 1.f) : FLinearColor(0.05f, 0.07f, 0.16f, 1.f));
+		StrokeBox(InCanvas, BP, FVector2D(Box, Box), bSel ? ColAccent2 : ColPanelBorder, bSel ? 3.f : 1.f);
+
+		// Сетка N×N внутри квадрата — наглядно показывает размер вокселя.
+		const float Pad = 14.f;
+		const float GridW = Box - 2.f * Pad;
+		const float Cell = GridW / Size;
+		for (int32 r = 0; r < Size; ++r)
+		{
+			for (int32 c = 0; c < Size; ++c)
+			{
+				const FVector2D CellPos(BP.X + Pad + c * Cell, BP.Y + Pad + r * Cell);
+				FillBox(InCanvas, CellPos + FVector2D(1, 1), FVector2D(Cell - 2, Cell - 2),
+					bSel ? ColAccent2 : FLinearColor(0.45f, 0.55f, 0.70f, 1.f));
+			}
+		}
+		DrawText(InCanvas, Small, Names[i], FVector2D(BP.X + 6, BP.Y + Box + 6),
+			bSel ? ColAccent2 : ColText);
+		DrawText(InCanvas, Tiny, FString::Printf(TEXT("%d×%d"), Size, Size),
+			FVector2D(BP.X + 6, BP.Y + Box + 24), Dim);
+		// Идентификатор кнопки: 1000 + размер (1..3).
+		Buttons.Add({ BP, FVector2D(Box, Box), 1000 + Size });
+		X += Box + Gap;
+	}
+
+	DrawText(InCanvas, Tiny, TEXT("C/V — тоже переключить размер"), FVector2D(P.X + 24, P.Y + PH - 26), Dim);
+}
+
 void AOUPlayerMenuController::DrawOrg(UCanvas* InCanvas)
 {
 	if (!bOrgOpen || !InCanvas || bMenuOpen)
@@ -2216,7 +2297,7 @@ void AOUPlayerMenuController::DrawGameHud(UCanvas* InCanvas)
 		const bool bInShip = ShipPawn != nullptr;
 		const FString Hint = bInShip
 			? TEXT("Мышь — обзор   ·   W/S — тяга   ·   A/D — стрейф   ·   Пробел/Ctrl — вверх/вниз   ·   ЛКМ — огонь   ·   Shift — сверхсвет   ·   N — заправить   ·   J — двигатель   ·   L — скрипты   ·   F — выход")
-			: TEXT("Мышь — обзор   ·   W/A/S/D — ходьба   ·   ЛКМ — копать   ·   M — рынок   ·   B — строительство   ·   T — захват зоны   ·   L — скрипты   ·   K — мастерская   ·   O — организация   ·   P — персонаж");
+			: TEXT("Мышь — обзор   ·   W/A/S/D — ходьба   ·   ЛКМ — копать   ·   M — рынок   ·   B — строительство   ·   V — воксели   ·   T — захват зоны   ·   L — скрипты   ·   K — мастерская   ·   O — организация   ·   P — персонаж");
 		DrawText(InCanvas, Tiny, Hint, FVector2D(18, H - 22), Dim);
 	}
 

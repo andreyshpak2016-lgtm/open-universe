@@ -134,6 +134,18 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Open Universe|Build")
 	FString BuildBrushName() const;
 
+	/** Задать размер кисти напрямую (1/2/3) — клик по квадрату в панели. */
+	UFUNCTION(BlueprintCallable, Category = "Open Universe|Build")
+	void SetBuildBrush(int32 Size);
+
+	/** Открыть/закрыть отдельное окно размеров вокселя (клавиша V). */
+	UFUNCTION(BlueprintCallable, Category = "Open Universe|Build")
+	void ToggleVoxelMenu();
+
+	/** Размер стороны квадрата кисти в вокселях (1..3). */
+	UFUNCTION(BlueprintPure, Category = "Open Universe|Build")
+	int32 BuildBrushSide() const { return FMath::Clamp(BuildBrush, 1, 3); }
+
 	/** Сколько блоков поставлено (для меню строительства). */
 	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Build")
 	int32 BuiltCount = 0;
