@@ -139,8 +139,21 @@ void AOUPlayerMenuController::SetupInputComponent()
 	{
 		return;
 	}
-	InputComponent->BindAction("MenuClick", IE_Pressed, this, &AOUPlayerMenuController::OnLeftClick);
+	// ВАЖНО: клик по интерфейсу не должен «съедать» ввод игры. Привязка
+	// `MenuClick` сделана непоглощающей (`bConsumeInput = false`), иначе ЛКМ
+	// уходила бы только в этот обработчик, и персонаж не мог бы ни строить, ни
+	// копать (клик обрабатывают и пешка, и корабль).
+	FInputActionBinding& Click =
+		InputComponent->BindAction("MenuClick", IE_Pressed, this, &AOUPlayerMenuController::OnLeftClick);
+	Click.bConsumeInput = false;
 	InputComponent->BindAction("MenuBackspace", IE_Pressed, this, &AOUPlayerMenuController::OnBackspace);
+}
+
+/// Открыт ли сейчас хоть какой-то интерфейс (тогда клик ЛКМ — по кнопке).
+bool AOUPlayerMenuController::IsAnyUiOpen() const
+{
+	return bMenuOpen || bPauseOpen || bMarketOpen || bScriptsOpen || bWorkshopOpen
+		|| bOrgOpen || bTalentsOpen || bChatInputOpen;
 }
 
 void AOUPlayerMenuController::ResolveNet()
@@ -319,6 +332,13 @@ void AOUPlayerMenuController::SetMenuCursor(bool bShow)
 
 void AOUPlayerMenuController::OnLeftClick()
 {
+	// Играем: интерфейс не открыт — клик принадлежит персонажу (стройка/копание/
+	// огонь), здесь ничего не делаем. Это вторая линия защиты после
+	// `bConsumeInput = false` в привязке.
+	if (!IsAnyUiOpen())
+	{
+		return;
+	}
 	float MX = 0.f, MY = 0.f;
 	if (!GetMousePosition(MX, MY))
 	{
@@ -1063,6 +1083,16 @@ void AOUPlayerMenuController::DrawBuildMenu(UCanvas* InCanvas)
 
 	DrawText(InCanvas, Small, TEXT("B — закрыть   ·   ЛКМ — поставить   ·   E — удалить   ·   R — покрасить   ·   Z/X — шаблон   ·   G — поставить шаблон   ·   H — дать право строить"),
 		FVector2D(PanelPos.X + 24, PanelPos.Y + PanelSize.Y + 8), ColMuted);
+
+	// Размер кисти (C/V): заметная плашка, чтобы было видно, чем строим.
+	{
+		const FString BrushText = FString::Printf(TEXT("КИСТЬ: %s"), *Char->BuildBrushName());
+		const FVector2D BP(PanelPos.X + 24 + 250.f, PanelPos.Y + 14);
+		FillBox(InCanvas, BP + FVector2D(-8, -4), FVector2D(210, 26), FLinearColor(0.10f, 0.16f, 0.30f, 0.95f));
+		StrokeBox(InCanvas, BP + FVector2D(-8, -4), FVector2D(210, 26), ColAccent2, 1.f);
+		DrawText(InCanvas, Small, BrushText, BP, ColAccent2);
+		DrawText(InCanvas, Small, TEXT("C/V — размер"), BP + FVector2D(0, 20), ColMuted);
+	}
 
 	// Права: если сервер запретил строить — показываем явно.
 	ResolveNet();
@@ -2123,8 +2153,8 @@ void AOUPlayerMenuController::DrawGameHud(UCanvas* InCanvas)
 	AOUShipPawn* ShipPawn = Cast<AOUShipPawn>(MyPawn);
 	if (ShipPawn)
 	{
-		const FVector2D P(16, H - 176);
-		GlassPanel(InCanvas, P, FVector2D(260, 144), PanelB, Line);
+		const FVector2D P(16, H - 200);
+		GlassPanel(InCanvas, P, FVector2D(260, 168), PanelB, Line);
 		const float Speed = ShipPawn->State.Velocity.Size();
 		DrawText(InCanvas, Small, FString::Printf(TEXT("СКОРОСТЬ  %.0f м/с"), Speed), P + FVector2D(12, 8), ColText);
 		Bar(InCanvas, P + FVector2D(12, 34), FVector2D(236, 10), Speed / 400.f, ColAccent2, FLinearColor(0.1f, 0.12f, 0.2f, 0.9f));
@@ -2149,6 +2179,13 @@ void AOUPlayerMenuController::DrawGameHud(UCanvas* InCanvas)
 				DrawText(InCanvas, Tiny, TEXT("ТРЮМ"), P + FVector2D(12, 118), Dim);
 				Bar(InCanvas, P + FVector2D(74, 120), FVector2D(174, 8), CargoF, ColAccent2, FLinearColor(0.1f, 0.12f, 0.2f, 0.9f));
 				DrawText(InCanvas, Tiny, FString::Printf(TEXT("%lld/%lld"), Net->CargoUsed, Net->CargoMax), P + FVector2D(12, 130), Dim);
+
+				// Двигатель: тип + множитель тяги по высоте (J — сменить).
+				static const TCHAR* EngName[3] = { TEXT("атмосферный"), TEXT("ионный"), TEXT("универсальный") };
+				const int32 Eng = FMath::Clamp(Net->Engine, 0, 2);
+				const double Mul = OUInterop::EngineThrustFactor(Eng, ShipPawn->State.Position);
+				DrawText(InCanvas, Tiny, FString::Printf(TEXT("ДВИГАТЕЛЬ: %s (×%.2f, J)"), EngName[Eng], Mul),
+					P + FVector2D(12, 144), ColAccent2);
 			}
 		}
 	}
@@ -2178,7 +2215,7 @@ void AOUPlayerMenuController::DrawGameHud(UCanvas* InCanvas)
 	{
 		const bool bInShip = ShipPawn != nullptr;
 		const FString Hint = bInShip
-			? TEXT("Мышь — обзор   ·   W/S — тяга   ·   A/D — стрейф   ·   Пробел/Ctrl — вверх/вниз   ·   ЛКМ — огонь   ·   Shift — сверхсвет   ·   N — заправить   ·   L — скрипты   ·   F — выход")
+			? TEXT("Мышь — обзор   ·   W/S — тяга   ·   A/D — стрейф   ·   Пробел/Ctrl — вверх/вниз   ·   ЛКМ — огонь   ·   Shift — сверхсвет   ·   N — заправить   ·   J — двигатель   ·   L — скрипты   ·   F — выход")
 			: TEXT("Мышь — обзор   ·   W/A/S/D — ходьба   ·   ЛКМ — копать   ·   M — рынок   ·   B — строительство   ·   T — захват зоны   ·   L — скрипты   ·   K — мастерская   ·   O — организация   ·   P — персонаж");
 		DrawText(InCanvas, Tiny, Hint, FVector2D(18, H - 22), Dim);
 	}

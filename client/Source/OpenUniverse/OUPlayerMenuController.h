@@ -306,6 +306,9 @@ public:
 	/** Курсор мыши показывать в меню, прятать в игре. */
 	void SetMenuCursor(bool bShow);
 
+	/** Открыт ли хоть какой-то интерфейс (тогда клик ЛКМ — по кнопке). */
+	bool IsAnyUiOpen() const;
+
 protected:
 	// --- ввод ---
 	void OnLeftClick();

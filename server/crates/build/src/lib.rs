@@ -102,6 +102,9 @@ pub struct VoxelGrid {
     voxels: BTreeMap<Coord, Color>,
     /// Ячейка «ядра» — обязательная точка, с которой всё должно быть связано.
     core: Coord,
+    /// Основана ли постройка игроком. Пока `false`, первый поставленный блок
+    /// переносит ядро на себя (как в DU); после — нужна связность с ядром.
+    founded: bool,
     pub limits: BuildLimits,
 }
 
@@ -111,6 +114,7 @@ impl VoxelGrid {
         let mut g = VoxelGrid {
             voxels: BTreeMap::new(),
             core: (0, 0, 0),
+            founded: false,
             limits: BuildLimits::default(),
         };
         // Ядро — первый воксель.
@@ -197,9 +201,22 @@ impl VoxelGrid {
             });
         }
         // Деталь должна примыкать к существующей (иначе нельзя ставить в пустоте).
+        // Исключение — САМЫЙ ПЕРВЫЙ воксель игрока: конструкция пока состоит лишь
+        // из ядра, и игрок ставит блок там, куда смотрит. Тогда «ядро» переезжает
+        // на этот блок (как в Dual Universe: первый блок основывает постройку),
+        // и вся дальнейшая цепочка связна от него. Без этого постановка блока на
+        // земле вдали от фиксированного ядра отклонялась бы как «нет связи».
         if !self.touches_existing(c) {
+            if !self.founded && self.voxels.len() <= 1 {
+                self.voxels.clear();
+                self.core = c;
+                self.voxels.insert(c, color);
+                self.founded = true;
+                return Ok(());
+            }
             return Err(BuildError::Disconnected(c));
         }
+        self.founded = true;
         self.voxels.insert(c, color);
         if self.limits.check_integrity {
             if let Err(e) = self.validate() {
@@ -508,9 +525,13 @@ mod tests {
     #[test]
     fn cannot_place_in_empty_space() {
         let mut g = VoxelGrid::new();
-        // Далеко от ядра — нельзя.
-        let err = g.place((5, 0, 0), Color::HULL).unwrap_err();
-        assert_eq!(err, BuildError::Disconnected((5, 0, 0)));
+        // Первый блок игрока переносит ядро на себя (основание постройки).
+        assert!(g.place((5, 0, 0), Color::HULL).is_ok());
+        assert_eq!(g.core(), (5, 0, 0), "ядро переехало на первый блок");
+        assert_eq!(g.len(), 1);
+        // Второй блок уже обязан примыкать к конструкции: далёкий отклоняется.
+        let err = g.place((20, 0, 0), Color::HULL).unwrap_err();
+        assert_eq!(err, BuildError::Disconnected((20, 0, 0)));
     }
 
     #[test]

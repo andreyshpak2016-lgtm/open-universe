@@ -278,6 +278,10 @@ pub enum Message {
     ClientRefuel,
     /// Сервер: результат заправки (сколько топлива добавлено и что осталось).
     ServerRefuelResult { ok: bool, added: u64, fuel: u64, reason: String },
+    /// Клиент: сменить тип двигателя (0 атмосферный, 1 ионный, 2 универсальный).
+    ClientSetEngine { engine: u8 },
+    /// Сервер: у корабля теперь такой двигатель (эхо для HUD).
+    ServerEngine { entity: NetId, engine: u8 },
     /// Сервер: список территорий системы (владение, статус, налог) для HUD.
     ///
     /// Шлётся при подключении и при каждом изменении (захват, смена статуса).
@@ -765,6 +769,8 @@ mod wire {
     const TAG_SYSTEMS: u8 = 58;
     const TAG_REFUEL: u8 = 59;
     const TAG_REFUEL_RESULT: u8 = 60;
+    const TAG_SET_ENGINE: u8 = 61;
+    const TAG_ENGINE: u8 = 62;
 
     pub fn encode(msg: &Message) -> Vec<u8> {
         let mut w = Writer::new();
@@ -1263,6 +1269,15 @@ mod wire {
                 w.varint(*fuel);
                 w.str(reason);
             }
+            Message::ClientSetEngine { engine } => {
+                w.u8(TAG_SET_ENGINE);
+                w.u8(*engine);
+            }
+            Message::ServerEngine { entity, engine } => {
+                w.u8(TAG_ENGINE);
+                w.varint(*entity as u64);
+                w.u8(*engine);
+            }
         }
         w.buf
     }
@@ -1707,6 +1722,11 @@ mod wire {
                 added: r.varint()?,
                 fuel: r.varint()?,
                 reason: r.str()?,
+            }),
+            TAG_SET_ENGINE => Ok(Message::ClientSetEngine { engine: r.u8()? }),
+            TAG_ENGINE => Ok(Message::ServerEngine {
+                entity: r.varint()? as u32,
+                engine: r.u8()?,
             }),
             other => Err(WireError::BadTag(other)),
         }

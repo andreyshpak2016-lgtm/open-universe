@@ -94,6 +94,9 @@ window.PLAN = {
       "goal_en": "A full voxel construction editor.",
       "tasks": [
         { "title": "Постановка блоков в игре (сервер-авторитетно)", "title_en": "Placing blocks in the game (server-authoritative)", "status": "done" },
+        { "title": "Клик мышью реально ставит блок (ЛКМ не перехватывается меню; первый блок основывает постройку — ядро переезжает)", "title_en": "A mouse click actually places a block (LMB is not swallowed by the menu; the first block founds the build - the core moves)", "status": "done" },
+        { "title": "Размер кисти постановки (C/V: малый/средний/большой, куб N×N×N от центра к краям)", "title_en": "Build brush size (C/V: small/medium/large, an N×N×N cube from centre outward)", "status": "done" },
+        { "title": "Типы двигателей: атмосферный/ионный/универсальный (клавиша J; тяга зависит от высоты, бит-в-бит с сервером)", "title_en": "Engine types: atmospheric/ion/universal (key J; thrust depends on altitude, bit-exact with the server)", "status": "done" },
         { "title": "Сетка деталей и «ядра» конструкций", "title_en": "Part and construction core grid", "status": "done" },
         { "title": "Валидация физической целостности", "title_en": "Physical integrity validation", "status": "done" },
         { "title": "Совместное строительство: репликация правок, выдача прав (H) и индикатор прав в UE", "title_en": "Co-op building: edit replication, granting rights (H) and a rights indicator in UE", "status": "done" },

@@ -445,6 +445,9 @@ void AOUCharacterPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputCom
 	// Выбор блока в палитре: колесо мыши.
 	PlayerInputComponent->BindAction(TEXT("BuildNext"), IE_Pressed, this, &AOUCharacterPawn::OnBuildNext);
 	PlayerInputComponent->BindAction(TEXT("BuildPrev"), IE_Pressed, this, &AOUCharacterPawn::OnBuildPrev);
+	// Размер кисти постановки: C — следующий, V — предыдущий.
+	PlayerInputComponent->BindAction(TEXT("BuildBrush"), IE_Pressed, this, &AOUCharacterPawn::BuildBrushNext);
+	PlayerInputComponent->BindAction(TEXT("BuildBrushPrev"), IE_Pressed, this, &AOUCharacterPawn::BuildBrushPrev);
 	// Захват территории: T — объявить текущую зону своей.
 	PlayerInputComponent->BindAction(TEXT("TerritoryCapture"), IE_Pressed, this, &AOUCharacterPawn::CaptureTerritory);
 	// Совместная стройка: H — разрешить ближайшему игроку строить.
@@ -650,6 +653,29 @@ void AOUCharacterPawn::SelectBuildPart(int32 Index)
 	}
 }
 
+void AOUCharacterPawn::BuildBrushNext()
+{
+	BuildBrush = (BuildBrush % 3) + 1;
+	UE_LOG(LogOUChar, Log, TEXT("Кисть строительства: %s (%d)"), *BuildBrushName(), BuildBrush);
+}
+
+void AOUCharacterPawn::BuildBrushPrev()
+{
+	BuildBrush = ((BuildBrush + 1) % 3) + 1;
+	UE_LOG(LogOUChar, Log, TEXT("Кисть строительства: %s (%d)"), *BuildBrushName(), BuildBrush);
+}
+
+FString AOUCharacterPawn::BuildBrushName() const
+{
+	switch (BuildBrush)
+	{
+	case 1: return TEXT("малый");
+	case 2: return TEXT("средний");
+	case 3: return TEXT("большой");
+	default: return TEXT("малый");
+	}
+}
+
 FString AOUCharacterPawn::BuildPartName(int32 Index)
 {
 	switch ((EOUBuildPart)Index)
@@ -723,6 +749,44 @@ void AOUCharacterPawn::PlaceBuildBlock()
 		BuiltCoords.Add(Target);
 		++BuiltCount;
 		UE_LOG(LogOUChar, Log, TEXT("Строительство: поставить (%d,%d,%d)"), Target.X, Target.Y, Target.Z);
+		// Кисть больше 1: заполняем куб N×N×N, ЦЕНТРИРОВАННЫЙ на ячейке-якоре.
+		// Порядок важен: сервер требует, чтобы каждый воксель примыкал к уже
+		// поставленному (6-связность к ядру). Поэтому идём «слоями» от центра —
+		// по возрастанию манхэттенского расстояния. Тогда каждая ячейка имеет
+		// соседа ближе к центру, который уже принят.
+		if (BuildBrush > 1)
+		{
+			const int32 Half = BuildBrush / 2;
+			TArray<FIntVector> Offsets;
+			for (int32 dx = -Half; dx < -Half + BuildBrush; ++dx)
+			{
+				for (int32 dy = -Half; dy < -Half + BuildBrush; ++dy)
+				{
+					for (int32 dz = -Half; dz < -Half + BuildBrush; ++dz)
+					{
+						if (dx == 0 && dy == 0 && dz == 0) { continue; }
+						Offsets.Add(FIntVector(dx, dy, dz));
+					}
+				}
+			}
+			Offsets.Sort([](const FIntVector& A, const FIntVector& B)
+			{
+				const int32 DA = FMath::Abs(A.X) + FMath::Abs(A.Y) + FMath::Abs(A.Z);
+				const int32 DB = FMath::Abs(B.X) + FMath::Abs(B.Y) + FMath::Abs(B.Z);
+				if (DA != DB) { return DA < DB; }
+				if (A.X != B.X) { return A.X < B.X; }
+				if (A.Y != B.Y) { return A.Y < B.Y; }
+				return A.Z < B.Z;
+			});
+			for (const FIntVector& O : Offsets)
+			{
+				Net->SendBuild(Net->OwnEntityId, /*Place=*/0,
+					Target.X + O.X, Target.Y + O.Y, Target.Z + O.Z, R, G, B);
+				++BuiltCount;
+			}
+			UE_LOG(LogOUChar, Log, TEXT("Кисть %s: куб %d×%d×%d вокруг (%d,%d,%d)"),
+				*BuildBrushName(), BuildBrush, BuildBrush, BuildBrush, Target.X, Target.Y, Target.Z);
+		}
 		// Обучение: строительство.
 		if (AOUPlayerMenuController* MenuB = Cast<AOUPlayerMenuController>(GetController()))
 		{

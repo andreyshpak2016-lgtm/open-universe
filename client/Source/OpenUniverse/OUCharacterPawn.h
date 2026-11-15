@@ -117,6 +117,23 @@ public:
 	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Build")
 	int32 BuildSelection = 0;
 
+	/**
+	 * Размер кисти постановки: 1 — малый, 2 — средний, 3 — большой (куб N×N×N).
+	 * Позволяет строить крупные формы, не кликая по одному вокселю.
+	 */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Build")
+	int32 BuildBrush = 1;
+
+	/** Следующий/предыдущий размер кисти. */
+	UFUNCTION(BlueprintCallable, Category = "Open Universe|Build")
+	void BuildBrushNext();
+	UFUNCTION(BlueprintCallable, Category = "Open Universe|Build")
+	void BuildBrushPrev();
+
+	/** Человекочитаемое имя размера кисти. */
+	UFUNCTION(BlueprintPure, Category = "Open Universe|Build")
+	FString BuildBrushName() const;
+
 	/** Сколько блоков поставлено (для меню строительства). */
 	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Build")
 	int32 BuiltCount = 0;

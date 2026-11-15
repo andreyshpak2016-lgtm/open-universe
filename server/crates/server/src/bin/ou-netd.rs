@@ -203,6 +203,11 @@ fn main() {
                             net.send_to(token, from, &server.progress_state(next_player)).ok();
                             // Бортовые системы (трюм/топливо/энергия) — сразу.
                             net.send_to(token, from, &server.systems_state(next_player)).ok();
+                            // Тип двигателя — сразу (для HUD).
+                            {
+                                let (entity, eng) = server.engine_state(next_player);
+                                net.send_to(token, from, &Message::ServerEngine { entity, engine: eng }).ok();
+                            }
                             // Шард: какой узел обслуживает игрока (HUD).
                             let (node, zones, owned, owner) = server.shard_status();
                             net.send_to(token, from, &Message::ServerShard { node, zones, owned, owner }).ok();
@@ -439,6 +444,23 @@ fn main() {
                                 },
                             };
                             net.send_to(token, from, &msg).ok();
+                        }
+                    }
+                    Message::ClientSetEngine { engine } => {
+                        if let Some(pid) = clients.get(&from) {
+                            match server.set_engine(*pid, engine) {
+                                Ok(e) => {
+                                    let (entity, _) = server.engine_state(*pid);
+                                    net.send_to(
+                                        token,
+                                        from,
+                                        &Message::ServerEngine { entity, engine: e },
+                                    )
+                                    .ok();
+                                    println!("игрок {pid}: двигатель → {e}");
+                                }
+                                Err(err) => println!("двигатель: игрок {pid}: {err}"),
+                            }
                         }
                     }
                     _ => {}

@@ -396,6 +396,8 @@ void AOUShipPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 	PlayerInputComponent->BindAction(TEXT("ShipBoost"), IE_Released, this, &AOUShipPawn::OnBoostReleased);
 	// Заправка: N — топливо-предметы из трюма в баки.
 	PlayerInputComponent->BindAction(TEXT("Refuel"), IE_Pressed, this, &AOUShipPawn::RefuelShip);
+	// Двигатель: J — сменить тип (атмосферный/ионный/универсальный).
+	PlayerInputComponent->BindAction(TEXT("CycleEngine"), IE_Pressed, this, &AOUShipPawn::CycleEngine);
 }
 
 void AOUShipPawn::AxisYawMouse(float Value)
@@ -584,6 +586,29 @@ void AOUShipPawn::RefuelShip()
 	}
 }
 
+void AOUShipPawn::CycleEngine()
+{
+	// Смена типа двигателя по кругу: атмосферный → ионный → универсальный.
+	// Сервер авторитетно меняет тип и присылает эхо (Net->Engine).
+	if (!Net)
+	{
+		Net = FindComponentByClass<UOUClientNet>();
+	}
+	const int32 Cur = Net ? Net->Engine : 1;
+	const int32 Next = (Cur + 1) % 3;
+	if (Net && Net->IsConnected())
+	{
+		Net->SendSetEngine(Next);
+		UE_LOG(LogOUShip, Log, TEXT("Двигатель: переключаю на тип %d"), Next);
+	}
+	else
+	{
+		// Оффлайн: меняем локально, чтобы можно было попробовать в одиночной игре.
+		Flight.Engine = Next;
+		UE_LOG(LogOUShip, Log, TEXT("Двигатель (локально): тип %d"), Next);
+	}
+}
+
 void AOUShipPawn::ExitShip()
 {
 	UWorld* World = GetWorld();
@@ -728,7 +753,12 @@ void AOUShipPawn::StepPrediction(const FOUInputFrame& Input, float Dt)
 	// разойдётся с авторитетным состоянием.
 	const double BoostThrustMul = Input.bBoost ? 400.0 : 1.0;
 	const double BoostSpeedMul = Input.bBoost ? 400.0 : 1.0;
-	const FVector Thrust = Forward * (Input.Throttle * Flight.MaxThrust * BoostThrustMul);
+	// Тип двигателя: множитель тяги по высоте над планетой (как `engine_thrust_factor`
+	// на сервере). Формула детерминирована, поэтому предсказание не расходится.
+	// Тип берём из сети (авторитетно), если он известен; иначе — локальная настройка.
+	const int32 EngineType = (Net && Net->bSystemsReceived) ? Net->Engine : Flight.Engine;
+	const double EngineMul = OUInterop::EngineThrustFactor(EngineType, State.Position);
+	const FVector Thrust = Forward * (Input.Throttle * Flight.MaxThrust * BoostThrustMul * EngineMul);
 	const FVector Side = Right * (Input.Strafe * Flight.MaxStrafeThrust);
 	const FVector Lift = UpLocal * (Input.Up * Flight.MaxStrafeThrust);
 	const FVector Damp = State.Velocity * (-Flight.LinearDamping);

@@ -409,6 +409,13 @@ void UOUClientNet::SendRefuel()
 	TArray<uint8> Arr; Arr.Append(Body.data(), static_cast<int32>(Body.size())); SendPacket(Arr);
 }
 
+void UOUClientNet::SendSetEngine(int32 NewEngine)
+{
+	if (!IsConnected()) { return; }
+	const std::vector<uint8_t> Body = OUWire::EncodeSetEngine(static_cast<uint8_t>(FMath::Clamp(NewEngine, 0, 2)));
+	TArray<uint8> Arr; Arr.Append(Body.data(), static_cast<int32>(Body.size())); SendPacket(Arr);
+}
+
 void UOUClientNet::UpdateTerritoryAt(double ServerX, double ServerY, double ServerZ)
 {
 	// Точка игрока в серверных единицах; зоны тоже в серверных.
@@ -1103,6 +1110,15 @@ void UOUClientNet::Poll()
 				LastRefuelTime = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.f;
 				UE_LOG(LogOUClient, Log, TEXT("Заправка: %s (+%lld топлива)"),
 					*LastRefuelMessage, static_cast<long long>(R.Added));
+			}
+		}
+		else if (Body[0] == OUWire::TagEngine) // тип двигателя
+		{
+			OUWire::EngineState S;
+			if (OUWire::DecodeEngine(Body.GetData(), static_cast<size_t>(Body.Num()), S))
+			{
+				Engine = static_cast<int32>(S.Engine);
+				UE_LOG(LogOUClient, Log, TEXT("Двигатель: тип %d"), Engine);
 			}
 		}
 		else if (Body[0] == OUWire::TagMarketState) // состояние экономики

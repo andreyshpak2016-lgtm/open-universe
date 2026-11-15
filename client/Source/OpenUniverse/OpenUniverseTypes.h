@@ -116,4 +116,12 @@ struct FOUShipParams
 	/** Скорость мягкой посадки, ед/с (сервер: 60). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Open Universe")
 	float LandingSafeSpeed = 60.f;
+
+	/**
+	 * Тип двигателя: 0 — атмосферный (силён внизу, слаб в космосе),
+	 * 1 — ионный (слаб в атмосфере, силён в космосе), 2 — универсальный.
+	 * Должен совпадать со стартовым типом на сервере (по умолчанию — 2).
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Open Universe")
+	int32 Engine = 2;
 };

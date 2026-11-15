@@ -97,6 +97,60 @@ pub struct ShipParams {
     pub landing_safe_speed: f64,
     /// Трение о поверхность (0..1): доля касательной скорости, теряемая за шаг.
     pub ground_friction: f64,
+    /// Тип двигателя (влияет на тягу по высоте: атмосфера/космос).
+    pub engine: Engine,
+}
+
+/// Тип двигателя корабля.
+///
+/// Атмосферный двигатель работает от воздуха: в плотной атмосфере он сильнее,
+/// в вакууме почти бесполезен. Ионный — наоборот: слаб в атмосфере, эффективен
+/// в космосе. Универсальный — компромисс (середина везде).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum Engine {
+    /// Атмосферный: силён внизу, слаб в вакууме.
+    Atmospheric,
+    /// Ионный: слаб в атмосфере, силён в вакууме.
+    #[default]
+    Ion,
+    /// Универсальный: ровная тяга везде.
+    Universal,
+}
+
+/// Относительная высота над поверхностью домашней планеты: 0 — у земли,
+/// 1 — граница атмосферы (~20 км), больше — открытый космос.
+///
+/// Общая формула для сервера и клиента: `(длина позиции − радиус) / высота`.
+pub fn altitude_ratio(pos_len: f64) -> f64 {
+    const R: f64 = HOME_PLANET_RADIUS;
+    const ATMOSPHERE: f64 = 20_000.0; // высота однородной атмосферы, ед. длины
+    let alt = pos_len - R;
+    if alt <= 0.0 {
+        0.0
+    } else {
+        alt / ATMOSPHERE
+    }
+}
+
+/// То же, но по позиции (длина вектора от центра планеты).
+pub fn altitude_over_radius_for(pos: Vec3) -> f64 {
+    altitude_ratio(pos.length())
+}
+
+/// Множитель тяги по типу двигателя и высоте над планетой.
+///
+/// * атмосферный: 1.0 у земли → 0.15 в вакууме;
+/// * ионный: 0.35 у земли → 1.0 в вакууме;
+/// * универсальный: 0.9 везде (ровный компромисс).
+///
+/// Формула — линейная интерполяция по `ratio` (детерминирована: только `+ - * /`).
+pub fn engine_thrust_factor(engine: Engine, ratio: f64) -> f64 {
+    let t = if ratio <= 0.0 { 0.0 } else if ratio >= 1.0 { 1.0 } else { ratio };
+    match engine {
+        Engine::Atmospheric => 1.0 - 0.85 * t,
+        Engine::Ion => 0.35 + 0.65 * t,
+        Engine::Universal => 0.9,
+    }
 }
 
 impl Default for ShipParams {
@@ -110,6 +164,9 @@ impl Default for ShipParams {
             max_speed: 400.0,
             landing_safe_speed: 60.0,
             ground_friction: 0.25,
+            // Стартовый двигатель — универсальный: уверенно тянет и у земли, и в
+            // космосе (атмосферный/ионный игрок выбирает клавишей J под задачу).
+            engine: Engine::Universal,
         }
     }
 }
@@ -199,7 +256,11 @@ pub fn integrate_with_accel(
     const BOOST_THRUST_MUL: f64 = 400.0;
     const BOOST_SPEED_MUL: f64 = 400.0;
     let boosting = input.boost;
-    let thrust_gain = if boosting { p.max_thrust * BOOST_THRUST_MUL } else { p.max_thrust };
+    // Тип двигателя влияет на тягу: атмосферный силён в воздухе и слаб в
+    // вакууме, ионный — ровно наоборот. Множитель зависит только от высоты над
+    // домашней планетой, поэтому сервер и клиент считают его одинаково.
+    let engine_mul = engine_thrust_factor(p.engine, altitude_over_radius_for(state.pos));
+    let thrust_gain = if boosting { p.max_thrust * BOOST_THRUST_MUL } else { p.max_thrust * engine_mul };
     let thrust = forward.scale(input.throttle as f64 * thrust_gain);
     let side = right.scale(input.strafe as f64 * p.max_strafe_thrust);
     let lift = up_local.scale(input.up as f64 * p.max_strafe_thrust);
@@ -424,6 +485,8 @@ pub struct Entity {
     pub terrain: Option<Terrain>,
     /// Состояние контакта с поверхностью после последнего шага.
     pub ground: landing::GroundState,
+    /// Тип двигателя сущности (атмосферный/ионный/универсальный).
+    pub engine: Engine,
 }
 
 /// Мир с детерминированным порядком перебора (BTreeMap).
@@ -485,14 +548,30 @@ impl World {
                 last_input_seq: 0,
                 terrain: None,
                 ground: landing::GroundState::Flying,
+                // Стартовый двигатель — универсальный (см. ShipParams::default).
+                engine: Engine::Universal,
             },
         );
         id
     }
 
+    /// Сменить тип двигателя сущности (авторитетно, по команде игрока).
+    pub fn set_engine(&mut self, id: NetId, engine: Engine) -> bool {
+        match self.entities.get_mut(&id) {
+            Some(e) => {
+                e.engine = engine;
+                true
+            }
+            None => false,
+        }
+    }
+
     /// Один детерминированный шаг мира.
     pub fn step(&mut self, inputs: &BTreeMap<NetId, InputFrame>) {
         for (id, ent) in self.entities.iter_mut() {
+            // Параметры этого корабля: двигатель — из сущности (у каждого свой).
+            let mut params = self.params;
+            params.engine = ent.engine;
             // Внешнее ускорение: гравитация от ВСЕХ тел системы (домашняя планета
             // с рельефом + соседние гладкие сферы). Дальние вклады почти нулевые.
             let mut g = Vec3::ZERO;
@@ -500,12 +579,12 @@ impl World {
                 g = g.add(gravity_at(ent.state.pos, body));
             }
             if let Some(input) = inputs.get(id) {
-                integrate_with_accel(&mut ent.state, input, &self.params, TICK_DT, g);
+                integrate_with_accel(&mut ent.state, input, &params, TICK_DT, g);
                 ent.last_input_seq = input.seq;
             } else {
                 // Без ввода — только инерция (демпфирование) и гравитация.
                 let neutral = InputFrame::neutral(ent.last_input_seq);
-                integrate_with_accel(&mut ent.state, &neutral, &self.params, TICK_DT, g);
+                integrate_with_accel(&mut ent.state, &neutral, &params, TICK_DT, g);
             }
             // Столкновение с поверхностью: для КАЖДОГО тела не даём провалиться
             // под рельеф (у соседних тел — гладкая сфера). Так на луну/планету

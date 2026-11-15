@@ -99,6 +99,8 @@ namespace OUWire
         TagSystems = 58,
         TagRefuel = 59,
         TagRefuelResult = 60,
+        TagSetEngine = 61,
+        TagEngine = 62,
     };
 
     /// Действия редактора конструкций.
@@ -1580,6 +1582,31 @@ namespace OUWire
         const uint8_t* sp = nullptr;
         if (!r.Take(static_cast<size_t>(slen), sp)) return false;
         Out.Message.assign(reinterpret_cast<const char*>(sp), static_cast<size_t>(slen));
+        return true;
+    }
+
+    /// Сменить двигатель корабля (клиент → сервер, тег 61).
+    inline std::vector<uint8_t> EncodeSetEngine(uint8_t Engine)
+    {
+        return std::vector<uint8_t>{TagSetEngine, Engine};
+    }
+
+    /// Текущий двигатель корабля (сервер → клиент, тег 62).
+    struct EngineState
+    {
+        uint32_t Entity = 0;
+        uint8_t Engine = 1;
+    };
+
+    inline bool DecodeEngine(const uint8_t* body, size_t len, EngineState& Out)
+    {
+        Reader r{body, len, 0};
+        uint8_t tag = 0;
+        if (!r.U8(tag) || tag != TagEngine) return false;
+        uint64_t entity = 0;
+        if (!r.Varint(entity)) return false;
+        Out.Entity = static_cast<uint32_t>(entity);
+        if (!r.U8(Out.Engine)) return false;
         return true;
     }
 

@@ -928,6 +928,14 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Open Universe|Systems")
 	void SendRefuel();
 
+	/** Тип двигателя корабля: 0 атмосферный, 1 ионный, 2 универсальный. */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Systems")
+	int32 Engine = 1;
+
+	/** Сменить тип двигателя (0/1/2). */
+	UFUNCTION(BlueprintCallable, Category = "Open Universe|Systems")
+	void SendSetEngine(int32 NewEngine);
+
 	/** Подключиться к серверу. */
 	UFUNCTION(BlueprintCallable, Category = "Open Universe|Net")
 	bool Connect();

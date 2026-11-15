@@ -17,7 +17,7 @@ use ou_protocol::{
 };
 use ou_script::ScriptEngine;
 use ou_shard::{NodeId, ShardRouter};
-use ou_sim::{det_cos, det_sin, Dent, Terrain, World};
+use ou_sim::{det_cos, det_sin, Dent, Engine, Terrain, World};
 use ou_spatial::SpatialGrid;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -1713,8 +1713,6 @@ impl Server {
     }
 
     /// Заправить корабль: потратить предмет «топливо» из трюма в баки.
-    ///
-    /// Возвращает, сколько единиц топлива добавлено, или строку-ошибку.
     pub fn refuel(&mut self, player: NetId) -> Result<u64, String> {
         let entity = self.entity_of(player);
         let sys = self.economy.system;
@@ -1745,6 +1743,40 @@ impl Server {
         }
         self.market_dirty = true;
         Ok(added)
+    }
+
+    // --- Двигатели ---
+
+    /// Сменить тип двигателя корабля игрока (0 атмосферный, 1 ионный, 2 универсальный).
+    ///
+    /// Возвращает новое значение (для эха в HUD) или ошибку.
+    pub fn set_engine(&mut self, player: NetId, engine: u8) -> Result<u8, String> {
+        let e = match engine {
+            0 => Engine::Atmospheric,
+            1 => Engine::Ion,
+            2 => Engine::Universal,
+            _ => return Err(format!("неизвестный двигатель: {engine}")),
+        };
+        let entity = self.entity_of(player);
+        if !self.world.set_engine(entity, e) {
+            return Err("корабль не найден".to_string());
+        }
+        Ok(engine)
+    }
+
+    /// Тип двигателя игрока (для эха при подключении).
+    pub fn engine_of(&self, player: NetId) -> u8 {
+        let entity = self.entity_of(player);
+        match self.world.entities.get(&entity).map(|e| e.engine) {
+            Some(Engine::Atmospheric) => 0,
+            Some(Engine::Universal) => 2,
+            _ => 1,
+        }
+    }
+
+    /// Тела системы: двигатель участвует в сообщении систем (для HUD).
+    pub fn engine_state(&self, player: NetId) -> (NetId, u8) {
+        (self.entity_of(player), self.engine_of(player))
     }
 
     // --- Таланты и прогрессия персонажа ---
@@ -2724,8 +2756,10 @@ mod tests {
     fn build_rejects_floating_voxel() {
         let mut s = Server::new();
         s.connect(1, Vec3::ZERO);
-        // Далеко от ядра — нельзя.
-        let r = s.apply_build(&cmd(BuildAction::Place, (20, 0, 0)));
+        // Первый блок основывает постройку (ядро переезжает) — принимается.
+        assert_eq!(s.apply_build(&cmd(BuildAction::Place, (20, 0, 0))), BuildReason::Ok);
+        // Дальше постановка в пустоте (вдали от конструкции) отклоняется.
+        let r = s.apply_build(&cmd(BuildAction::Place, (60, 0, 0)));
         assert_eq!(r, BuildReason::Disconnected);
     }
 
@@ -4051,5 +4085,46 @@ mod tests {
         assert_eq!(ou_protocol::decode(&ou_protocol::encode(&r)).unwrap(), r);
         let c = Message::ClientRefuel;
         assert_eq!(ou_protocol::decode(&ou_protocol::encode(&c)).unwrap(), c);
+    }
+
+    // --- Двигатели ---
+
+    #[test]
+    fn engine_switch_changes_thrust_profile() {
+        let mut s = Server::new();
+        let e = s.connect_on_planet(1);
+        // По умолчанию — универсальный (тип 2): уверенная тяга везде.
+        assert_eq!(s.engine_of(1), 2);
+        // Переключаем на атмосферный и ионный.
+        assert_eq!(s.set_engine(1, 0).unwrap(), 0);
+        assert_eq!(s.engine_of(1), 0);
+        assert!(s.world.entities[&e].engine == ou_sim::Engine::Atmospheric);
+        assert_eq!(s.set_engine(1, 1).unwrap(), 1);
+        assert_eq!(s.engine_of(1), 1);
+        // Неизвестный тип — ошибка, тип не меняется.
+        assert!(s.set_engine(1, 9).is_err());
+        assert_eq!(s.engine_of(1), 1);
+    }
+
+    #[test]
+    fn engine_thrust_depends_on_altitude() {
+        // Атмосферный: силён у земли (ratio 0), слаб в космосе (ratio ≥ 1).
+        assert!(ou_sim::engine_thrust_factor(ou_sim::Engine::Atmospheric, 0.0) > 0.9);
+        assert!(ou_sim::engine_thrust_factor(ou_sim::Engine::Atmospheric, 1.0) < 0.2);
+        // Ионный — наоборот.
+        assert!(ou_sim::engine_thrust_factor(ou_sim::Engine::Ion, 0.0) < 0.5);
+        assert!(ou_sim::engine_thrust_factor(ou_sim::Engine::Ion, 1.0) >= 0.99);
+        // Универсальный — ровный.
+        let u0 = ou_sim::engine_thrust_factor(ou_sim::Engine::Universal, 0.0);
+        let u1 = ou_sim::engine_thrust_factor(ou_sim::Engine::Universal, 1.0);
+        assert_eq!(u0, u1);
+    }
+
+    #[test]
+    fn engine_message_roundtrips_on_wire() {
+        let c = Message::ClientSetEngine { engine: 2 };
+        assert_eq!(ou_protocol::decode(&ou_protocol::encode(&c)).unwrap(), c);
+        let e = Message::ServerEngine { entity: 5, engine: 0 };
+        assert_eq!(ou_protocol::decode(&ou_protocol::encode(&e)).unwrap(), e);
     }
 }

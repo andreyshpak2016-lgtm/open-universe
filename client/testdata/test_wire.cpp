@@ -95,9 +95,9 @@ int main(int argc, char** argv)
     // --- 3. Сверка значений с эталоном ---
     std::printf("\n=== 3. Сверка позиций с сервером (допуск 1 см) ===\n");
     const Expected expected[3] = {
-        {1,  1169.48f,  327.47f,  9212.51f,  0.3660f},
-        {2,  9709.25f,  327.47f,   890.97f, -0.7320f},
-        {3, -5607.76f, 3327.47f, 24309.50f,  0.1220f},
+        {1,  1052.53f,  294.72f,  8291.25f,  0.3660f},
+        {2,  9938.33f,  294.72f,     1.87f, -0.7320f},
+        {3, -5646.99f, 3294.72f, 23378.55f,  0.1220f},
     };
 
     for (int i = 0; i < 3; ++i)
@@ -650,6 +650,21 @@ int main(int argc, char** argv)
         Check(OUWire::DecodeRefuelResult(rb.data(), rb.size(), rr), "результат заправки разобран");
         Check(rr.Ok && rr.Added == 2000 && rr.Fuel == 4000 && rr.Message == "заправлено",
             "поля заправки совпали");
+    }
+
+    // --- 6r. Двигатели (теги 61/62) ---
+    std::printf("\n=== 6r. Двигатели (смена типа) ===\n");
+    {
+        const std::vector<uint8_t> q = OUWire::EncodeSetEngine(2);
+        Check(q.size() == 2 && q[0] == OUWire::TagSetEngine && q[1] == 2,
+            "запрос смены двигателя = тег 61");
+        std::vector<uint8_t> eb;
+        eb.push_back(OUWire::TagEngine);
+        OUWire::push_varint(eb, 7);
+        eb.push_back(0);   // атмосферный
+        OUWire::EngineState es;
+        Check(OUWire::DecodeEngine(eb.data(), eb.size(), es), "двигатель разобран");
+        Check(es.Entity == 7 && es.Engine == 0, "поля двигателя совпали");
     }
 
     // --- 7. Приветствие сервера (какой сущностью управляем) ---

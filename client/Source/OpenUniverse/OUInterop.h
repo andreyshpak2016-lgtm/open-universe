@@ -57,4 +57,29 @@ namespace OUInterop
 	{
 		return FVector(V.Y, V.Z, V.X) / ServerUnitToCm;
 	}
+
+	/** Радиус домашней планеты в серверных единицах (совпадает с `ou_sim`). */
+	constexpr double HomePlanetRadiusUnits = 500000.0;
+	/** Высота однородной атмосферы в серверных единицах. */
+	constexpr double AtmosphereHeightUnits = 20000.0;
+
+	/**
+	 * Множитель тяги по типу двигателя и высоте над планетой.
+	 *
+	 * Должен бит-в-бит совпадать с `ou_sim::engine_thrust_factor`, иначе
+	 * предсказание клиента разойдётся с авторитетным состоянием сервера.
+	 * `PosServer` — позиция в СЕРВЕРНЫХ единицах (как State.Position).
+	 */
+	inline double EngineThrustFactor(int32 Engine, const FVector& PosServer)
+	{
+		const double Alt = PosServer.Size() - HomePlanetRadiusUnits;
+		double T = Alt <= 0.0 ? 0.0 : (Alt / AtmosphereHeightUnits);
+		if (T > 1.0) { T = 1.0; }
+		switch (Engine)
+		{
+		case 0: return 1.0 - 0.85 * T;   // атмосферный
+		case 2: return 0.9;              // универсальный
+		default: return 0.35 + 0.65 * T; // ионный
+		}
+	}
 }
