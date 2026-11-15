@@ -1129,7 +1129,16 @@ bool AOUCharacterPawn::TraceBuildTarget(FIntVector& OutCoord, FVector& OutHit, F
 
 FIntVector AOUCharacterPawn::WorldToVoxel(const FVector& WorldPos) const
 {
-	// Обратное к VoxelWorld: мировая точка → координата сетки (общий якорь).
+	const FVector F = WorldToVoxelF(WorldPos);
+	// Округляем до целой ячейки (мин. угол куба со стороной 1).
+	return FIntVector(FMath::RoundToInt(F.X), FMath::RoundToInt(F.Y), FMath::RoundToInt(F.Z));
+}
+
+FVector AOUCharacterPawn::WorldToVoxelF(const FVector& WorldPos) const
+{
+	// Мировая точка → НЕПРЕРЫВНАЯ координата сетки (в вокселях) по общему якорю.
+	// Нужно для точной привязки нового куба к точке под прицелом (например, к
+	// любому месту грани крупного вокселя), а не только к его минимальному углу.
 	const double VoxelCm = 150.0;
 	const FVector AnchorUE = BuildAnchorUE;
 	const FVector UpUE = AnchorUE.GetSafeNormal();
@@ -1141,14 +1150,10 @@ FIntVector AOUCharacterPawn::WorldToVoxel(const FVector& WorldPos) const
 	const FVector RightUE = FVector::CrossProduct(UpUE, FwdUE).GetSafeNormal();
 
 	const FVector Rel = WorldPos - AnchorUE;
-	// Округляем до целой ячейки (мин. угол куба со стороной 1).
-	const double FX = FVector::DotProduct(Rel, FwdUE) / VoxelCm;
-	const double FY = FVector::DotProduct(Rel, UpUE) / VoxelCm;
-	const double FZ = FVector::DotProduct(Rel, RightUE) / VoxelCm;
-	return FIntVector(
-		FMath::RoundToInt(FX),
-		FMath::RoundToInt(FY),
-		FMath::RoundToInt(FZ));
+	return FVector(
+		FVector::DotProduct(Rel, FwdUE) / VoxelCm,
+		FVector::DotProduct(Rel, UpUE) / VoxelCm,
+		FVector::DotProduct(Rel, RightUE) / VoxelCm);
 }
 
 void AOUCharacterPawn::RemoveBuildBlock()
@@ -1269,8 +1274,9 @@ bool AOUCharacterPawn::ComputeBuildTarget(FIntVector& OutTarget) const
 	const int32 CoreId = Net ? Net->ActiveCoreId : 0;
 
 	// 1. Предпочтительная ячейка под новым кубом.
-	//   * прицел в блок — встаём к его ГРАНИ по нормали, выравнивая все оси, чтобы
-	//     кубы разного размера стыковались гранями, а не накладывались;
+	//   * прицел в блок — ставим на его ГРАНЬ, ровно под прицелом: по двум
+	//     «боковым» осям берём ячейку точки попадания (можно на любое место грани
+	//     крупного вокселя), по оси нормали — сразу за гранью;
 	//   * прицел в землю — берём ячейку на поверхности (постройку основало ядро).
 	FIntVector Preferred;
 	{
@@ -1280,19 +1286,21 @@ bool AOUCharacterPawn::ComputeBuildTarget(FIntVector& OutTarget) const
 		{
 			const FIntVector Shift = WorldDirToVoxelShift(Normal);
 			const int32 HitSide = FMath::Clamp(LastHitBlockSize, 1, 3);
-			// По оси нормали — за гранью найденного куба; по двум другим осям
-			// выравниваем ближние (минимальные) грани — крупный куб не съедет на
-			// соседей.
-			auto Along = [&](int32 C, int32 S, int32 Hit, int32 HSide) -> int32
+			// Точка попадания в непрерывных координатах сетки — по ней выбираем
+			// ячейку под прицелом на грани (а не всегда минимальный угол куба).
+			const FVector HitF = WorldToVoxelF(Hit);
+			auto Axis = [&](int32 AxisIdx, int32 Min) -> int32
 			{
-				if (S > 0) { return C + HSide; }
-				if (S < 0) { return C - NewSide; }
-				return C;
+				const int32 N = AxisIdx == 0 ? Shift.X : (AxisIdx == 1 ? Shift.Y : Shift.Z);
+				const double HitCoord = AxisIdx == 0 ? HitF.X : (AxisIdx == 1 ? HitF.Y : HitF.Z);
+				if (N > 0) { return Min + HitSide; }      // сразу за дальней гранью
+				if (N < 0) { return Min - NewSide; }      // перед ближней гранью
+				// Боковая ось: ячейка под прицелом, но не выходим за «пятно» грани.
+				const int32 Cell = FMath::FloorToInt(HitCoord);
+				const int32 Hi = Min + FMath::Max(0, HitSide - NewSide);
+				return FMath::Clamp(Cell, Min, Hi);
 			};
-			Preferred = FIntVector(
-				Along(Coord.X, Shift.X, Coord.X, HitSide),
-				Along(Coord.Y, Shift.Y, Coord.Y, HitSide),
-				Along(Coord.Z, Shift.Z, Coord.Z, HitSide));
+			Preferred = FIntVector(Axis(0, Coord.X), Axis(1, Coord.Y), Axis(2, Coord.Z));
 		}
 		else
 		{
