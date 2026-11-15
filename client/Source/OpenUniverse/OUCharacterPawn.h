@@ -175,6 +175,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Open Universe|Build")
 	void PlaceCoreBlock();
 
+	/** Ячейка, куда встанет ядро из слота «ЯДРО» (под прицелом; или перед игроком). */
+	UFUNCTION(BlueprintPure, Category = "Open Universe|Build")
+	FIntVector CorePlacementCell() const;
+
 	/** Открыть/закрыть отдельное окно размеров вокселя (клавиша V). */
 	UFUNCTION(BlueprintCallable, Category = "Open Universe|Build")
 	void ToggleVoxelMenu();
@@ -325,6 +329,9 @@ public:
 	/** Таймер/счётчик проверки ядра (`-OUCore`). */
 	float CoreTimer = 0.f;
 	int32 CoreCount = 0;
+	/** Таймер/счётчик проверки смешанных размеров вокселей (`-OUMix`). */
+	float MixTimer = 0.f;
+	int32 MixCount = 0;
 	/** Таймер/счётчик тестового крафта (`-OUAutoCraft`). */
 	float CraftTimer = 0.f;
 	int32 CraftCount = 0;
@@ -548,9 +555,18 @@ private:
 	/** Воксели, уже применённые с сервера: ключ «(x,y,z)» → актор блока. */
 	TMap<FIntVector, TObjectPtr<AOUBuildBlock>> ServerBlocks;
 
-	/** Ячейки вокселей по ядрам: id ядра → набор координат блоков.
-	 *  Нужно, чтобы строить только в АКТИВНОМ ядре и считать его блоки. */
-	TMap<int32, TSet<FIntVector>> CoreBlocks;
+	/** Ячейки вокселей по ядрам: id ядра → (мин. угол → размер стороны).
+	 *  Нужно, чтобы строить только в АКТИВНОМ ядре, считать его блоки и не
+	 *  допускать наложение кубов разного размера. */
+	TMap<int32, TMap<FIntVector, int32>> CoreBlocks;
+
+	/** Воксели, отправленные, но ещё не подтверждённые сервером (мин. угол →
+	 *  размер). Подсказка для планировщика, чтобы серия кликов не накладывалась. */
+	TMap<FIntVector, int32> PendingVoxelSize;
+
+	/** Свободен ли куб со стороной `Size` от угла `Min` в ядре `CoreId`
+	 *  (не пересекается с принятыми и ожидаемыми вокселями). */
+	bool SpaceFree(int32 CoreId, const FIntVector& Min, int32 Size) const;
 
 	/** Крайняя применённая ревизия правок по каждому ядру (для подтверждения). */
 	TMap<int32, int64> LastRevisionByCore;

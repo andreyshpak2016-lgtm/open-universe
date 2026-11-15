@@ -454,6 +454,8 @@ void AOUCharacterPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputCom
 	PlayerInputComponent->BindAction(TEXT("VoxelMenu"), IE_Pressed, this, &AOUCharacterPawn::ToggleVoxelMenu);
 	// Ядро: Y — переключить размер ядра (когда выбран слот «ЯДРО»).
 	PlayerInputComponent->BindAction(TEXT("CoreSize"), IE_Pressed, this, &AOUCharacterPawn::CoreSizeNext);
+	// Назначение ядра: статичная база → корабль → динамическое (клавиша U).
+	PlayerInputComponent->BindAction(TEXT("CoreKind"), IE_Pressed, this, &AOUCharacterPawn::CoreKindNext);
 	// Захват территории: T — объявить текущую зону своей.
 	PlayerInputComponent->BindAction(TEXT("TerritoryCapture"), IE_Pressed, this, &AOUCharacterPawn::CaptureTerritory);
 	// Совместная стройка: H — разрешить ближайшему игроку строить.
@@ -770,20 +772,23 @@ void AOUCharacterPawn::PlaceCoreBlock()
 	// Ядро ставится ПРЯМО под прицел (а не снапом к чужим блокам, как обычный
 	// воксель): иначе оно появлялось бы внутри уже стоящей постройки и его не
 	// было бы видно. Ищем ячейку на земле под прицелом.
-	FVector GroundDir;
-	FIntVector Target;
-	if (AimTerrainDir(GroundDir))
-	{
-		Target = WorldToVoxel(GroundDir * (SurfaceRadius(GroundDir) + 75.f));
-	}
-	else
-	{
-		// Прицел в небо — ставим перед игроком (запасной путь).
-		Target = WorldToVoxel(GetActorLocation() + GetActorForwardVector() * 600.f);
-	}
+	const FIntVector Target = CorePlacementCell();
 	Net->SendPlaceCore(CoreSizeVoxels(), CoreKindSel, Target.X, Target.Y, Target.Z);
 	UE_LOG(LogOUChar, Log, TEXT("Ядро: поставить %s %s в (%d,%d,%d)"),
 		*CoreSizeName(), *CoreKindName(), Target.X, Target.Y, Target.Z);
+}
+
+FIntVector AOUCharacterPawn::CorePlacementCell() const
+{
+	// Ячейка, где встанет ядро из слота «ЯДРО»: под прицелом (на земле), а если
+	// прицел в небо — перед игроком. Одна формула на постановку, призрак и
+	// превью радиуса, чтобы они не расходились.
+	FVector GroundDir;
+	if (AimTerrainDir(GroundDir))
+	{
+		return WorldToVoxel(GroundDir * (SurfaceRadius(GroundDir) + 75.f));
+	}
+	return WorldToVoxel(GetActorLocation() + GetActorForwardVector() * 600.f);
 }
 
 FString AOUCharacterPawn::BuildPartName(int32 Index)
@@ -853,6 +858,9 @@ void AOUCharacterPawn::PlaceBuildBlock()
 		const int32 TargetCore = (Net->ActiveCoreId != 0) ? Net->ActiveCoreId : Net->OwnEntityId;
 		Net->SendBuild(TargetCore, /*Place=*/0, Target.X, Target.Y, Target.Z, R, G, B, BuildBrush);
 		BuiltCoords.Add(Target);
+		// Запоминаем размер ожидаемого вокселя: планировщик учтёт его, чтобы
+		// следующие клики не наложились, пока сервер не ответил.
+		PendingVoxelSize.Add(Target, BuildBrush);
 		UE_LOG(LogOUChar, Log, TEXT("Строительство: воксель %s в (%d,%d,%d) ядро %d"),
 			*BuildBrushName(), Target.X, Target.Y, Target.Z, TargetCore);
 		// Обучение: строительство.
@@ -905,8 +913,13 @@ void AOUCharacterPawn::UpdateBuildGhost()
 	}
 
 	// Куда встанет следующий блок — та же логика, что у PlaceBuildBlock.
+	// Для слота «ЯДРО» — ячейка постановки ядра (под прицелом); для блока — снап.
 	FIntVector Target;
-	if (!ComputeBuildTarget(Target))
+	if (((EOUBuildPart)BuildSelection == EOUBuildPart::Core))
+	{
+		Target = CorePlacementCell();
+	}
+	else if (!ComputeBuildTarget(Target))
 	{
 		BuildGhost->SetVisibility(false);
 		return;
@@ -959,14 +972,11 @@ void AOUCharacterPawn::UpdateCoreGrid()
 	const bool bCoreSel = ((EOUBuildPart)BuildSelection == EOUBuildPart::Core);
 	if (bBuildMenuOpen && bCoreSel)
 	{
-		// Превью: где встанет ядро выбранного размера.
-		FIntVector Target;
-		if (ComputeBuildTarget(Target))
-		{
-			bShowGrid = true;
-			GridCenter = VoxelWorld(FVector(Target.X, Target.Y, Target.Z), CoreSizeVoxels());
-			GridSideCm = 150.0 * static_cast<double>(CoreSizeVoxels());
-		}
+		// Превью: где встанет ядро выбранного размера (та же ячейка, что при ЛКМ).
+		const FIntVector Target = CorePlacementCell();
+		bShowGrid = true;
+		GridCenter = VoxelWorld(FVector(Target.X, Target.Y, Target.Z), CoreSizeVoxels());
+		GridSideCm = 150.0 * static_cast<double>(CoreSizeVoxels());
 	}
 	else if (Net)
 	{
@@ -1225,13 +1235,44 @@ FRotator AOUCharacterPawn::BuildGridRotation() const
 	return FRotationMatrix::MakeFromXZ(FwdUE, UpUE).Rotator();
 }
 
+bool AOUCharacterPawn::SpaceFree(int32 CoreId, const FIntVector& Min, int32 Size) const
+{
+	// Куб занят, если хотя бы одна его единичная ячейка уже принадлежит другому
+	// вокселю (принятому сервером или только что отправленному). Учитываем размеры:
+	// все кубы занимают свои s×s×s единичных ячеек.
+	const int32 S = FMath::Clamp(Size, 1, 3);
+	auto Overlaps = [&](const FIntVector& A, int32 As, const FIntVector& B, int32 Bs)
+	{
+		// Пересечение кубов [A, A+As) и [B, B+Bs) по всем осям.
+		return A.X < B.X + Bs && B.X < A.X + As
+			&& A.Y < B.Y + Bs && B.Y < A.Y + As
+			&& A.Z < B.Z + Bs && B.Z < A.Z + As;
+	};
+	if (const TMap<FIntVector, int32>* Map = CoreBlocks.Find(CoreId))
+	{
+		for (const TPair<FIntVector, int32>& P : *Map)
+		{
+			if (Overlaps(Min, S, P.Key, FMath::Clamp(P.Value, 1, 3))) { return false; }
+		}
+	}
+	for (const TPair<FIntVector, int32>& P : PendingVoxelSize)
+	{
+		if (Overlaps(Min, S, P.Key, FMath::Clamp(P.Value, 1, 3))) { return false; }
+	}
+	return true;
+}
+
 bool AOUCharacterPawn::ComputeBuildTarget(FIntVector& OutTarget) const
 {
-	// 1. Если под прицелом уже есть блок — ставим в соседнюю с ним грань по
-	//    нормали. Сдвиг — на размер найденного блока (у крупного ядра соседняя
-	//    ячейка на N, а не на 1), иначе блок оказался бы ВНУТРИ ядра.
 	const int32 NewSide = ((EOUBuildPart)BuildSelection == EOUBuildPart::Core)
 		? CoreVoxelSize() : BuildBrushSide();
+	const int32 CoreId = Net ? Net->ActiveCoreId : 0;
+
+	// 1. Предпочтительная ячейка под новым кубом.
+	//   * прицел в блок — встаём к его ГРАНИ по нормали, выравнивая все оси, чтобы
+	//     кубы разного размера стыковались гранями, а не накладывались;
+	//   * прицел в землю — берём ячейку на поверхности (постройку основало ядро).
+	FIntVector Preferred;
 	{
 		FIntVector Coord;
 		FVector Hit, Normal;
@@ -1239,93 +1280,75 @@ bool AOUCharacterPawn::ComputeBuildTarget(FIntVector& OutTarget) const
 		{
 			const FIntVector Shift = WorldDirToVoxelShift(Normal);
 			const int32 HitSide = FMath::Clamp(LastHitBlockSize, 1, 3);
-			// Приставляем новый куб к ГРАНИ найденного, с учётом обоих размеров:
-			// по положительной оси — за дальней гранью (+HitSide), по
-			// отрицательной — перед ближней (−NewSide). Так кубы разного размера
-			// стыкуются, а не влезают друг в друга.
-			OutTarget = Coord;
-			if (Shift.X > 0)      { OutTarget.X += HitSide; }
-			else if (Shift.X < 0) { OutTarget.X -= NewSide; }
-			if (Shift.Y > 0)      { OutTarget.Y += HitSide; }
-			else if (Shift.Y < 0) { OutTarget.Y -= NewSide; }
-			if (Shift.Z > 0)      { OutTarget.Z += HitSide; }
-			else if (Shift.Z < 0) { OutTarget.Z -= NewSide; }
-			return true;
-		}
-	}
-
-	// 2. Под прицелом земли. Если в АКТИВНОМ ядре ещё нет блоков — ставим первым
-	//    (постройку уже основало ядро, оно стоит в центре области).
-	FVector GroundDir;
-	const bool bAim = AimTerrainDir(GroundDir);
-	const FIntVector Ground = bAim
-		? WorldToVoxel(GroundDir * (SurfaceRadius(GroundDir) + 75.f))
-		: FIntVector(BuiltCount + 1, 0, 0);
-
-	// Блоки только активного ядра (в новой модели постройка — это ядро).
-	TArray<FIntVector> Known;
-	if (const TSet<FIntVector>* Set = CoreBlocks.Find(Net ? Net->ActiveCoreId : 0))
-	{
-		Known.Reserve(Set->Num());
-		for (const FIntVector& C : *Set) { Known.Add(C); }
-	}
-	if (Known.Num() == 0 && ServerBlocks.Num() == 0 && BuiltCoords.Num() == 0)
-	{
-		OutTarget = Ground;
-		return true;
-	}
-
-	// 3. Постройка есть. Опираемся на ПРИНЯТЫЕ сервером блоки — это истина; пока
-	//    правка не дошла, допускаем и только что отправленные (BuiltCoords), чтобы
-	//    серия быстрых кликов строилась связно. Если принятый блок ядра уже есть,
-	//    ориентируемся только на него: снап к отклонённой ячейке снова дал бы
-	//    «нет связи с ядром».
-	if (Known.Num() == 0)
-	{
-		if (ServerBlocks.Num() > 0 && BuiltCoords.Num() == 0)
-		{
-			Known.Reserve(ServerBlocks.Num());
-			for (const TPair<FIntVector, TObjectPtr<AOUBuildBlock>>& P : ServerBlocks) { Known.Add(P.Key); }
+			// По оси нормали — за гранью найденного куба; по двум другим осям
+			// выравниваем ближние (минимальные) грани — крупный куб не съедет на
+			// соседей.
+			auto Along = [&](int32 C, int32 S, int32 Hit, int32 HSide) -> int32
+			{
+				if (S > 0) { return C + HSide; }
+				if (S < 0) { return C - NewSide; }
+				return C;
+			};
+			Preferred = FIntVector(
+				Along(Coord.X, Shift.X, Coord.X, HitSide),
+				Along(Coord.Y, Shift.Y, Coord.Y, HitSide),
+				Along(Coord.Z, Shift.Z, Coord.Z, HitSide));
 		}
 		else
 		{
-			Known = BuiltCoords;
+			FVector GroundDir;
+			if (AimTerrainDir(GroundDir))
+			{
+				Preferred = WorldToVoxel(GroundDir * (SurfaceRadius(GroundDir) + 75.f));
+			}
+			else
+			{
+				Preferred = FIntVector(BuiltCount + 1, 0, 0);
+			}
 		}
 	}
-	if (Known.Num() == 0)
+
+	// 2. Место под предпочтительной ячейкой свободно — ставим туда.
+	if (SpaceFree(CoreId, Preferred, NewSide))
 	{
-		OutTarget = Ground;
+		OutTarget = Preferred;
 		return true;
 	}
 
-	auto Manhattan = [](const FIntVector& A, const FIntVector& B)
+	// 3. Место занято. Ищем ближайшую СВОБОДНУЮ ячейку, примыкающую к постройке:
+	//    перебираем грани всех известных кубов (принятых и ожидаемых) и выбираем
+	//    ту, что ближе к предпочтительной. Так серия кликов продолжает постройку
+	//    без наложений кубов разного размера.
+	FIntVector Best = Preferred;
+	int32 BestD = TNumericLimits<int32>::Max();
+	bool bFound = false;
+	auto Consider = [&](const TMap<FIntVector, int32>& Map)
 	{
-		return FMath::Abs(A.X - B.X) + FMath::Abs(A.Y - B.Y) + FMath::Abs(A.Z - B.Z);
-	};
-	// Уже примыкает к постройке? Тогда ставим как есть.
-	for (const FIntVector& K : Known)
-	{
-		if (Manhattan(K, Ground) == 1)
+		const FIntVector Dirs[6] = { {1,0,0}, {-1,0,0}, {0,1,0}, {0,-1,0}, {0,0,1}, {0,0,-1} };
+		for (const TPair<FIntVector, int32>& P : Map)
 		{
-			OutTarget = Ground;
-			return true;
+			const int32 Ps = FMath::Clamp(P.Value, 1, 3);
+			for (const FIntVector& D : Dirs)
+			{
+				const FIntVector Cand(
+					P.Key.X + (D.X > 0 ? Ps : (D.X < 0 ? -NewSide : 0)),
+					P.Key.Y + (D.Y > 0 ? Ps : (D.Y < 0 ? -NewSide : 0)),
+					P.Key.Z + (D.Z > 0 ? Ps : (D.Z < 0 ? -NewSide : 0)));
+				if (!SpaceFree(CoreId, Cand, NewSide)) { continue; }
+				const int32 Dist = FMath::Abs(Cand.X - Preferred.X) + FMath::Abs(Cand.Y - Preferred.Y)
+					+ FMath::Abs(Cand.Z - Preferred.Z);
+				if (Dist < BestD)
+				{
+					BestD = Dist;
+					Best = Cand;
+					bFound = true;
+				}
+			}
 		}
-	}
-	// Иначе — ближайший воксель и шаг от него в сторону земли (доминирующая ось).
-	FIntVector Best = Known[0];
-	int32 BestD = Manhattan(Known[0], Ground);
-	for (const FIntVector& K : Known)
-	{
-		const int32 D = Manhattan(K, Ground);
-		if (D < BestD) { BestD = D; Best = K; }
-	}
-	const FIntVector Delta = Ground - Best;
-	const int32 AX = FMath::Abs(Delta.X), AY = FMath::Abs(Delta.Y), AZ = FMath::Abs(Delta.Z);
-	FIntVector Step = FIntVector::ZeroValue;
-	if (AX >= AY && AX >= AZ)      { Step.X = Delta.X >= 0 ? 1 : -1; }
-	else if (AY >= AZ)             { Step.Y = Delta.Y >= 0 ? 1 : -1; }
-	else                           { Step.Z = Delta.Z >= 0 ? 1 : -1; }
-	OutTarget = Best + Step;
+	};
+	if (const TMap<FIntVector, int32>* Map = CoreBlocks.Find(CoreId)) { Consider(*Map); }
+	Consider(PendingVoxelSize);
+	OutTarget = bFound ? Best : Preferred;
 	return true;
 }
 
@@ -1344,6 +1367,7 @@ void AOUCharacterPawn::ApplyServerBuildEdits()
 		// Сбрасываем только «отправленные, но не подтверждённые» координаты:
 		// при смене активного ядра планировщик больше не должен на них опираться.
 		BuiltCoords.Reset();
+		PendingVoxelSize.Reset();
 	}
 	if (Net->PendingBuildEdits.Num() == 0)
 	{
@@ -1385,7 +1409,9 @@ void AOUCharacterPawn::ApplyServerBuildEdits()
 					Block->ApplyLook();
 					ServerBlocks.Add(Key, Block);
 					BlockCoords.Add(Block, Key);
-					CoreBlocks.FindOrAdd(CoreId).Add(Key);
+					CoreBlocks.FindOrAdd(CoreId).Add(Key, VSize);
+					// Сервер подтвердил этот воксель — он уже учтён в CoreBlocks.
+					PendingVoxelSize.Remove(Key);
 					// Ядро определяем по координате из сервера (для лога).
 					const bool bIsCore = (CoreId == ActiveCore && Key == Net->CoreCoord);
 					// Счётчик — только по ПРИНЯТЫМ сервером блокам АКТИВНОГО ядра
@@ -1416,7 +1442,8 @@ void AOUCharacterPawn::ApplyServerBuildEdits()
 					(*Found)->Destroy();
 				}
 				ServerBlocks.Remove(Key);
-				if (TSet<FIntVector>* Set = CoreBlocks.Find(CoreId)) { Set->Remove(Key); }
+				PendingVoxelSize.Remove(Key);
+				if (TMap<FIntVector, int32>* Map = CoreBlocks.Find(CoreId)) { Map->Remove(Key); }
 				if (CoreId == ActiveCore && BuiltCount > 0)
 				{
 					--BuiltCount;
@@ -2418,8 +2445,28 @@ void AOUCharacterPawn::Tick(float DeltaSeconds)
 		}
 	}
 
+	// Диагностика `-OUMix`: детерминированно ставим воксели разного размера через
+	// тот же планировщик (ComputeBuildTarget + PlaceBuildBlock), чтобы проверить
+	// отсутствие наложений и отказов сервера. Размер циклится 1→2→3→1…
+	if (FParse::Param(FCommandLine::Get(), TEXT("OUMix")))
+	{
+		if (!bBuildMenuOpen) { ToggleBuildMenu(); }
+		SelectBuildPart((int32)EOUBuildPart::Hull);
+		MixTimer += DeltaSeconds;
+		if (MixTimer >= 1.2f && MixCount < 9)
+		{
+			MixTimer = 0.f;
+			BuildBrush = (MixCount % 3) + 1;   // 1, 2, 3, 1, …
+			++MixCount;
+			PlaceBuildBlock();
+			UE_LOG(LogOUChar, Log, TEXT("Смесь: клик %d, размер %d (%s)"),
+				MixCount, BuildBrush, *BuildBrushName());
+		}
+	}
+
 	// Диагностика `-OUAutoMenus`: по очереди открыть все окна в игре, чтобы одним
-	// прогоном проверить их работоспособность (в логе — строка открытия каждого).	if (FParse::Param(FCommandLine::Get(), TEXT("OUAutoMenus")))
+	// прогоном проверить их работоспособность (в логе — строка открытия каждого).
+	if (FParse::Param(FCommandLine::Get(), TEXT("OUAutoMenus")))
 	{
 		if (AOUPlayerMenuController* MM = Cast<AOUPlayerMenuController>(GetController()))
 		{

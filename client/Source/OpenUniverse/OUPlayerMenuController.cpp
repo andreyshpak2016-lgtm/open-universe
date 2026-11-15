@@ -1116,7 +1116,7 @@ void AOUPlayerMenuController::DrawBuildMenu(UCanvas* InCanvas)
 		X += SlotW + Gap;
 	}
 
-	DrawText(InCanvas, Small, TEXT("B — закрыть   ·   ЛКМ — поставить   ·   E — удалить   ·   R — покрасить   ·   Z/X — шаблон   ·   G — поставить шаблон   ·   Y — размер ядра"),
+	DrawText(InCanvas, Small, TEXT("B — закрыть   ·   ЛКМ — поставить   ·   E — удалить   ·   R — покрасить   ·   Z/X — шаблон   ·   G — поставить шаблон   ·   Y — размер ядра   ·   U — назначение"),
 		FVector2D(PanelPos.X + 24, PanelPos.Y + PanelSize.Y + 8), ColMuted);
 
 	// Размер кисти (C/V): заметная плашка, чтобы было видно, чем строим.
@@ -1141,7 +1141,7 @@ void AOUPlayerMenuController::DrawBuildMenu(UCanvas* InCanvas)
 			FString::Printf(TEXT("ЯДРО: %s (%d) · %s"),
 				*Char->CoreSizeName(), Char->CoreSizeVoxels(), *Char->CoreKindName()),
 			CP, ColAccent2);
-		DrawText(InCanvas, Small, TEXT("клик — размер · Shift+C — назначение"),
+		DrawText(InCanvas, Small, TEXT("клик — размер · клик ниже — назначение (U)"),
 			CP + FVector2D(0, 20), ColMuted);
 		Buttons.Add({ CP + FVector2D(-8, -4), FVector2D(320, 26), 3000 });
 		Buttons.Add({ CP + FVector2D(-8, 18), FVector2D(320, 22), 3001 });
