@@ -750,31 +750,15 @@ void AOUCharacterPawn::PlaceBuildBlock()
 	// появится, когда придёт авторитетная правка (ApplyServerBuildEdits).
 	if (Net && Net->IsConnected() && Net->OwnEntityId != 0)
 	{
-		// Куда ставим: если перед нами уже есть блок — в соседнюю с ним грань
-		// (по нормали грани, куда попал луч), иначе — в ряд впереди.
+		// Куда ставим (как в DU): вплотную к постройке — см. ComputeBuildTarget.
+		// Так блок всегда связен с ядром, и сервер его принимает.
 		FIntVector Target;
-		FVector Hit, Normal;
-		if (TraceBuildTarget(Target, Hit, Normal))
+		if (!ComputeBuildTarget(Target))
 		{
-			Target += WorldDirToVoxelShift(Normal);
-		}
-		else
-		{
-			// Блока под прицелом нет — ставим НА ЗЕМЛЮ под прицелом (как в DU).
-			FVector GroundDir;
-			if (AimTerrainDir(GroundDir))
-			{
-				Target = WorldToVoxel(GroundDir * (SurfaceRadius(GroundDir) + 75.f));
-			}
-			else
-			{
-				// Смотрим в небо — ставим в ряд перед персонажем (запасной путь).
-				Target = FIntVector(BuiltCount + 1, 0, 0);
-			}
+			return;
 		}
 		Net->SendBuild(Net->OwnEntityId, /*Place=*/0, Target.X, Target.Y, Target.Z, R, G, B);
 		BuiltCoords.Add(Target);
-		++BuiltCount;
 		UE_LOG(LogOUChar, Log, TEXT("Строительство: поставить (%d,%d,%d)"), Target.X, Target.Y, Target.Z);
 		// Кисть больше 1: заполняем куб N×N×N, ЦЕНТРИРОВАННЫЙ на ячейке-якоре.
 		// Порядок важен: сервер требует, чтобы каждый воксель примыкал к уже
@@ -807,9 +791,9 @@ void AOUCharacterPawn::PlaceBuildBlock()
 			});
 			for (const FIntVector& O : Offsets)
 			{
-				Net->SendBuild(Net->OwnEntityId, /*Place=*/0,
-					Target.X + O.X, Target.Y + O.Y, Target.Z + O.Z, R, G, B);
-				++BuiltCount;
+				const FIntVector C(Target.X + O.X, Target.Y + O.Y, Target.Z + O.Z);
+				Net->SendBuild(Net->OwnEntityId, /*Place=*/0, C.X, C.Y, C.Z, R, G, B);
+				BuiltCoords.Add(C);
 			}
 			UE_LOG(LogOUChar, Log, TEXT("Кисть %s: куб %d×%d×%d вокруг (%d,%d,%d)"),
 				*BuildBrushName(), BuildBrush, BuildBrush, BuildBrush, Target.X, Target.Y, Target.Z);
@@ -863,30 +847,18 @@ void AOUCharacterPawn::UpdateBuildGhost()
 		return;
 	}
 
-	// Куда встанет следующий блок: та же логика, что у PlaceBuildBlock.
+	// Куда встанет следующий блок — та же логика, что у PlaceBuildBlock.
 	FIntVector Target;
-	FVector Hit, Normal;
-	if (TraceBuildTarget(Target, Hit, Normal))
+	if (!ComputeBuildTarget(Target))
 	{
-		Target += WorldDirToVoxelShift(Normal);
-	}
-	else
-	{
-		// Блока под прицелом нет — ставим НА ЗЕМЛЮ под прицелом (как в DU):
-		// маршируем луч взгляда до поверхности планеты и берём воксель там.
-		FVector GroundDir;
-		if (AimTerrainDir(GroundDir))
-		{
-			Target = WorldToVoxel(GroundDir * (SurfaceRadius(GroundDir) + 75.f));
-		}
-		else
-		{
-			Target = FIntVector(BuiltCount + 1, 0, 0);
-		}
+		BuildGhost->SetVisibility(false);
+		return;
 	}
 
 	const FVector Pos = VoxelWorld(FVector(Target.X, Target.Y, Target.Z));
 	BuildGhost->SetWorldLocation(Pos);
+	// Ориентация призрака — как у реального блока (по осям сетки).
+	BuildGhost->SetWorldRotation(BuildGridRotation());
 	// 1.5 м — шаг сетки: призрак точно совпадает с реальным блоком.
 	const float Scale = 150.f / 100.f;
 	BuildGhost->SetWorldScale3D(FVector(Scale));
@@ -1094,6 +1066,101 @@ FVector AOUCharacterPawn::VoxelWorld(const FVector& ServerCoord) const
 		+ RightUE * (ServerCoord.Z * VoxelCm);
 }
 
+FRotator AOUCharacterPawn::BuildGridRotation() const
+{
+	// Ориентация блоков и призрака — по осям сетки конструкции (как в DU):
+	// блоки «стоят» по локальной поверхности, а не по мировым осям UE. Иначе на
+	// сферической планете кубы выглядят повёрнутыми «криво».
+	const FVector AnchorUE = BuildAnchorUE;
+	const FVector UpUE = AnchorUE.GetSafeNormal();
+	FVector FwdUE = FVector::VectorPlaneProject(FVector(1.f, 0.f, 0.f), UpUE).GetSafeNormal();
+	if (FwdUE.IsNearlyZero())
+	{
+		FwdUE = FVector::VectorPlaneProject(FVector::ForwardVector, UpUE).GetSafeNormal();
+	}
+	return FRotationMatrix::MakeFromXZ(FwdUE, UpUE).Rotator();
+}
+
+bool AOUCharacterPawn::ComputeBuildTarget(FIntVector& OutTarget) const
+{
+	// 1. Если под прицелом уже есть блок — ставим в соседнюю с ним грань
+	//    (по нормали грани). Такой блок гарантированно примыкает — сервер примет.
+	{
+		FIntVector Coord;
+		FVector Hit, Normal;
+		if (TraceBuildTarget(Coord, Hit, Normal))
+		{
+			OutTarget = Coord + WorldDirToVoxelShift(Normal);
+			return true;
+		}
+	}
+
+	// 2. Под прицелом земли. Если постройки ещё нет — ставим на землю впервые
+	//    (этот блок основывает конструкцию: ядро переезжает на него).
+	FVector GroundDir;
+	const bool bAim = AimTerrainDir(GroundDir);
+	const FIntVector Ground = bAim
+		? WorldToVoxel(GroundDir * (SurfaceRadius(GroundDir) + 75.f))
+		: FIntVector(BuiltCount + 1, 0, 0);
+
+	if (ServerBlocks.Num() == 0 && BuiltCoords.Num() == 0)
+	{
+		OutTarget = Ground;
+		return true;
+	}
+
+	// 3. Постройка есть. Опираемся на ПРИНЯТЫЕ сервером блоки (ServerBlocks) —
+	//    это истина; пока правка не дошла, допускаем и только что отправленные
+	//    (BuiltCoords), чтобы серия быстрых кликов строилась связно. Но если
+	//    принятый блок уже есть, ориентируемся только на него: снап к отклонённой
+	//    ячейке снова дал бы «нет связи с ядром».
+	TArray<FIntVector> Known;
+	if (ServerBlocks.Num() > 0)
+	{
+		Known.Reserve(ServerBlocks.Num());
+		for (const TPair<FIntVector, TObjectPtr<AOUBuildBlock>>& P : ServerBlocks) { Known.Add(P.Key); }
+	}
+	else
+	{
+		Known = BuiltCoords;
+	}
+	if (Known.Num() == 0)
+	{
+		OutTarget = Ground;
+		return true;
+	}
+
+	auto Manhattan = [](const FIntVector& A, const FIntVector& B)
+	{
+		return FMath::Abs(A.X - B.X) + FMath::Abs(A.Y - B.Y) + FMath::Abs(A.Z - B.Z);
+	};
+	// Уже примыкает к постройке? Тогда ставим как есть.
+	for (const FIntVector& K : Known)
+	{
+		if (Manhattan(K, Ground) == 1)
+		{
+			OutTarget = Ground;
+			return true;
+		}
+	}
+	// Иначе — ближайший воксель и шаг от него в сторону земли (доминирующая ось).
+	FIntVector Best = Known[0];
+	int32 BestD = Manhattan(Known[0], Ground);
+	for (const FIntVector& K : Known)
+	{
+		const int32 D = Manhattan(K, Ground);
+		if (D < BestD) { BestD = D; Best = K; }
+	}
+	const FIntVector Delta = Ground - Best;
+	const int32 AX = FMath::Abs(Delta.X), AY = FMath::Abs(Delta.Y), AZ = FMath::Abs(Delta.Z);
+	FIntVector Step = FIntVector::ZeroValue;
+	if (AX >= AY && AX >= AZ)      { Step.X = Delta.X >= 0 ? 1 : -1; }
+	else if (AY >= AZ)             { Step.Y = Delta.Y >= 0 ? 1 : -1; }
+	else                           { Step.Z = Delta.Z >= 0 ? 1 : -1; }
+	OutTarget = Best + Step;
+	return true;
+}
+
 void AOUCharacterPawn::ApplyServerBuildEdits()
 {
 	if (!Net || Net->PendingBuildEdits.Num() == 0)
@@ -1116,8 +1183,10 @@ void AOUCharacterPawn::ApplyServerBuildEdits()
 			if (!Found)
 			{
 				const FVector Pos = VoxelWorld(FVector(E.X, E.Y, E.Z));
+				// Блоки ориентируем по осям сетки (BuildGridRotation) — тогда на
+				// сферической планете постройка ровная, а не «криво».
 				AOUBuildBlock* Block = World->SpawnActor<AOUBuildBlock>(
-					AOUBuildBlock::StaticClass(), FTransform(FRotator::ZeroRotator, Pos));
+					AOUBuildBlock::StaticClass(), FTransform(BuildGridRotation(), Pos));
 				if (Block)
 				{
 					Block->BlockSize = 150.f;   // 1.5 м — совпадает с шагом сетки
@@ -1125,6 +1194,12 @@ void AOUCharacterPawn::ApplyServerBuildEdits()
 					Block->ApplyLook();
 					ServerBlocks.Add(Key, Block);
 					BlockCoords.Add(Block, Key);
+					// Счётчик — только по ПРИНЯТЫМ сервером блокам своей конструкции
+					// (не по кликам): так он честно показывает, что реально стоит.
+					if (E.Entity == Net->OwnEntityId)
+					{
+						++BuiltCount;
+					}
 					UE_LOG(LogOUChar, Log, TEXT("Авторитетный блок (%d,%d,%d) от сервера"), E.X, E.Y, E.Z);
 				}
 			}
@@ -1139,6 +1214,10 @@ void AOUCharacterPawn::ApplyServerBuildEdits()
 					(*Found)->Destroy();
 				}
 				ServerBlocks.Remove(Key);
+				if (E.Entity == Net->OwnEntityId && BuiltCount > 0)
+				{
+					--BuiltCount;
+				}
 			}
 		}
 		else if (E.Action == 2) // Paint
@@ -1983,6 +2062,38 @@ void AOUCharacterPawn::Tick(float DeltaSeconds)
 		{
 			MV->bVoxelsOpen = true;
 			MV->SetMenuCursor(true);
+		}
+	}
+
+	// Диагностика `-OUAutoMenus`: по очереди открыть все окна в игре, чтобы одним
+	// прогоном проверить их работоспособность (в логе — строка открытия каждого).
+	if (FParse::Param(FCommandLine::Get(), TEXT("OUAutoMenus")))
+	{
+		if (AOUPlayerMenuController* MM = Cast<AOUPlayerMenuController>(GetController()))
+		{
+			AutoMenuTimer += DeltaSeconds;
+			if (AutoMenuTimer >= 2.5f && AutoMenuCount < 7)
+			{
+				AutoMenuTimer = 0.f;
+				++AutoMenuCount;
+				// Закрываем все окна, затем открываем одно (проверяем каждое).
+				MM->bMarketOpen = false;
+				MM->bScriptsOpen = false;
+				MM->bWorkshopOpen = false;
+				MM->bOrgOpen = false;
+				MM->bTalentsOpen = false;
+				MM->bVoxelsOpen = false;
+				switch (AutoMenuCount)
+				{
+				case 1: ToggleMarket();          break;
+				case 2: ToggleScripts();         break;
+				case 3: ToggleWorkshop();        break;
+				case 4: ToggleOrg();             break;
+				case 5: ToggleTalents();         break;
+				case 6: ToggleVoxelMenu();       break;
+				case 7: MM->SetMenuCursor(false); break;   // закрыть всё
+				}
+			}
 		}
 	}
 

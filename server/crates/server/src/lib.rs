@@ -2764,6 +2764,37 @@ mod tests {
     }
 
     #[test]
+    fn build_brush_cube_is_fully_accepted() {
+        // Кисть 3×3×3: если клиент ставит куб «слоями от центра», сервер
+        // принимает ВСЕ воксели (ни одного отказа) — это ключ к тому, что
+        // постройка реально отображается, а счётчик не врёт.
+        let mut s = Server::new();
+        s.connect(1, Vec3::ZERO);
+        let half = 1;
+        // Якорь (первый блок) основывает постройку.
+        assert_eq!(s.apply_build(&cmd(BuildAction::Place, (5, 0, 0))), BuildReason::Ok);
+        let mut offsets: Vec<(i32, i32, i32)> = Vec::new();
+        for dx in -half..=half {
+            for dy in -half..=half {
+                for dz in -half..=half {
+                    if dx == 0 && dy == 0 && dz == 0 { continue; }
+                    offsets.push((dx, dy, dz));
+                }
+            }
+        }
+        // Сортируем по манхэттенскому расстоянию от центра (как клиент).
+        offsets.sort_by_key(|o| o.0.abs() + o.1.abs() + o.2.abs());
+        let mut ok = 0;
+        for (dx, dy, dz) in offsets {
+            let r = s.apply_build(&cmd(BuildAction::Place, (5 + dx, dy, dz)));
+            if r == BuildReason::Ok { ok += 1; }
+        }
+        assert_eq!(ok, 26, "приняты все 26 вокселей куба (без отказов)");
+        let g = s.constructions.get(&1).unwrap();
+        assert_eq!(g.grid.len(), 27, "куб 3×3×3 целиком в конструкции");
+    }
+
+    #[test]
     fn build_paint_and_remove_work() {
         let mut s = Server::new();
         s.connect(1, Vec3::ZERO);

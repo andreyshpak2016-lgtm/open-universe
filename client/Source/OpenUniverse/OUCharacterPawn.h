@@ -280,7 +280,9 @@ public:
 	/** Таймер/счётчик теста талантов (`-OUAutoTalents`). */
 	float TalentTimer = 0.f;
 	int32 TalentCount = 0;
-
+	/** Таймер/счётчик проверки всех окон (`-OUAutoMenus`). */
+	float AutoMenuTimer = 0.f;
+	int32 AutoMenuCount = 0;
 	/** Таймер/счётчик тестового крафта (`-OUAutoCraft`). */
 	float CraftTimer = 0.f;
 	int32 CraftCount = 0;
@@ -346,6 +348,20 @@ protected:
 
 	/** Мировая точка → координата вокселя сетки (обратное к `VoxelWorld`). */
 	FIntVector WorldToVoxel(const FVector& WorldPos) const;
+
+	/**
+	 * Ориентация блока в сетке: оси сетки (вперёд/вверх/вправо от якоря).
+	 * Блоки и призрак ориентируются одинаково, поэтому постройка ровная.
+	 */
+	FRotator BuildGridRotation() const;
+
+	/**
+	 * Куда встанет следующий блок (как в Dual Universe): вплотную к уже
+	 * построенному. Если под прицелом блок — в соседнюю грань; если под
+	 * прицелом земля и постройка есть — к ближайшему блоку; если постройки
+	 * ещё нет — на землю (первый блок основывает конструкцию).
+	 */
+	bool ComputeBuildTarget(FIntVector& OutTarget) const;
 
 	/**
 	 * Общий якорь мировой сетки строительства (детерминированная точка появления
