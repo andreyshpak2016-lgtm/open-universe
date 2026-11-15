@@ -237,6 +237,12 @@ function Invoke-Capture {
   }
   [void][OUcap]::SetCursorPos(2, 2)
 
+  # Состояние процесса фиксируем ДО любых kill-операций: в Shipping-режиме
+  # «жив ли» — это и есть проверка «не упал».
+  $proc.Refresh()
+  $exitedEarly = $proc.HasExited
+  $exitCode = if ($exitedEarly) { $proc.ExitCode } else { 0 }
+
   # --- Кадр ---
   $outShot = Join-Path $shots ("capture-$RunName.png")
   $captured = $false
@@ -284,8 +290,7 @@ function Invoke-Capture {
   if (-not $captured) { $reasons += 'нет кадра' }
   elseif (-not $result.Frame.Ok) { $reasons += ('кадр подозрительный: lit {0:P0}, цветов {1}' -f $result.Frame.Lit, $result.Frame.Unique) }
   if ($RunShipping) {
-    $alive = $proc -and -not $proc.HasExited
-    if (-not $alive) { $reasons += 'процесс упал' }
+    if ($exitedEarly) { $reasons += ('процесс упал (код {0})' -f $exitCode) }
   } else {
     if (-not $result.Log.Exists) { $reasons += 'нет лога' }
     else {
