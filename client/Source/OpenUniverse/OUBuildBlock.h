@@ -12,8 +12,9 @@ class UStaticMeshComponent;
  * Строительный блок Open Universe.
  *
  * Базовый «кубик» конструктора: игрок ставит его из меню строительства.
- * Позже станет частью воксельной сетки (как в `ou-build`), сейчас — простая
- * видимая деталь с цветом по типу материала.
+ * Все блоки — кубы (так воксельная сетка проста и одинакова у всех игроков);
+ * типы в палитре различаются цветом/материалом. Блок **твёрдый**: персонаж не
+ * проходит сквозь него (канал `Pawn` — `Block`).
  */
 UCLASS()
 class OPENUNIVERSE_API AOUBuildBlock : public AActor
@@ -25,7 +26,7 @@ public:
 
 	/** Размер блока, см (куб). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Open Universe|Build")
-	float BlockSize = 200.f;
+	float BlockSize = 50.f;
 
 	/** Цвет блока (задаётся меню строительства). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Open Universe|Build")

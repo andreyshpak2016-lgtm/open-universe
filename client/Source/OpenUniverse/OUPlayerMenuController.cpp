@@ -1081,7 +1081,12 @@ void AOUPlayerMenuController::DrawBuildMenu(UCanvas* InCanvas)
 
 	// Панель палитры внизу экрана.
 	const int32 Count = (int32)EOUBuildPart::Count;
-	const float SlotW = 150.f, SlotH = 90.f, Gap = 12.f;
+	// Слотов стало больше (больше типов блоков) — ширину считаем от экрана, чтобы
+	// панель всегда помещалась целиком.
+	const float Gap = 6.f;
+	const float SlotW = FMath::Clamp(
+		(W * 0.72f - (Count - 1) * Gap) / static_cast<float>(Count), 84.f, 118.f);
+	const float SlotH = 82.f;
 	const float TotalW = Count * SlotW + (Count - 1) * Gap;
 	const FVector2D PanelPos((W - (TotalW + 48.f)) * 0.5f, H - SlotH - 84.f);
 	const FVector2D PanelSize(TotalW + 48.f, SlotH + 70.f);

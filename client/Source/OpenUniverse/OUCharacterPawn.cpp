@@ -1,4 +1,4 @@
-// Copyright Open Universe. Все права защищены.
+﻿// Copyright Open Universe. Все права защищены.
 
 #include "OUCharacterPawn.h"
 #include "OUShipPawn.h"
@@ -698,10 +698,10 @@ FString AOUCharacterPawn::BuildBrushName() const
 {
 	switch (BuildBrush)
 	{
-	case 1: return TEXT("малый");
-	case 2: return TEXT("средний");
-	case 3: return TEXT("большой");
-	default: return TEXT("малый");
+	case 1: return TEXT("малый 0.5 м");
+	case 2: return TEXT("средний 1 м");
+	case 3: return TEXT("большой 1.5 м");
+	default: return TEXT("малый 0.5 м");
 	}
 }
 
@@ -799,6 +799,11 @@ FString AOUCharacterPawn::BuildPartName(int32 Index)
 	case EOUBuildPart::Panel: return TEXT("Панель");
 	case EOUBuildPart::Beam:  return TEXT("Балка");
 	case EOUBuildPart::Light: return TEXT("Свет");
+	case EOUBuildPart::Glass: return TEXT("Стекло");
+	case EOUBuildPart::Frame: return TEXT("Решётка");
+	case EOUBuildPart::Slope: return TEXT("Скат");
+	case EOUBuildPart::Rod:   return TEXT("Стержень");
+	case EOUBuildPart::Trim:  return TEXT("Окантовка");
 	case EOUBuildPart::Core:  return TEXT("ЯДРО");
 	default: return TEXT("Блок");
 	}
@@ -812,6 +817,11 @@ FLinearColor AOUCharacterPawn::BuildPartColor(int32 Index)
 	case EOUBuildPart::Panel: return FLinearColor(0.85f, 0.60f, 0.25f);   // тёплый
 	case EOUBuildPart::Beam:  return FLinearColor(0.30f, 0.75f, 0.55f);   // зелёный
 	case EOUBuildPart::Light: return FLinearColor(1.00f, 0.92f, 0.45f);   // светящийся
+	case EOUBuildPart::Glass: return FLinearColor(0.55f, 0.80f, 0.95f);   // голубое стекло
+	case EOUBuildPart::Frame: return FLinearColor(0.35f, 0.38f, 0.45f);   // тёмная решётка
+	case EOUBuildPart::Slope: return FLinearColor(0.70f, 0.45f, 0.85f);   // фиолетовый скат
+	case EOUBuildPart::Rod:   return FLinearColor(0.90f, 0.35f, 0.35f);   // красный стержень
+	case EOUBuildPart::Trim:  return FLinearColor(0.95f, 0.95f, 0.98f);   // белая окантовка
 	default: return FLinearColor(0.60f, 0.60f, 0.60f);
 	}
 }
@@ -872,7 +882,8 @@ void AOUCharacterPawn::PlaceBuildBlock()
 	}
 
 	// Оффлайн (без сервера) — ставим локально, как раньше, для одиночной игры.
-	const float BlockSize = 120.f;
+	// Размер — как у кисти (0.5/1/1.5 м).
+	const float BlockSize = static_cast<float>(OU_VOXEL_CM) * static_cast<float>(BuildBrushSide());
 	const FVector Up = GetActorLocation().GetSafeNormal();
 	FVector Fwd = GetActorForwardVector();
 	Fwd = FVector::VectorPlaneProject(Fwd, Up).GetSafeNormal();
@@ -934,7 +945,7 @@ void AOUCharacterPawn::UpdateBuildGhost()
 	// Ориентация призрака — как у реального блока (по осям сетки).
 	BuildGhost->SetWorldRotation(BuildGridRotation());
 	// Масштаб: базовый куб движка — 100 см; воксель — 150 см × размер.
-	const float Scale = (150.f * static_cast<float>(VoxSide)) / 100.f;
+	const float Scale = (static_cast<float>(OU_VOXEL_CM) * static_cast<float>(VoxSide)) / 100.f;
 	BuildGhost->SetWorldScale3D(FVector(Scale));
 	// Ядро — синеватый призрак (отличить от блоков).
 	const FLinearColor Col = bCoreSel
@@ -976,7 +987,7 @@ void AOUCharacterPawn::UpdateCoreGrid()
 		const FIntVector Target = CorePlacementCell();
 		bShowGrid = true;
 		GridCenter = VoxelWorld(FVector(Target.X, Target.Y, Target.Z), CoreSizeVoxels());
-		GridSideCm = 150.0 * static_cast<double>(CoreSizeVoxels());
+		GridSideCm = OU_VOXEL_CM * static_cast<double>(CoreSizeVoxels());
 	}
 	else if (Net)
 	{
@@ -991,7 +1002,7 @@ void AOUCharacterPawn::UpdateCoreGrid()
 				{
 					bShowGrid = true;
 					GridCenter = VoxelWorld(FVector(C.Coord.X, C.Coord.Y, C.Coord.Z), C.Size);
-					GridSideCm = 150.0 * static_cast<double>(C.Size);
+					GridSideCm = OU_VOXEL_CM * static_cast<double>(C.Size);
 					break;
 				}
 			}
@@ -1112,7 +1123,7 @@ bool AOUCharacterPawn::TraceBuildTarget(FIntVector& OutCoord, FVector& OutHit, F
 		if (const AOUBuildBlock* BB = Cast<AOUBuildBlock>(HitActor))
 		{
 			LastHitBlockSize = FMath::Clamp(
-				FMath::RoundToInt(BB->BlockSize / 150.f), 1, 3);
+				FMath::RoundToInt(BB->BlockSize / static_cast<float>(OU_VOXEL_CM)), 1, 3);
 		}
 		else
 		{
@@ -1139,7 +1150,7 @@ FVector AOUCharacterPawn::WorldToVoxelF(const FVector& WorldPos) const
 	// Мировая точка → НЕПРЕРЫВНАЯ координата сетки (в вокселях) по общему якорю.
 	// Нужно для точной привязки нового куба к точке под прицелом (например, к
 	// любому месту грани крупного вокселя), а не только к его минимальному углу.
-	const double VoxelCm = 150.0;
+	const double VoxelCm = OU_VOXEL_CM;
 	const FVector AnchorUE = BuildAnchorUE;
 	const FVector UpUE = AnchorUE.GetSafeNormal();
 	FVector FwdUE = FVector::VectorPlaneProject(FVector(1.f, 0.f, 0.f), UpUE).GetSafeNormal();
@@ -1208,7 +1219,7 @@ FVector AOUCharacterPawn::VoxelWorld(const FVector& ServerCoord, int32 Size) con
 	// Мировая точка ЦЕНТРА куба вокселя: якорь + координаты (мин. угол) + половина
 	// куба. Размер учитывается: у вокселя N центру надо +N/2 ячейки, иначе крупный
 	// куб «уходит» под землю / в текстуру.
-	const double VoxelCm = 150.0;   // 1.5 м на воксель в см UE
+	const double VoxelCm = OU_VOXEL_CM;   // 1.5 м на воксель в см UE
 	const int32 N = FMath::Clamp(Size, 1, 3);
 	const FVector AnchorUE = BuildAnchorUE;
 	const FVector UpUE = AnchorUE.GetSafeNormal();
@@ -1410,7 +1421,7 @@ void AOUCharacterPawn::ApplyServerBuildEdits()
 					AOUBuildBlock::StaticClass(), FTransform(BuildGridRotation(), Pos));
 				if (Block)
 				{
-					Block->BlockSize = 150.f * static_cast<float>(VSize);
+					Block->BlockSize = static_cast<float>(OU_VOXEL_CM) * static_cast<float>(VSize);
 					// Цвет берём с сервера: у ядра он свой по назначению (корабль/
 					// динамическое/статичная), у обычных блоков — по материалу.
 					Block->BlockColor = FLinearColor(E.R / 255.f, E.G / 255.f, E.B / 255.f);
@@ -2063,6 +2074,52 @@ void AOUCharacterPawn::Tick(float DeltaSeconds)
 	}
 
 	SetActorLocation(NewPos);
+
+	// Гарантия непроходимости: если капсула всё же оказалась внутри вокселя
+	// (например, блок поставили прямо на игрока), выдавливаем её по оси
+	// наименьшего проникновения. Так персонаж никогда не «внутри» постройки.
+	{
+		const FBox Me = GetComponentsBoundingBox(/*bNonColliding=*/true);
+		TArray<FOverlapResult> Overlaps;
+		FCollisionQueryParams PP(SCENE_QUERY_STAT(OUDepenetrate), false, this);
+		if (World->OverlapMultiByChannel(
+			Overlaps, NewPos, FQuat::Identity, ECC_Pawn,
+			FCollisionShape::MakeCapsule(CapsuleRadius, CapsuleHalfHeight), PP))
+		{
+			FVector Push = FVector::ZeroVector;
+			for (const FOverlapResult& O : Overlaps)
+			{
+				const AActor* A = O.GetActor();
+				if (!A || A == this || !A->IsA(AOUBuildBlock::StaticClass())) { continue; }
+				const FBox B = A->GetComponentsBoundingBox(/*bNonColliding=*/true);
+				// Проникновение по каждой оси: (Me+B)/2 центр, перекрытие [max(min),
+				// min(max)]. Выбираем ось с наименьшим перекрытием и выталкиваем.
+				const FVector Center = (Me.GetCenter() + B.GetCenter()) * 0.5;
+				const FVector Overlap(
+					FMath::Min(Me.Max.X, B.Max.X) - FMath::Max(Me.Min.X, B.Min.X),
+					FMath::Min(Me.Max.Y, B.Max.Y) - FMath::Max(Me.Min.Y, B.Min.Y),
+					FMath::Min(Me.Max.Z, B.Max.Z) - FMath::Max(Me.Min.Z, B.Min.Z));
+				if (Overlap.X <= 0.f || Overlap.Y <= 0.f || Overlap.Z <= 0.f) { continue; }
+				// Ось наименьшего проникновения.
+				int32 Axis = 0;
+				if (Overlap.Y < Overlap.X && Overlap.Y <= Overlap.Z) { Axis = 1; }
+				else if (Overlap.Z < Overlap.X && Overlap.Z < Overlap.Y) { Axis = 2; }
+				const double DirSign =
+					((Axis == 0 ? Me.GetCenter().X : (Axis == 1 ? Me.GetCenter().Y : Me.GetCenter().Z))
+					 >= (Axis == 0 ? B.GetCenter().X : (Axis == 1 ? B.GetCenter().Y : B.GetCenter().Z)))
+					? 1.0 : -1.0;
+				const double D = (Axis == 0 ? Overlap.X : (Axis == 1 ? Overlap.Y : Overlap.Z));
+				Push += FVector(
+					Axis == 0 ? DirSign * (D + 1.0) : 0.0,
+					Axis == 1 ? DirSign * (D + 1.0) : 0.0,
+					Axis == 2 ? DirSign * (D + 1.0) : 0.0);
+			}
+			if (!Push.IsNearlyZero())
+			{
+				SetActorLocation(NewPos + Push);
+			}
+		}
+	}
 
 	// Локальный детальный участок поверхности: перестраиваем, когда игрок ушёл
 	// от центра прошлого участка (иначе мелкий рельеф не виден — глобальный

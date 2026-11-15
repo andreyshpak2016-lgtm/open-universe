@@ -25,9 +25,17 @@ enum class EOUBuildPart : uint8
 	Panel   UMETA(DisplayName = "Панель"),
 	Beam    UMETA(DisplayName = "Балка"),
 	Light   UMETA(DisplayName = "Свет"),
+	Glass   UMETA(DisplayName = "Стекло"),
+	Frame   UMETA(DisplayName = "Решётка"),
+	Slope   UMETA(DisplayName = "Скат"),
+	Rod     UMETA(DisplayName = "Стержень"),
+	Trim    UMETA(DisplayName = "Окантовка"),
 	Core    UMETA(DisplayName = "ЯДРО"),
 	Count   UMETA(Hidden)
 };
+
+/** Размер вокселя в см UE (0.5 м) — базовая ступень сетки постройки. */
+constexpr double OU_VOXEL_CM = 50.0;
 
 /**
  * Персонаж игрока (ходьба по поверхности планеты).
