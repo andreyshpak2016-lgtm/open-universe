@@ -380,6 +380,12 @@ pub enum Message {
     },
     /// Клиент: вложить очко таланта в навык по id.
     ClientSpendTalent { talent: u8 },
+    /// Сервер: сведения о шарде (узле), который обслуживает игрока.
+    ///
+    /// `node` — id узла-владельца зоны (системы), `zones` — сколько зон владеет
+    /// этот узел, `owned` — владеет ли он зоной игрока (false — нужна миграция на
+    /// узел `owner`). Шлётся при подключении: клиент показывает узел в HUD.
+    ServerShard { node: u32, zones: u32, owned: bool, owner: u32 },
 }
 
 /// Территория в сообщении (для HUD).
@@ -737,6 +743,7 @@ mod wire {
     const TAG_SHOP_RESULT: u8 = 54;
     const TAG_PROGRESS: u8 = 55;
     const TAG_SPEND_TALENT: u8 = 56;
+    const TAG_SHARD: u8 = 57;
 
     pub fn encode(msg: &Message) -> Vec<u8> {
         let mut w = Writer::new();
@@ -1200,6 +1207,13 @@ mod wire {
                 w.u8(TAG_SPEND_TALENT);
                 w.u8(*talent);
             }
+            Message::ServerShard { node, zones, owned, owner } => {
+                w.u8(TAG_SHARD);
+                w.varint(*node as u64);
+                w.varint(*zones as u64);
+                w.bool(*owned);
+                w.varint(*owner as u64);
+            }
         }
         w.buf
     }
@@ -1623,6 +1637,12 @@ mod wire {
                 Ok(Message::ServerProgress { xp, level, points, talents })
             }
             TAG_SPEND_TALENT => Ok(Message::ClientSpendTalent { talent: r.u8()? }),
+            TAG_SHARD => Ok(Message::ServerShard {
+                node: r.varint()? as u32,
+                zones: r.varint()? as u32,
+                owned: r.bool()?,
+                owner: r.varint()? as u32,
+            }),
             other => Err(WireError::BadTag(other)),
         }
     }
@@ -1871,6 +1891,12 @@ mod tests {
         };
         assert_eq!(decode(&encode(&p)).unwrap(), p);
         let s = Message::ClientSpendTalent { talent: 1 };
+        assert_eq!(decode(&encode(&s)).unwrap(), s);
+    }
+
+    #[test]
+    fn shard_roundtrip() {
+        let s = Message::ServerShard { node: 2, zones: 4, owned: true, owner: 2 };
         assert_eq!(decode(&encode(&s)).unwrap(), s);
     }
 

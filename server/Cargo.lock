@@ -3,6 +3,13 @@
 version = 4
 
 [[package]]
+name = "ou-auth"
+version = "0.1.0"
+dependencies = [
+ "ou-protocol",
+]
+
+[[package]]
 name = "ou-build"
 version = "0.1.0"
 dependencies = [
@@ -82,6 +89,7 @@ dependencies = [
  "ou-persist",
  "ou-protocol",
  "ou-script",
+ "ou-shard",
  "ou-sim",
  "ou-spatial",
 ]

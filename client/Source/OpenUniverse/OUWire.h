@@ -95,6 +95,7 @@ namespace OUWire
         TagShopResult = 54,
         TagProgress = 55,
         TagSpendTalent = 56,
+        TagShard = 57,
     };
 
     /// Действия редактора конструкций.
@@ -1496,6 +1497,30 @@ namespace OUWire
         out.push_back(TagSpendTalent);
         out.push_back(Talent);
         return out;
+    }
+
+    /// Сведения о шарде (сервер → клиент, тег 57).
+    struct ShardInfo
+    {
+        uint32_t Node = 0;
+        uint32_t Zones = 0;
+        bool Owned = true;
+        uint32_t Owner = 0;
+    };
+
+    inline bool DecodeShard(const uint8_t* body, size_t len, ShardInfo& Out)
+    {
+        Reader r{body, len, 0};
+        uint8_t tag = 0;
+        if (!r.U8(tag) || tag != TagShard) return false;
+        uint64_t node = 0, zones = 0, owner = 0;
+        if (!r.Varint(node) || !r.Varint(zones)) return false;
+        Out.Node = static_cast<uint32_t>(node);
+        Out.Zones = static_cast<uint32_t>(zones);
+        if (!r.Bool(Out.Owned)) return false;
+        if (!r.Varint(owner)) return false;
+        Out.Owner = static_cast<uint32_t>(owner);
+        return true;
     }
 
     /// Собрать кадр ввода (клиент → сервер, тег 2).

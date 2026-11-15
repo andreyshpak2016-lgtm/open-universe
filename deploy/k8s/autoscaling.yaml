@@ -1,0 +1,45 @@
+# Автомасштабирование узлов шарда по загрузке CPU.
+#
+# Узлы шарда — StatefulSet `ou-netd`; HPA масштабирует его между 3 и 12
+# репликами. При добавлении/удалении узла consistent hashing (`crates/shard`)
+# переносит только малую долю зон — «арбитр» не нужен.
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: ou-netd
+  namespace: open-universe
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: StatefulSet
+    name: ou-netd
+  minReplicas: 3
+  maxReplicas: 12
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target: { type: Utilization, averageUtilization: 65 }
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 30
+    scaleDown:
+      stabilizationWindowSeconds: 300
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: ou-auth
+  namespace: open-universe
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: ou-auth
+  minReplicas: 2
+  maxReplicas: 8
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target: { type: Utilization, averageUtilization: 70 }

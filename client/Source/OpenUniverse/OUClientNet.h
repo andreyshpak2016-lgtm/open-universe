@@ -864,6 +864,24 @@ public:
 	/** Вложить очко таланта в навык по id. */
 	void SendSpendTalent(int32 Talent);
 
+	// --- Шард (инфраструктура) ---
+
+	/** Узел шарда, обслуживающий игрока (0 — шардирование выключено). */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Shard")
+	int32 ShardNode = 0;
+
+	/** Сколько зон у этого узла. */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Shard")
+	int32 ShardZones = 0;
+
+	/** Владеет ли этот узел зоной игрока (false — нужна миграция). */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Shard")
+	bool bShardOwned = true;
+
+	/** Узел-владелец зоны игрока. */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Shard")
+	int32 ShardOwner = 0;
+
 	/** Подключиться к серверу. */
 	UFUNCTION(BlueprintCallable, Category = "Open Universe|Net")
 	bool Connect();

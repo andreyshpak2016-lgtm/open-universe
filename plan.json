@@ -66,9 +66,9 @@
         { "title": "Пространственный индекс (grid) для зон интереса", "status": "done" },
         { "title": "Персистентность мира в живой игре (автосейв, восстановление)", "status": "done" },
         { "title": "Мониторинг, логи, метрики", "status": "done" },
-        { "title": "Шардирование по системам (есть в crates/shard, к игре не подключено)", "status": "in_progress" },
-        { "title": "Микросервисная архитектура (auth, мир, чат, рынок)", "status": "in_progress" },
-        { "title": "Оркестрация в Kubernetes, автомасштабирование", "status": "todo" }
+        { "title": "Шардирование по системам (consistent hashing, подключено: --shard N --nodes ...)", "status": "done" },
+        { "title": "Микросервисная архитектура (сервис auth + шард)", "status": "done" },
+        { "title": "Оркестрация в Kubernetes, автомасштабирование (deploy/k8s, HPA)", "status": "done" }
       ]
     },
     {

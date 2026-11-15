@@ -1,0 +1,131 @@
+# Open Universe — оркестрация в Kubernetes (набросок для single-shard бэкенда).
+#
+# Раскладка:
+#   * `ou-netd` — авторитетный шард-сервер (Deployment, N реплик-узлов).
+#   * `ou-auth` — микросервис аутентификации (Deployment + Service).
+#   * ConfigMap с общими параметрами (тик, токен, узлы шарда).
+#
+# Каждый узел шарда получает свой `SHARD_NODE` и общий список `SHARD_NODES`:
+# consistent hashing сам делит зоны между узлами (см. `crates/shard`).
+#
+# Примечание: образы `openuniverse/ou-*` — заглушки; в CI их собирают и пушат
+# (см. `.github/workflows/ci.yml`, `docs/deploy.md`).
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: open-universe
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ou-config
+  namespace: open-universe
+data:
+  OU_TICK_HZ: "30"
+  OU_INTEREST_RADIUS: "2000"
+  OU_SECRET: "change-me-in-production"
+  OU_NODES: "1,2,3"
+---
+# Микросервис аутентификации: выдаёт билеты сессии шарду.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ou-auth
+  namespace: open-universe
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: ou-auth }
+  template:
+    metadata:
+      labels: { app: ou-auth }
+    spec:
+      containers:
+        - name: ou-auth
+          image: openuniverse/ou-auth:latest
+          args: ["serve", "--listen", "0.0.0.0:9100"]
+          env:
+            - name: OU_SECRET
+              valueFrom: { configMapKeyRef: { name: ou-config, key: OU_SECRET } }
+          ports:
+            - { containerPort: 9100 }
+          readinessProbe:
+            httpGet: { path: /healthz, port: 9100 }
+            initialDelaySeconds: 2
+          resources:
+            requests: { cpu: "50m", memory: "64Mi" }
+            limits: { cpu: "500m", memory: "128Mi" }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ou-auth
+  namespace: open-universe
+spec:
+  selector: { app: ou-auth }
+  ports:
+    - { port: 9100, targetPort: 9100 }
+---
+# Шард-серверы: по одному узлу на реплику (StatefulSet — стабильные имена/диски).
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: ou-netd
+  namespace: open-universe
+spec:
+  serviceName: ou-netd
+  replicas: 3
+  selector:
+    matchLabels: { app: ou-netd }
+  template:
+    metadata:
+      labels: { app: ou-netd }
+    spec:
+      containers:
+        - name: ou-netd
+          image: openuniverse/ou-netd:latest
+          # Узел шарда = порядковый номер пода; список узлов — из ConfigMap.
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              NODE=$(echo $HOSTNAME | sed 's/.*-//')
+              exec /app/ou-netd 0.0.0.0:7777 0 /data --shard $((NODE+1)) --nodes $OU_NODES
+          envFrom:
+            - configMapRef: { name: ou-config }
+          ports:
+            - { name: game, containerPort: 7777, protocol: UDP }
+          volumeMounts:
+            - { name: world, mountPath: /data }
+          resources:
+            requests: { cpu: "250m", memory: "256Mi" }
+            limits: { cpu: "2", memory: "1Gi" }
+  volumeClaimTemplates:
+    - metadata: { name: world }
+      spec:
+        accessModes: [ReadWriteOnce]
+        resources: { requests: { storage: 2Gi } }
+---
+# Headless-сервис для межнодовой адресации и миграции игроков.
+apiVersion: v1
+kind: Service
+metadata:
+  name: ou-netd
+  namespace: open-universe
+spec:
+  clusterIP: None
+  selector: { app: ou-netd }
+  ports:
+    - { name: game, port: 7777, targetPort: 7777, protocol: UDP }
+---
+# Внешняя точка входа (UDP) — через LoadBalancer/NodePort.
+apiVersion: v1
+kind: Service
+metadata:
+  name: ou-netd-entry
+  namespace: open-universe
+spec:
+  type: LoadBalancer
+  selector: { app: ou-netd }
+  ports:
+    - { name: game, port: 7777, targetPort: 7777, protocol: UDP }

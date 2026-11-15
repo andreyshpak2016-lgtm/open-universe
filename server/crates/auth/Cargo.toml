@@ -1,0 +1,13 @@
+[package]
+name = "ou-auth"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Open Universe — микросервис аутентификации (билеты сессии)"
+
+[dependencies]
+ou-protocol = { path = "../protocol" }
+
+[[bin]]
+name = "ou-auth-demo"
+path = "src/bin/ou-auth-demo.rs"

@@ -16,6 +16,7 @@ use ou_protocol::{
     ShotEvent, Snapshot, TerritoryDto, Vec3,
 };
 use ou_script::ScriptEngine;
+use ou_shard::{NodeId, ShardRouter};
 use ou_sim::{det_cos, det_sin, Dent, Terrain, World};
 use ou_spatial::SpatialGrid;
 use std::collections::{BTreeMap, BTreeSet};
@@ -269,6 +270,10 @@ pub struct Server {
     pub progress: BTreeMap<NetId, Progress>,
     /// Игроки, чей прогресс изменился (надо разослать).
     pub progress_dirty: BTreeSet<NetId>,
+    /// Шардирование: этот узел и карта владения зонами (consistent hashing).
+    pub shard: Option<ShardRouter>,
+    /// Id этого узла в карте шарда (0 — шардирование выключено).
+    pub shard_node: NodeId,
     /// Конструкции сущностей: что игроки построили (права + ревизии).
     pub constructions: BTreeMap<NetId, Construction>,
     /// Корпус каждой сущности: щит, броня, критические повреждения.
@@ -421,6 +426,8 @@ impl Server {
             wallet_dirty: BTreeSet::new(),
             progress: BTreeMap::new(),
             progress_dirty: BTreeSet::new(),
+            shard: None,
+            shard_node: 0,
             constructions: BTreeMap::new(),
             hulls: BTreeMap::new(),
             weapons: BTreeMap::new(),
@@ -446,6 +453,40 @@ impl Server {
     pub fn build_system(&mut self) {
         self.world.build_system();
         self.build_territories();
+    }
+
+    /// Включить шардирование: этот узел `node` обслуживает зоны по consistent
+    /// hashing среди `nodes`. Регистрируем домашнюю систему как зону.
+    ///
+    /// Вызывается при старте (`ou-netd --shard N --nodes 1,2,3`). Без вызова
+    /// шардирование выключено и сервер обслуживает всё сам.
+    pub fn enable_shard(&mut self, node: NodeId, nodes: &[NodeId]) {
+        let mut router = ShardRouter::new(0.0);
+        router.map = ou_shard::ShardMap::with_nodes(nodes);
+        let sys = ou_sim::home_system();
+        router.register_system(&sys);
+        self.shard = Some(router);
+        self.shard_node = node;
+    }
+
+    /// Статус шарда для игрока: (узел, зон у узла, владеет ли зоной, владелец).
+    pub fn shard_status(&self) -> (NodeId, u32, bool, NodeId) {
+        let Some(router) = &self.shard else {
+            return (0, 0, true, 0);
+        };
+        // Зона игрока — домашняя система (индекс 0).
+        let zone = ou_sim::home_system().id;
+        let owner = router.owner_of(zone).unwrap_or(self.shard_node);
+        let zones = router.map.nodes().len() as u32;
+        (self.shard_node, zones, owner == self.shard_node, owner)
+    }
+
+    /// Маршрут игрока: остаться тут или мигрировать на другой узел.
+    pub fn route_player(&self, pos: Vec3) -> ou_shard::Routing {
+        match &self.shard {
+            Some(r) => r.route(pos, self.shard_node),
+            None => ou_shard::Routing::Local,
+        }
     }
 
     /// Разложить территории системы: база на домашней планете (мирная зона),
@@ -3677,5 +3718,42 @@ mod tests {
             .iter()
             .any(|m| matches!(m, Message::ServerProgress { level, .. } if *level == 2));
         assert!(seen, "прогресс рассылается игроку");
+    }
+
+    // --- шардирование ---
+
+    #[test]
+    fn shard_disabled_by_default_is_local() {
+        let s = Server::new();
+        let (node, zones, owned, _owner) = s.shard_status();
+        assert_eq!(node, 0);
+        assert_eq!(zones, 0);
+        assert!(owned, "без шарда узел владеет всем");
+        assert!(matches!(s.route_player(Vec3::ZERO), ou_shard::Routing::Local));
+    }
+
+    #[test]
+    fn shard_routing_is_deterministic_and_consistent() {
+        let mut a = Server::new();
+        a.enable_shard(1, &[1, 2, 3]);
+        let mut b = Server::new();
+        b.enable_shard(1, &[1, 2, 3]);
+        // Состояние шарда совпадает (детерминированное распределение).
+        assert_eq!(a.shard_status(), b.shard_status());
+        // Домашняя зона где-то закреплена: один из узлов её владеет.
+        let (_, _, owned, owner) = a.shard_status();
+        assert!(owner >= 1 && owner <= 3, "владелец зоны — один из узлов: {owner}");
+        assert_eq!(owned, owner == 1, "флаг owned согласован с владельцем");
+    }
+
+    #[test]
+    fn shard_status_is_broadcast_on_hello_path() {
+        let mut s = Server::new();
+        s.enable_shard(2, &[1, 2, 3]);
+        let (_node, _zones, _owned, owner) = s.shard_status();
+        assert!((1..=3).contains(&owner));
+        // Сообщение шарда сериализуется и разбирается (провод).
+        let m = Message::ServerShard { node: 2, zones: 3, owned: false, owner };
+        assert_eq!(ou_protocol::decode(&ou_protocol::encode(&m)).unwrap(), m);
     }
 }

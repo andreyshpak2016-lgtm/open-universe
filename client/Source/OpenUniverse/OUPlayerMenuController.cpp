@@ -2040,6 +2040,14 @@ void AOUPlayerMenuController::DrawGameHud(UCanvas* InCanvas)
 			? FString::Printf(TEXT("пинг %d мс"), Ping)
 			: TEXT("пинг …");
 		DrawText(InCanvas, Tiny, PingText, P + FVector2D(112, 12), Dim);
+		// Шард: узел, обслуживающий игрока (инфраструктура).
+		if (Net && Net->ShardNode > 0)
+		{
+			const FString ShardText = Net->bShardOwned
+				? FString::Printf(TEXT("шард %d"), Net->ShardNode)
+				: FString::Printf(TEXT("шард %d→%d"), Net->ShardNode, Net->ShardOwner);
+			DrawText(InCanvas, Tiny, ShardText, P + FVector2D(112, 22), Dim);
+		}
 	}
 
 	// --- Справа снизу: мини-карта (планета, игрок, база, другие) ---

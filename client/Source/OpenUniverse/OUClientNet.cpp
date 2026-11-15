@@ -1045,6 +1045,19 @@ void UOUClientNet::Poll()
 					Level, Xp, TalentPoints);
 			}
 		}
+		else if (Body[0] == OUWire::TagShard) // сведения о шарде
+		{
+			OUWire::ShardInfo S;
+			if (OUWire::DecodeShard(Body.GetData(), static_cast<size_t>(Body.Num()), S))
+			{
+				ShardNode = static_cast<int32>(S.Node);
+				ShardZones = static_cast<int32>(S.Zones);
+				bShardOwned = S.Owned;
+				ShardOwner = static_cast<int32>(S.Owner);
+				UE_LOG(LogOUClient, Log, TEXT("Шард: узел %d из %d зон, владелец зоны %d (owned=%d)"),
+					ShardNode, ShardZones, ShardOwner, S.Owned ? 1 : 0);
+			}
+		}
 		else if (Body[0] == OUWire::TagMarketState) // состояние экономики
 		{
 			OUWire::MarketState M;

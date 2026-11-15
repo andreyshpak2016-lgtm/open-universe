@@ -586,6 +586,22 @@ int main(int argc, char** argv)
         Check(OUWire::EncodeSpendTalent(3)[0] == OUWire::TagSpendTalent, "тег вложения очка = 56");
     }
 
+    // --- 6n. Шард (тег 57) ---
+    std::printf("\n=== 6n. Шард ===\n");
+    {
+        // [tag57][node][zones][owned][owner].
+        std::vector<uint8_t> sb;
+        sb.push_back(OUWire::TagShard);
+        OUWire::push_varint(sb, 2);
+        OUWire::push_varint(sb, 3);
+        sb.push_back(0);
+        OUWire::push_varint(sb, 1);
+        OUWire::ShardInfo si;
+        Check(OUWire::DecodeShard(sb.data(), sb.size(), si), "сведения о шарде разобраны");
+        Check(si.Node == 2 && si.Zones == 3 && si.Owned == false && si.Owner == 1,
+            "поля шарда совпали");
+    }
+
     // --- 7. Приветствие сервера (какой сущностью управляем) ---
     std::printf("\n=== 7. Приветствие сервера (welcome) ===\n");
     {

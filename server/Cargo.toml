@@ -6,6 +6,7 @@ members = [
   "crates/spatial",
   "crates/net",
   "crates/shard",
+  "crates/auth",
   "crates/persist",
   "crates/economy",
   "crates/combat",

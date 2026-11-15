@@ -81,9 +81,9 @@ window.PLAN = {
         { "title": "Пространственный индекс (grid) для зон интереса", "title_en": "Spatial index (grid) for interest zones", "status": "done" },
         { "title": "Персистентность мира в живой игре (автосейв, восстановление)", "title_en": "World persistence in the live game (autosave, recovery)", "status": "done" },
         { "title": "Мониторинг, логи, метрики", "title_en": "Monitoring, logs, metrics", "status": "done" },
-        { "title": "Шардирование по системам (есть в crates/shard, к игре не подключено)", "title_en": "Sharding by system (exists in crates/shard, not wired into the game)", "status": "in_progress" },
-        { "title": "Микросервисная архитектура (auth, мир, чат, рынок)", "title_en": "Microservice architecture (auth, world, chat, market)", "status": "in_progress" },
-        { "title": "Оркестрация в Kubernetes, автомасштабирование", "title_en": "Kubernetes orchestration, autoscaling", "status": "todo" }
+        { "title": "Шардирование по системам (consistent hashing, подключено: --shard N --nodes ...)", "title_en": "Sharding by system (consistent hashing, wired in: --shard N --nodes ...)", "status": "done" },
+        { "title": "Микросервисная архитектура (сервис auth + шард)", "title_en": "Microservice architecture (auth service + shard)", "status": "done" },
+        { "title": "Оркестрация в Kubernetes, автомасштабирование (deploy/k8s, HPA)", "title_en": "Kubernetes orchestration, autoscaling (deploy/k8s, HPA)", "status": "done" }
       ]
     },
     {

@@ -24,6 +24,19 @@ fn main() {
     let addr = args.get(1).cloned().unwrap_or_else(|| "127.0.0.1:7777".to_string());
     let seconds: f64 = args.get(2).and_then(|s| s.parse().ok()).unwrap_or(4.0);
     let world_dir = args.get(3).cloned().unwrap_or_else(|| "world".to_string());
+    // Шардирование (необязательно): `--shard N --nodes 1,2,3` — этот узел
+    // обслуживает только свои зоны (consistent hashing). Без флагов всё локально.
+    let shard_node: Option<u32> = args
+        .iter()
+        .position(|a| a == "--shard")
+        .and_then(|i| args.get(i + 1))
+        .and_then(|s| s.parse().ok());
+    let shard_nodes: Vec<u32> = args
+        .iter()
+        .position(|a| a == "--nodes")
+        .and_then(|i| args.get(i + 1))
+        .map(|s| s.split(',').filter_map(|x| x.trim().parse().ok()).collect())
+        .unwrap_or_default();
 
     let token = new_session_token(0x5EED);
     let mut net = UdpTransport::bind(&addr).expect("не удалось занять UDP-порт");
@@ -34,6 +47,12 @@ fn main() {
     let mut store = FileStore::open(&world_dir).expect("не удалось открыть каталог мира");
     let mut server = Server::new();
     server.build_system();
+    // Шардирование, если задано.
+    if let Some(node) = shard_node {
+        let nodes = if shard_nodes.is_empty() { vec![node] } else { shard_nodes.clone() };
+        server.enable_shard(node, &nodes);
+        println!("шард: узел {node}, узлов {}", nodes.len());
+    }
     match ou_persist::load_world(&store) {
         Ok(w) if !w.entities.is_empty() => {
             println!(
@@ -182,6 +201,9 @@ fn main() {
                             net.send_to(token, from, &Message::ServerShop { items: server.shop_catalog() }).ok();
                             // Прогресс персонажа (опыт, уровень, таланты).
                             net.send_to(token, from, &server.progress_state(next_player)).ok();
+                            // Шард: какой узел обслуживает игрока (HUD).
+                            let (node, zones, owned, owner) = server.shard_status();
+                            net.send_to(token, from, &Message::ServerShard { node, zones, owned, owner }).ok();
                             next_player += 1;
                         }
                     }
