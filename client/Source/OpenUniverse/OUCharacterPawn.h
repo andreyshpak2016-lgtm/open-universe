@@ -188,6 +188,14 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Open Universe|Build")
 	void PlaceBlueprint(int32 BlueprintId);
 
+	/** Разрешить ближайшему другому игроку строить в нашей конструкции (H). */
+	UFUNCTION(BlueprintCallable, Category = "Open Universe|Build")
+	void GrantBuildToNearest();
+
+	/** Есть ли права строить здесь (bCanBuild с сервера). */
+	UFUNCTION(BlueprintPure, Category = "Open Universe|Build")
+	bool CanBuildHere();
+
 	/** Выбрать следующий/предыдущий шаблон постройки (в меню строительства). */
 	void BlueprintNext();
 	void BlueprintPrev();

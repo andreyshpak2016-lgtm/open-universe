@@ -474,6 +474,19 @@ void UOUClientNet::SendBuildAck(int32 Entity, int64 Revision)
 	SendPacket(Body);
 }
 
+void UOUClientNet::SendGrantBuild(int32 Entity, int32 Player)
+{
+	if (!IsConnected())
+	{
+		return;
+	}
+	const std::vector<uint8_t> Body = OUWire::EncodeGrantBuild(
+		static_cast<uint32_t>(FMath::Max(0, Entity)), static_cast<uint32_t>(FMath::Max(0, Player)));
+	TArray<uint8> Arr;
+	Arr.Append(Body.data(), static_cast<int32>(Body.size()));
+	SendPacket(Arr);
+}
+
 void UOUClientNet::Poll()
 {
 	if (!Socket)

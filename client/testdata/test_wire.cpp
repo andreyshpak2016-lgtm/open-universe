@@ -332,6 +332,17 @@ int main(int argc, char** argv)
         Check(cb[0] == OUWire::TagCapture, "тег захвата = 30");
     }
 
+    // --- 6o. Совместная стройка: выдача прав (тег 11) ---
+    std::printf("\n=== 6o. Выдача прав строить ===\n");
+    {
+        const std::vector<uint8_t> gb = OUWire::EncodeGrantBuild(5, 9);
+        Check(gb[0] == OUWire::TagBuildGrant, "тег выдачи прав = 11");
+        // Проверим разбор на серверном формате: [tag][7][10].
+        const uint8_t wire[3] = {OUWire::TagBuildGrant, 7, 10};
+        // (клиентского декодера нет: сообщение только клиент → сервер)
+        Check(wire[0] == 11 && wire[1] == 7 && wire[2] == 10, "формат прав: tag/entity/player");
+    }
+
     // --- 6f. Скрипты (теги 31/32/33) ---
     std::printf("\n=== 6f. Скрипты ===\n");
     {

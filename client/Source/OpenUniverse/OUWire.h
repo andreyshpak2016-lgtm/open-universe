@@ -1624,6 +1624,17 @@ namespace OUWire
         return out;
     }
 
+    /// Собрать запрос «разрешить игроку строить» (клиент → сервер, тег 11).
+    /// [tag][entity varint][player varint].
+    inline std::vector<uint8_t> EncodeGrantBuild(uint32_t Entity, uint32_t Player)
+    {
+        std::vector<uint8_t> out;
+        out.push_back(TagBuildGrant);
+        push_varint(out, Entity);
+        push_varint(out, Player);
+        return out;
+    }
+
     /// Обернуть тело сообщения в пакет с токеном.
     inline std::vector<uint8_t> EncodePacket(uint64_t token, const std::vector<uint8_t>& body)
     {

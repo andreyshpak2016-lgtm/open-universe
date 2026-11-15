@@ -592,6 +592,10 @@ public:
 	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Build")
 	bool bCanBuild = true;
 
+	/** Разрешить другому игроку строить в конструкции (entity) игрока (player). */
+	UFUNCTION(BlueprintCallable, Category = "Open Universe|Build")
+	void SendGrantBuild(int32 Entity, int32 Player);
+
 	/** Очередь событий выстрела от сервера (для трассеров/эффектов). */
 	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Combat")
 	TArray<FOUShotEvent> PendingShots;

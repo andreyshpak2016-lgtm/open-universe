@@ -1061,8 +1061,16 @@ void AOUPlayerMenuController::DrawBuildMenu(UCanvas* InCanvas)
 		X += SlotW + Gap;
 	}
 
-	DrawText(InCanvas, Small, TEXT("B — закрыть   ·   ЛКМ — поставить   ·   E — удалить   ·   R — покрасить   ·   Z/X — шаблон   ·   G — поставить шаблон"),
+	DrawText(InCanvas, Small, TEXT("B — закрыть   ·   ЛКМ — поставить   ·   E — удалить   ·   R — покрасить   ·   Z/X — шаблон   ·   G — поставить шаблон   ·   H — дать право строить"),
 		FVector2D(PanelPos.X + 24, PanelPos.Y + PanelSize.Y + 8), ColMuted);
+
+	// Права: если сервер запретил строить — показываем явно.
+	ResolveNet();
+	if (Net && Net->IsConnected() && !Net->bCanBuild)
+	{
+		DrawText(InCanvas, Small, TEXT("НЕТ ПРАВ на эту конструкцию"),
+			FVector2D(PanelPos.X + PanelSize.X - 360, PanelPos.Y + 44), ColErr);
+	}
 
 	DrawText(InCanvas, Small, FString::Printf(TEXT("Блоков поставлено: %d"), Char->BuiltCount),
 		FVector2D(PanelPos.X + PanelSize.X - 220, PanelPos.Y + 16), ColOk);

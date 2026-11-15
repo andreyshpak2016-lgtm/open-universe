@@ -447,6 +447,8 @@ void AOUCharacterPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputCom
 	PlayerInputComponent->BindAction(TEXT("BuildPrev"), IE_Pressed, this, &AOUCharacterPawn::OnBuildPrev);
 	// Захват территории: T — объявить текущую зону своей.
 	PlayerInputComponent->BindAction(TEXT("TerritoryCapture"), IE_Pressed, this, &AOUCharacterPawn::CaptureTerritory);
+	// Совместная стройка: H — разрешить ближайшему игроку строить.
+	PlayerInputComponent->BindAction(TEXT("BuildGrant"), IE_Pressed, this, &AOUCharacterPawn::GrantBuildToNearest);
 	// Шаблоны постройки (blueprints): Z/X — выбрать, G — поставить.
 	PlayerInputComponent->BindAction(TEXT("BlueprintNext"), IE_Pressed, this, &AOUCharacterPawn::BlueprintNext);
 	PlayerInputComponent->BindAction(TEXT("BlueprintPrev"), IE_Pressed, this, &AOUCharacterPawn::BlueprintPrev);
@@ -516,11 +518,53 @@ void AOUCharacterPawn::OnExitReleased() { bExitHeld = false; ExitHoldTime = 0.f;
 void AOUCharacterPawn::OnBuildNext() { if (bBuildMenuOpen) { SelectBuildPart((BuildSelection + 1) % (int32)EOUBuildPart::Count); } }
 void AOUCharacterPawn::OnBuildPrev() { if (bBuildMenuOpen) { SelectBuildPart((BuildSelection + (int32)EOUBuildPart::Count - 1) % (int32)EOUBuildPart::Count); } }
 
+void AOUCharacterPawn::GrantBuildToNearest()
+{
+	// Разрешить ближайшему другому игроку строить в нашей конструкции (G в меню).
+	Net = Net ? Net : FindComponentByClass<UOUClientNet>();
+	if (!Net || !Net->IsConnected() || Net->OwnEntityId == 0)
+	{
+		UE_LOG(LogOUChar, Log, TEXT("Права: нет соединения с сервером"));
+		return;
+	}
+	// Ищем ближайшего другого пешего персонажа и его сущность.
+	const FVector MyPos = GetActorLocation();
+	int32 BestEntity = 0;
+	float BestDist = TNumericLimits<float>::Max();
+	for (const FOUCharacterState& C : Net->RemoteCharacters)
+	{
+		if (C.Entity == Net->OwnEntityId)
+		{
+			continue;
+		}
+		// C.Position — в серверных осях/единицах: переводим в UE (как при отрисовке).
+		const FVector Cm = OUInterop::ServerToUE(C.Position);
+		const float D = FVector::Dist(MyPos, Cm);
+		if (D < BestDist)
+		{
+			BestDist = D;
+			BestEntity = C.Entity;
+		}
+	}
+	if (BestEntity == 0)
+	{
+		UE_LOG(LogOUChar, Log, TEXT("Права: рядом нет других игроков"));
+		return;
+	}
+	// В протоколе `player` = сущность игрока (на сервере они совпадают).
+	Net->SendGrantBuild(Net->OwnEntityId, BestEntity);
+	UE_LOG(LogOUChar, Log, TEXT("Права: разрешил строить сущности %d (%.0f см)"), BestEntity, BestDist);
+}
+
 void AOUCharacterPawn::PlaceBlueprint(int32 BlueprintId)
 {
 	// Поставить шаблон постройки: якорь — точка под прицелом (как для блока).
 	// Сервер штампует воксели авторитетно; клиент лишь выбирает шаблон и место.
 	if (!bBuildMenuOpen)
+	{
+		return;
+	}
+	if (!CanBuildHere())
 	{
 		return;
 	}
@@ -585,6 +629,18 @@ void AOUCharacterPawn::ToggleBuildMenu()
 		bBuildMenuOpen ? TEXT("открыто") : TEXT("закрыто"), *BuildPartName(BuildSelection));
 }
 
+bool AOUCharacterPawn::CanBuildHere()
+{
+	// Права авторитетны на сервере: если он сообщил, что редактировать нельзя —
+	// блокируем локально (посыл всё равно отклонится, но так честнее в UI).
+	Net = Net ? Net : FindComponentByClass<UOUClientNet>();
+	if (Net && Net->IsConnected() && !Net->bCanBuild)
+	{
+		return false;
+	}
+	return true;
+}
+
 void AOUCharacterPawn::SelectBuildPart(int32 Index)
 {
 	const int32 Count = (int32)EOUBuildPart::Count;
@@ -623,6 +679,11 @@ void AOUCharacterPawn::PlaceBuildBlock()
 	UWorld* World = GetWorld();
 	if (!World || !bBuildMenuOpen)
 	{
+		return;
+	}
+	if (!CanBuildHere())
+	{
+		UE_LOG(LogOUChar, Log, TEXT("Строительство: нет прав на эту конструкцию"));
 		return;
 	}
 
@@ -883,6 +944,7 @@ FIntVector AOUCharacterPawn::WorldToVoxel(const FVector& WorldPos) const
 void AOUCharacterPawn::RemoveBuildBlock()
 {
 	if (!bBuildMenuOpen) { return; }
+	if (!CanBuildHere()) { return; }
 	FIntVector Coord;
 	FVector Hit, Normal;
 	if (!TraceBuildTarget(Coord, Hit, Normal))
@@ -900,6 +962,7 @@ void AOUCharacterPawn::RemoveBuildBlock()
 void AOUCharacterPawn::PaintBuildBlock()
 {
 	if (!bBuildMenuOpen) { return; }
+	if (!CanBuildHere()) { return; }
 	FIntVector Coord;
 	FVector Hit, Normal;
 	if (!TraceBuildTarget(Coord, Hit, Normal))
