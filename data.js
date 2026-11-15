@@ -102,6 +102,8 @@ window.PLAN = {
         { "title": "Совместное строительство: репликация правок, выдача прав (H) и индикатор прав в UE", "title_en": "Co-op building: edit replication, granting rights (H) and a rights indicator in UE", "status": "done" },
         { "title": "Редактор в игре: ставить / удалять / красить (прицел, Е/R)", "title_en": "In-game editor: place / remove / paint (crosshair, E/R)", "status": "done" },
         { "title": "Призрак блока под прицелом и постановка «куда смотришь» (как в DU)", "title_en": "Ghost block under the crosshair, place where you look (like DU)", "status": "done" },
+        { "title": "Разметка призрака совпадает с размером кисти (призрак охватывает весь куб N×N×N)", "title_en": "The ghost outline matches the brush size (the ghost covers the whole N×N×N cube)", "status": "done" },
+        { "title": "Персонаж не проходит сквозь воксели (блоки блокируют канал Pawn; свип останавливает и скользит)", "title_en": "The character cannot walk through voxels (blocks block the Pawn channel; the sweep stops and slides)", "status": "done" },
         { "title": "Дублирование и шаблоны (blueprints) — библиотека в редакторе (Z/X — выбрать, G — поставить)", "title_en": "Duplication and blueprints — library in the editor (Z/X to pick, G to place)", "status": "done" }
       ]
     },

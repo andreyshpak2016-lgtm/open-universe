@@ -14,6 +14,7 @@
 #include "Components/InputComponent.h"
 #include "Components/PointLightComponent.h"
 #include "Engine/StaticMesh.h"
+#include "Engine/OverlapResult.h"
 #include "Materials/MaterialInterface.h"
 #include "Kismet/GameplayStatics.h"
 #include "Misc/CommandLine.h"
@@ -856,11 +857,20 @@ void AOUCharacterPawn::UpdateBuildGhost()
 	}
 
 	const FVector Pos = VoxelWorld(FVector(Target.X, Target.Y, Target.Z));
-	BuildGhost->SetWorldLocation(Pos);
+	// Разметка совпадает с размером ставящегося вокселя: кисть N×N×N → призрак
+	// охватывает весь куб из N вокселей, а не всегда один. Центр куба — середина
+	// набора ячеек (среднее смещение кисти). Так призрак точно накрывает то, что
+	// реально встанет при клике.
+	const int32 Side = BuildBrushSide();
+	const int32 Half = Side / 2;
+	const double Mean = static_cast<double>(-Half) + static_cast<double>(Side - 1) * 0.5;
+	const FVector CubeCenter = VoxelWorld(FVector(Target.X + Mean, Target.Y + Mean, Target.Z + Mean));
+	BuildGhost->SetWorldLocation(CubeCenter);
 	// Ориентация призрака — как у реального блока (по осям сетки).
 	BuildGhost->SetWorldRotation(BuildGridRotation());
-	// 1.5 м — шаг сетки: призрак точно совпадает с реальным блоком.
-	const float Scale = 150.f / 100.f;
+	// Масштаб: базовый куб движка — 100 см; воксель — 150 см. Для кисти N призрак
+	// охватывает N вокселей: 150*N / 100.
+	const float Scale = (150.f * static_cast<float>(Side)) / 100.f;
 	BuildGhost->SetWorldScale3D(FVector(Scale));
 	// Полупрозрачный цвет выбранной детали (ярче — видно поверх земли).
 	const FLinearColor Col = BuildPartColor(BuildSelection);
@@ -1667,6 +1677,37 @@ void AOUCharacterPawn::Tick(float DeltaSeconds)
 	{
 		ViewYaw += 1.5f * DeltaSeconds;
 	}
+	// Диагностика `-OUWalkInto`: идти строго вперёд (без поворота) — проверка,
+	// что персонаж упирается в постройку и не проходит сквозь неё.
+	const bool bWalkInto = FParse::Param(FCommandLine::Get(), TEXT("OUWalkInto"));
+	// Развернуть курс НА ближайший блок, чтобы упереться именно в него.
+	if (bWalkInto && ServerBlocks.Num() > 0)
+	{
+		AActor* Nearest = nullptr;
+		float Best = TNumericLimits<float>::Max();
+		for (const TPair<FIntVector, TObjectPtr<AOUBuildBlock>>& P : ServerBlocks)
+		{
+			if (!P.Value) { continue; }
+			const float D = FVector::Dist(Pos, P.Value->GetActorLocation());
+			if (D < Best) { Best = D; Nearest = P.Value; }
+		}
+		if (Nearest)
+		{
+			const FVector ToBlock = (Nearest->GetActorLocation() - Pos).GetSafeNormal();
+			FVector TangDir = FVector::VectorPlaneProject(ToBlock, Up).GetSafeNormal();
+			if (!TangDir.IsNearlyZero())
+			{
+				// Yaw в касательной плоскости относительно опорного направления.
+				FVector RefW = FVector::CrossProduct(Up, FVector::UpVector);
+				if (RefW.SizeSquared() < 1e-4f) { RefW = FVector::CrossProduct(Up, FVector::RightVector); }
+				RefW = RefW.GetSafeNormal();
+				const FVector TW = FVector::CrossProduct(RefW, Up).GetSafeNormal();
+				const FVector BW = FVector::CrossProduct(Up, TW).GetSafeNormal();
+				ViewYaw = FMath::Atan2(FVector::DotProduct(TangDir, BW), FVector::DotProduct(TangDir, TW));
+			}
+		}
+	}
+	const float FwdFinal = bWalkInto ? 1.f : FwdInput;
 	// Обучение: первое движение (ходьба).
 	if (FMath::Abs(FwdInput) > 0.1f || FMath::Abs(InputRight) > 0.1f)
 	{
@@ -1689,7 +1730,7 @@ void AOUCharacterPawn::Tick(float DeltaSeconds)
 	const FVector Right = FVector::CrossProduct(Up, Forward).GetSafeNormal();
 
 	// Горизонтальная скорость от ввода (ходьба).
-	const FVector Wish = (Forward * FwdInput + Right * InputRight).GetSafeNormal();
+	const FVector Wish = (Forward * FwdFinal + Right * InputRight).GetSafeNormal();
 	const FVector TargetHV = Wish * WalkSpeed;
 	// Плавно тянем горизонтальную скорость к желаемой.
 	FVector HV(0, 0, 0);
@@ -1737,6 +1778,19 @@ void AOUCharacterPawn::Tick(float DeltaSeconds)
 			if (FVector::DotProduct(N, Up) > 0.5)
 			{
 				bGrounded = true;
+			}
+			// Диагностика `-OUGhostLog`: столкновение с постройкой (персонаж
+			// уперся в воксель и не проходит сквозь него).
+			if (FParse::Param(FCommandLine::Get(), TEXT("OUGhostLog")))
+			{
+				static double LastColLog = 0.0;
+				const double Now2 = World->GetTimeSeconds();
+				if (Now2 - LastColLog > 0.5)
+				{
+					LastColLog = Now2;
+					UE_LOG(LogOUChar, Log, TEXT("Столкновение: блокирует '%s' во времени %.2f"),
+						*Hit.GetActor()->GetName(), Hit.Time);
+				}
 			}
 		}
 	}
@@ -1790,6 +1844,38 @@ void AOUCharacterPawn::Tick(float DeltaSeconds)
 		{
 			LocalTerrainCenter = NewPos;
 			Planet->RebuildLocal(NewPos);
+		}
+	}
+
+	// Диагностика `-OUGhostLog`: раз в секунду — проверка, есть ли блоки рядом с
+	// персонажем (перекрытие по каналу Pawn). Прямое доказательство, что блоки
+	// вообще имеют коллизию и персонаж упирается в них, а не проходит насквозь.
+	if (FParse::Param(FCommandLine::Get(), TEXT("OUGhostLog")))
+	{
+		static double LastProbe = 0.0;
+		const double Now3 = World->GetTimeSeconds();
+		if (Now3 - LastProbe > 2.0)
+		{
+			LastProbe = Now3;
+			FCollisionQueryParams PP(SCENE_QUERY_STAT(OUWallProbe), false, this);
+			PP.bFindInitialOverlaps = true;
+			TArray<FOverlapResult> Overlaps;
+			World->OverlapMultiByChannel(
+				Overlaps, NewPos, FQuat::Identity, ECC_Pawn,
+				FCollisionShape::MakeSphere(3000.f), PP);
+			int32 Blocks = 0;
+			float Nearest = -1.f;
+			for (const FOverlapResult& O : Overlaps)
+			{
+				if (O.GetActor() && O.GetActor()->GetClass()->GetName().Contains(TEXT("BuildBlock")))
+				{
+					++Blocks;
+					const float D = FVector::Dist(NewPos, O.GetActor()->GetActorLocation());
+					if (Nearest < 0.f || D < Nearest) { Nearest = D; }
+				}
+			}
+			UE_LOG(LogOUChar, Log, TEXT("Блоков рядом (коллизия): %d, ближайший %.0f см"),
+				Blocks, Nearest);
 		}
 	}
 

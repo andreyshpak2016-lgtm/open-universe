@@ -17,6 +17,10 @@ AOUBuildBlock::AOUBuildBlock()
 	BlockMesh->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
 	BlockMesh->SetCollisionResponseToAllChannels(ECR_Ignore);
 	BlockMesh->SetCollisionResponseToChannel(ECC_Visibility, ECR_Block);
+	// И не пропускать персонажа (канал Pawn): иначе игрок проходит сквозь
+	// воксели. Свип персонажа в OUCharacterPawn::Tick идёт по ECC_Pawn — блок
+	// обязан на него отвечать «Block».
+	BlockMesh->SetCollisionResponseToChannel(ECC_Pawn, ECR_Block);
 
 	static ConstructorHelpers::FObjectFinder<UStaticMesh> Cube(
 		TEXT("/Engine/BasicShapes/Cube.Cube"));
