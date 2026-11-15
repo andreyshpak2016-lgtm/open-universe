@@ -260,6 +260,24 @@ pub enum Message {
     ClientCraft { recipe: u32 },
     /// Сервер: результат крафта — что получилось, или причина отказа.
     ServerCraftResult { ok: bool, item: u32, qty: u64, reason: String },
+    /// Сервер: состояние бортовых систем сущности (трюм, топливо, энергия).
+    ///
+    /// `cargo_used`/`cargo_max` — грузовой отсек, `fuel`/`fuel_max` — баки,
+    /// `energy`/`energy_max` — энергосеть. Всё в целых единицах и растёт от
+    /// модулей (контейнер/бак/генератор). Шлётся своему игроку при изменении.
+    ServerSystems {
+        entity: NetId,
+        cargo_used: u64,
+        cargo_max: u64,
+        fuel: u64,
+        fuel_max: u64,
+        energy: u64,
+        energy_max: u64,
+    },
+    /// Клиент: заправить корабль — потратить предмет «топливо» в бак.
+    ClientRefuel,
+    /// Сервер: результат заправки (сколько топлива добавлено и что осталось).
+    ServerRefuelResult { ok: bool, added: u64, fuel: u64, reason: String },
     /// Сервер: список территорий системы (владение, статус, налог) для HUD.
     ///
     /// Шлётся при подключении и при каждом изменении (захват, смена статуса).
@@ -744,6 +762,9 @@ mod wire {
     const TAG_PROGRESS: u8 = 55;
     const TAG_SPEND_TALENT: u8 = 56;
     const TAG_SHARD: u8 = 57;
+    const TAG_SYSTEMS: u8 = 58;
+    const TAG_REFUEL: u8 = 59;
+    const TAG_REFUEL_RESULT: u8 = 60;
 
     pub fn encode(msg: &Message) -> Vec<u8> {
         let mut w = Writer::new();
@@ -1214,6 +1235,34 @@ mod wire {
                 w.bool(*owned);
                 w.varint(*owner as u64);
             }
+            Message::ServerSystems {
+                entity,
+                cargo_used,
+                cargo_max,
+                fuel,
+                fuel_max,
+                energy,
+                energy_max,
+            } => {
+                w.u8(TAG_SYSTEMS);
+                w.varint(*entity as u64);
+                w.varint(*cargo_used);
+                w.varint(*cargo_max);
+                w.varint(*fuel);
+                w.varint(*fuel_max);
+                w.varint(*energy);
+                w.varint(*energy_max);
+            }
+            Message::ClientRefuel => {
+                w.u8(TAG_REFUEL);
+            }
+            Message::ServerRefuelResult { ok, added, fuel, reason } => {
+                w.u8(TAG_REFUEL_RESULT);
+                w.bool(*ok);
+                w.varint(*added);
+                w.varint(*fuel);
+                w.str(reason);
+            }
         }
         w.buf
     }
@@ -1642,6 +1691,22 @@ mod wire {
                 zones: r.varint()? as u32,
                 owned: r.bool()?,
                 owner: r.varint()? as u32,
+            }),
+            TAG_SYSTEMS => Ok(Message::ServerSystems {
+                entity: r.varint()? as u32,
+                cargo_used: r.varint()?,
+                cargo_max: r.varint()?,
+                fuel: r.varint()?,
+                fuel_max: r.varint()?,
+                energy: r.varint()?,
+                energy_max: r.varint()?,
+            }),
+            TAG_REFUEL => Ok(Message::ClientRefuel),
+            TAG_REFUEL_RESULT => Ok(Message::ServerRefuelResult {
+                ok: r.bool()?,
+                added: r.varint()?,
+                fuel: r.varint()?,
+                reason: r.str()?,
             }),
             other => Err(WireError::BadTag(other)),
         }

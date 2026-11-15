@@ -201,6 +201,8 @@ fn main() {
                             net.send_to(token, from, &Message::ServerShop { items: server.shop_catalog() }).ok();
                             // Прогресс персонажа (опыт, уровень, таланты).
                             net.send_to(token, from, &server.progress_state(next_player)).ok();
+                            // Бортовые системы (трюм/топливо/энергия) — сразу.
+                            net.send_to(token, from, &server.systems_state(next_player)).ok();
                             // Шард: какой узел обслуживает игрока (HUD).
                             let (node, zones, owned, owner) = server.shard_status();
                             net.send_to(token, from, &Message::ServerShard { node, zones, owned, owner }).ok();
@@ -418,6 +420,25 @@ fn main() {
                             if let Err(e) = server.spend_talent(*pid, talent) {
                                 println!("талант: игрок {pid}: {e}");
                             }
+                        }
+                    }
+                    Message::ClientRefuel => {
+                        if let Some(pid) = clients.get(&from) {
+                            let msg = match server.refuel(*pid) {
+                                Ok(added) => Message::ServerRefuelResult {
+                                    ok: true,
+                                    added,
+                                    fuel: server.fuel_of(*pid),
+                                    reason: "заправлено".to_string(),
+                                },
+                                Err(e) => Message::ServerRefuelResult {
+                                    ok: false,
+                                    added: 0,
+                                    fuel: server.fuel_of(*pid),
+                                    reason: e,
+                                },
+                            };
+                            net.send_to(token, from, &msg).ok();
                         }
                     }
                     _ => {}

@@ -21,6 +21,9 @@ use ou_sim::{det_cos, det_sin, Dent, Terrain, World};
 use ou_spatial::SpatialGrid;
 use std::collections::{BTreeMap, BTreeSet};
 
+pub mod systems;
+use systems::{ENERGY_PER_SHOT, ENERGY_REGEN, FUEL_BOOST_MUL, FUEL_PER_THRUST};
+
 /// Радиус зоны интереса: игрок видит сущности в этом радиусе (ед.).
 pub const INTEREST_RADIUS: f64 = 2_000.0;
 
@@ -282,6 +285,8 @@ pub struct Server {
     pub weapons: BTreeMap<NetId, Weapon>,
     /// Тик последнего выстрела сущности (для перезарядки).
     pub last_fire_tick: BTreeMap<NetId, u64>,
+    /// Бортовые системы каждой сущности: груз, топливо, энергия (модули).
+    pub systems: BTreeMap<NetId, systems::ShipSystems>,
     /// Номер выстрела сущности (для зерна детерминированного попадания).
     pub shot_seq: BTreeMap<NetId, u64>,
     /// Учебные цели: точка спавна и тик возрождения (для полигона).
@@ -432,6 +437,7 @@ impl Server {
             hulls: BTreeMap::new(),
             weapons: BTreeMap::new(),
             last_fire_tick: BTreeMap::new(),
+            systems: BTreeMap::new(),
             shot_seq: BTreeMap::new(),
             target_spawns: BTreeMap::new(),
             target_respawn_tick: BTreeMap::new(),
@@ -585,11 +591,28 @@ impl Server {
         // Навык «Добыча»: +20% руды за такт на каждое очко.
         let dig_lvl = self.talent_level(player, 1);
         let qty = (base_qty + bonus) * (100 + dig_lvl as u64 * 20) / 100;
-        self.economy.engine.inventory.add(player, sys, item, qty);
+        // Ёмкость трюма: сколько влезет (сверх — теряется, трюм полон).
+        let cap = self
+            .connections
+            .values()
+            .find(|c| c.player_id == player)
+            .and_then(|c| self.systems.get(&c.entity_id))
+            .map(|s| s.cargo_max)
+            .unwrap_or(0);
+        let put = self.economy.engine.inventory.add_capped(
+            player,
+            sys,
+            item,
+            qty,
+            cap,
+            &self.economy.registry,
+        );
         self.market_dirty = true;
-        // Опыт за копание.
-        self.award_xp(player, XP_DIG);
-        (dent, (item, qty), hole_depth)
+        // Опыт за копание — только за то, что реально легло в трюм.
+        if put > 0 {
+            self.award_xp(player, XP_DIG);
+        }
+        (dent, (item, put), hole_depth)
     }
 
     /// Разместить ордер на рынке от имени игрока.
@@ -786,6 +809,8 @@ impl Server {
         match self.economy.production.craft(recipe, inv, player, sys) {
             Ok(out) => {
                 self.market_dirty = true;
+                // Если собрали модуль — пересчитаем ёмкости систем игрока.
+                self.refresh_systems(player);
                 // Опыт за крафт: выше с навыком «Производство».
                 let craft_lvl = self.talent_level(player, 2);
                 self.award_xp(player, XP_CRAFT + craft_lvl as u64 * 4);
@@ -921,6 +946,10 @@ impl Server {
                 return None;
             }
         }
+        // Энергия: без заряда сети выстрела нет (расход — ниже, при выстреле).
+        if !self.systems.get(&attacker).map(|s| s.can_fire()).unwrap_or(true) {
+            return None;
+        }
         let from = self.world.entities.get(&attacker)?.state.pos;
         // Мирная зона: у базы запрещён бой между игроками (защита новичков),
         // но по целям-дронам (учебный полигон) стрелять можно.
@@ -973,6 +1002,11 @@ impl Server {
             ^ (attacker as u64).wrapping_mul(0xBF58476D1CE4E5B9)
             ^ seq.wrapping_mul(0x94D049BB133111EB);
         self.last_fire_tick.insert(attacker, tick);
+        // Расход энергии на выстрел (авторитетно; без заряда выстрела не было —
+        // проверка выше). Стрельба в пустоту тоже тратит заряд.
+        if let Some(s) = self.systems.get_mut(&attacker) {
+            s.energy = s.energy.saturating_sub(ENERGY_PER_SHOT);
+        }
 
         let (target, dist) = match best {
             Some((id, d)) => (id, d),
@@ -1632,6 +1666,87 @@ impl Server {
         (credits, premium)
     }
 
+    // --- Бортовые системы: трюм, топливо, энергия ---
+
+    /// Сообщение о системах для интерфейса игрока.
+    pub fn systems_state(&self, player: NetId) -> Message {
+        let entity = self.entity_of(player);
+        let used = self
+            .economy
+            .engine
+            .inventory
+            .used_volume(player, self.economy.system, &self.economy.registry);
+        let s = self.systems.get(&entity).copied().unwrap_or_default();
+        Message::ServerSystems {
+            entity,
+            cargo_used: used,
+            cargo_max: s.cargo_max,
+            fuel: s.fuel,
+            fuel_max: s.fuel_max,
+            energy: s.energy,
+            energy_max: s.energy_max,
+        }
+    }
+
+    /// Текущее топливо игрока (для ответа на заправку).
+    pub fn fuel_of(&self, player: NetId) -> u64 {
+        let entity = self.entity_of(player);
+        self.systems.get(&entity).map(|s| s.fuel).unwrap_or(0)
+    }
+
+    /// Пересчитать ёмкости систем игрока по его модулям (после крафта модулей).
+    pub fn refresh_systems(&mut self, player: NetId) {
+        let entity = self.entity_of(player);
+        let counts = systems::ModuleCounts::from_inventory(
+            &self.economy.engine.inventory,
+            player,
+            &self.economy.registry,
+        );
+        let (fmax, emax, cmax) =
+            systems::capacities_from_modules(counts.containers, counts.tanks, counts.generators);
+        let s = self.systems.entry(entity).or_default();
+        s.fuel_max = fmax;
+        s.energy_max = emax;
+        s.cargo_max = cmax;
+        s.fuel = s.fuel.min(fmax);
+        s.energy = s.energy.min(emax);
+    }
+
+    /// Заправить корабль: потратить предмет «топливо» из трюма в баки.
+    ///
+    /// Возвращает, сколько единиц топлива добавлено, или строку-ошибку.
+    pub fn refuel(&mut self, player: NetId) -> Result<u64, String> {
+        let entity = self.entity_of(player);
+        let sys = self.economy.system;
+        let Some(s0) = self.systems.get(&entity).copied() else {
+            return Err("нет систем".to_string());
+        };
+        let fmax = s0.fuel_max;
+        if s0.fuel >= fmax {
+            return Err("бак полон".to_string());
+        }
+        let item = self.economy.fuel_item;
+        let have = self.economy.engine.inventory.amount(player, sys, item);
+        if have == 0 {
+            return Err("нет топлива в трюме".to_string());
+        }
+        // Сколько единиц предмета реально нужно (не больше, чем влезет).
+        let free = fmax - s0.fuel;
+        let per = systems::FUEL_PER_ITEM;
+        let items_needed = (free + per - 1) / per; // округление вверх
+        let items_used = have.min(items_needed);
+        if items_used == 0 {
+            return Err("бак полон".to_string());
+        }
+        self.economy.engine.inventory.take(player, sys, item, items_used);
+        let added = (items_used * per).min(free);
+        if let Some(s) = self.systems.get_mut(&entity) {
+            s.fuel = (s.fuel + added).min(fmax);
+        }
+        self.market_dirty = true;
+        Ok(added)
+    }
+
     // --- Таланты и прогрессия персонажа ---
 
     /// Начислить игроку опыт (за копание/крафт/бой). Опыт даёт уровни и очки.
@@ -1733,6 +1848,18 @@ impl Server {
         self.world.spawn(entity_id, spawn);
         // Каждая сущность — корабль со щитом/бронёй и оружием по умолчанию.
         self.hulls.insert(entity_id, ShipHull::new(100, 200));
+        // Бортовые системы: ёмкости от уже имеющихся модулей (у новичка их
+        // нет — базовые), полные баки/энергия.
+        {
+            let counts = systems::ModuleCounts::from_inventory(
+                &self.economy.engine.inventory,
+                player_id,
+                &self.economy.registry,
+            );
+            let (fmax, emax, cmax) =
+                systems::capacities_from_modules(counts.containers, counts.tanks, counts.generators);
+            self.systems.insert(entity_id, systems::ShipSystems::new(fmax, emax, cmax));
+        }
         if let Some(w) = weapon("автопушка") {
             self.weapons.insert(entity_id, w);
         }
@@ -1994,6 +2121,27 @@ impl Server {
             inputs.insert(conn.entity_id, conn.last_input);
         }
 
+        // 1c. Топливо и энергия: сверхсвет невозможен без топлива. Если бак пуст —
+        //     гасим буст в вводе (так предсказание клиента и сервер совпадают).
+        for (entity, input) in inputs.iter_mut() {
+            let s = self.systems.entry(*entity).or_default();
+            if input.boost && !s.can_boost() {
+                input.boost = false;
+            }
+        }
+        // Расход топлива за этот тик (тяга + сверхсвет), и регенерация энергии.
+        for (entity, input) in inputs.iter() {
+            let throttle = input.throttle.abs() as f64;
+            let mut burn = (FUEL_PER_THRUST as f64 * throttle) as u64;
+            if input.boost {
+                burn = burn.saturating_mul(FUEL_BOOST_MUL);
+            }
+            let s = self.systems.entry(*entity).or_default();
+            s.fuel = s.fuel.saturating_sub(burn);
+            // Базовая рекуперация энергии от сети (малые значения, целые).
+            s.energy = (s.energy + ENERGY_REGEN).min(s.energy_max);
+        }
+
         // 1a. Сущности со скриптами: ввод вычисляет автопилот.
         //     Порядок детерминирован (BTreeMap), время — из мира.
         let scripted: Vec<(NetId, String)> =
@@ -2162,6 +2310,17 @@ impl Server {
             .iter()
             .map(|p| (*p, self.progress_state(*p)))
             .collect();
+
+        // 3h. Бортовые системы (трюм/топливо/энергия) — периодически (~2 Гц):
+        //     топливо и энергия меняются каждый тик, слать их каждый тик дорого.
+        let systems_msgs: BTreeMap<NetId, Message> = if tick % 15 == 0 {
+            self.connections
+                .keys()
+                .map(|p| (*p, self.systems_state(*p)))
+                .collect()
+        } else {
+            BTreeMap::new()
+        };
 
         // 4. Для каждого клиента — интерес‑менеджмент и дельта.
         let mut plan = SendPlan::default();
@@ -2363,6 +2522,11 @@ impl Server {
 
             // Прогресс (опыт/уровень/таланты) — при изменении.
             if let Some(m) = progress_msgs.get(player_id) {
+                msgs.push(m.clone());
+            }
+
+            // Бортовые системы (трюм/топливо/энергия) — периодически.
+            if let Some(m) = systems_msgs.get(player_id) {
                 msgs.push(m.clone());
             }
 
@@ -3755,5 +3919,137 @@ mod tests {
         // Сообщение шарда сериализуется и разбирается (провод).
         let m = Message::ServerShard { node: 2, zones: 3, owned: false, owner };
         assert_eq!(ou_protocol::decode(&ou_protocol::encode(&m)).unwrap(), m);
+    }
+
+    // --- Бортовые системы: трюм, топливо, энергия ---
+
+    #[test]
+    fn new_player_starts_with_full_tanks_and_base_capacity() {
+        let mut s = Server::new();
+        let e = s.connect_on_planet(1);
+        let sys = s.systems[&e];
+        assert_eq!(sys.fuel, sys.fuel_max, "новый корабль с полным баком");
+        assert_eq!(sys.fuel_max, systems::BASE_FUEL);
+        assert_eq!(sys.cargo_max, systems::BASE_CARGO);
+        assert_eq!(sys.energy_max, systems::BASE_ENERGY);
+    }
+
+    #[test]
+    fn building_modules_increases_capacities() {
+        let mut s = Server::new();
+        let e = s.connect_on_planet(1);
+        let before = s.systems[&e];
+        // Выдадим игроку 2 контейнера и бак «в трюм» (как после крафта).
+        let sys_id = s.economy.system;
+        let container = (1..=s.economy.registry.len() as u32)
+            .find(|i| s.economy.registry.name(*i) == "контейнер")
+            .unwrap();
+        let tank = (1..=s.economy.registry.len() as u32)
+            .find(|i| s.economy.registry.name(*i) == "топливный бак")
+            .unwrap();
+        s.economy.engine.inventory.add(1, sys_id, container, 2);
+        s.economy.engine.inventory.add(1, sys_id, tank, 1);
+        s.refresh_systems(1);
+        let after = s.systems[&e];
+        assert_eq!(after.cargo_max, before.cargo_max + 2 * systems::CARGO_PER_CONTAINER);
+        assert_eq!(after.fuel_max, before.fuel_max + systems::FUEL_PER_TANK);
+    }
+
+    #[test]
+    fn boost_burns_fuel_and_stops_when_empty() {
+        let mut s = Server::new();
+        let e = s.connect_on_planet(1);
+        // Введём сверхсвет на много тиков и посмотрим, что топливо тратится.
+        let input = InputFrame {
+            seq: 1,
+            throttle: 1.0,
+            boost: true,
+            ..Default::default()
+        };
+        let f0 = s.systems[&e].fuel;
+        s.receive_input(1, &[input]);
+        s.tick();
+        let f1 = s.systems[&e].fuel;
+        assert!(f1 < f0, "сверхсвет тратит топливо: {f0} → {f1}");
+    }
+
+    #[test]
+    fn firing_spends_energy_and_is_blocked_without_it() {
+        let mut s = Server::new();
+        let e = s.connect_on_planet(1);
+        // Цель рядом, чтобы выстрел имел смысл.
+        let drift = s.world.entities[&e].state.pos.scale(0.0001);
+        s.world.spawn(99, s.world.entities[&e].state.pos.add(drift));
+        s.hulls.insert(99, ShipHull::new(0, 100));
+        s.weapons.insert(99, ou_combat::weapon("автопушка").unwrap());
+        // Заряд полный — выстрел проходит и тратит энергию.
+        let e0 = s.systems[&e].energy;
+        let tick = s.world.tick;
+        let shot = s.resolve_fire(e, tick);
+        assert!(shot.is_some(), "с зарядом выстрел возможен");
+        let e1 = s.systems[&e].energy;
+        assert_eq!(e1, e0 - systems::ENERGY_PER_SHOT, "выстрел тратит заряд");
+        // Обнулим заряд — стрелять больше нельзя.
+        if let Some(sys) = s.systems.get_mut(&e) {
+            sys.energy = 0;
+        }
+        let next = s.world.tick + 1000;
+        assert!(s.resolve_fire(e, next).is_none(), "без заряда огня нет");
+    }
+
+    #[test]
+    fn dig_respects_cargo_capacity() {
+        let mut s = Server::new();
+        let e = s.connect_on_planet(1);
+        // Уменьшим трюм до минимума и копнём: в трюм попадёт не больше ёмкости.
+        let cap = 2u64;
+        if let Some(sys) = s.systems.get_mut(&e) {
+            sys.cargo_max = cap;
+        }
+        let dir = ou_sim::normalize(s.world.entities[&e].state.pos);
+        let (_d, (item, qty), _hole) = s.dig_as(1, 0, dir, 0.1, 15.0);
+        assert!(qty <= cap, "в трюм попало не больше ёмкости: {qty} <= {cap}");
+        let sys_id = s.economy.system;
+        let used = s.economy.engine.inventory.used_volume(1, sys_id, &s.economy.registry);
+        assert!(used <= cap, "занято места не больше ёмкости: {used} <= {cap}");
+        let _ = item;
+    }
+
+    #[test]
+    fn refuel_moves_item_fuel_into_tank() {
+        let mut s = Server::new();
+        let e = s.connect_on_planet(1);
+        // Сольём бак и дадим топлива-предмет.
+        if let Some(sys) = s.systems.get_mut(&e) {
+            sys.fuel = 0;
+        }
+        let sys_id = s.economy.system;
+        let fuel_item = s.economy.fuel_item;
+        s.economy.engine.inventory.add(1, sys_id, fuel_item, 3);
+        let added = s.refuel(1).unwrap();
+        assert!(added > 0, "заправка добавила топливо");
+        assert!(s.fuel_of(1) > 0);
+        assert!(s.fuel_of(1) <= s.systems[&e].fuel_max, "не больше бака");
+        // Израсходован хотя бы один предмет топлива.
+        let left = s.economy.engine.inventory.amount(1, sys_id, fuel_item);
+        assert!(left < 3, "топливо-предмет израсходовано: осталось {left}");
+    }
+
+    #[test]
+    fn systems_message_roundtrips_on_wire() {
+        let m = Message::ServerSystems {
+            entity: 7,
+            cargo_used: 3,
+            cargo_max: 600,
+            fuel: 1000,
+            fuel_max: 20000,
+            energy: 500,
+            energy_max: 5000,
+        };
+        assert_eq!(ou_protocol::decode(&ou_protocol::encode(&m)).unwrap(), m);
+        let r = Message::ServerRefuelResult { ok: true, added: 2000, fuel: 4000, reason: "ок".to_string() };
+        assert_eq!(ou_protocol::decode(&ou_protocol::encode(&r)).unwrap(), r);
+        let c = Message::ClientRefuel;
+        assert_eq!(ou_protocol::decode(&ou_protocol::encode(&c)).unwrap(), c);
     }
 }

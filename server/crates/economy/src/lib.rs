@@ -57,6 +57,34 @@ pub enum Category {
     Consumable,
 }
 
+impl Category {
+    /// Сколько места (единиц грузового отсека) занимает одна единица предмета.
+    ///
+    /// Чем «тяжелее» категория, тем больше объём: сырьё — компактное, а
+    /// готовые конструкции занимают много места. Так контейнеры ограничивают
+    /// перевозку осмысленно, а не «числом предметов».
+    pub fn unit_volume(self) -> u32 {
+        match self {
+            Category::Raw => 1,
+            Category::Refined => 2,
+            Category::Component => 5,
+            Category::Construct => 20,
+            Category::Consumable => 1,
+        }
+    }
+
+    /// Имя категории для интерфейса.
+    pub fn name(self) -> &'static str {
+        match self {
+            Category::Raw => "сырьё",
+            Category::Refined => "переработка",
+            Category::Component => "деталь",
+            Category::Construct => "конструкция",
+            Category::Consumable => "расходник",
+        }
+    }
+}
+
 /// Описание предмета.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ItemDef {
@@ -65,6 +93,8 @@ pub struct ItemDef {
     pub category: Category,
     /// Базовая (референсная) цена, используется только как ориентир.
     pub base_price: Credits,
+    /// Сколько места занимает одна единица (для грузового отсека).
+    pub volume: u32,
 }
 
 /// Реестр предметов.
@@ -82,8 +112,29 @@ impl ItemRegistry {
         let id = self.items.keys().next_back().copied().unwrap_or(0) + 1;
         self.items.insert(
             id,
-            ItemDef { id, name: name.to_string(), category, base_price },
+            ItemDef {
+                id,
+                name: name.to_string(),
+                category,
+                base_price,
+                volume: category.unit_volume(),
+            },
         );
+        id
+    }
+
+    /// Зарегистрировать предмет с явным объёмом (модули/особые предметы).
+    pub fn register_with_volume(
+        &mut self,
+        name: &str,
+        category: Category,
+        base_price: Credits,
+        volume: u32,
+    ) -> ItemId {
+        let id = self.register(name, category, base_price);
+        if let Some(d) = self.items.get_mut(&id) {
+            d.volume = volume;
+        }
         id
     }
 
@@ -116,6 +167,11 @@ impl ItemRegistry {
         r.register("корпус", Category::Component, 350);
         r.register("двигатель", Category::Component, 600);
         r.register("корабль", Category::Construct, 2500);
+        // Модули корабля: контейнер увеличивает ёмкость трюма, бак — запас
+        // топлива, генератор — выработку энергии. Это «груз-модули» (конструкции).
+        r.register_with_volume("контейнер", Category::Construct, 900, 20);
+        r.register_with_volume("топливный бак", Category::Construct, 700, 20);
+        r.register_with_volume("генератор", Category::Construct, 1200, 20);
         r
     }
 }
@@ -188,6 +244,95 @@ impl Inventory {
     /// Полный перебор содержимого (для контрольной суммы и сохранения).
     pub fn iter_slots(&self) -> impl Iterator<Item = (&(OwnerId, SystemId), &BTreeMap<ItemId, u64>)> {
         self.slots.iter()
+    }
+
+    /// Занятое место (единиц грузового отсека) у владельца в системе.
+    ///
+    /// Объём считается по категории предмета ([`Category::unit_volume`]), поэтому
+    /// одна и та же «ёмкость контейнера» ограничивает разное число предметов.
+    pub fn used_volume(&self, owner: OwnerId, system: SystemId, reg: &ItemRegistry) -> u64 {
+        self.slots
+            .get(&(owner, system))
+            .map(|bag| {
+                bag.iter()
+                    .map(|(item, qty)| {
+                        let v = reg.get(*item).map(|d| d.volume).unwrap_or(1) as u64;
+                        v.saturating_mul(*qty)
+                    })
+                    .sum()
+            })
+            .unwrap_or(0)
+    }
+
+    /// Влезет ли `qty` предмета `item` в отсек ёмкости `capacity`.
+    ///
+    /// `capacity == 0` означает «безлимитный отсек» (совместимость и стартовый
+    /// инвентарь без модулей-контейнеров).
+    pub fn fits(
+        &self,
+        owner: OwnerId,
+        system: SystemId,
+        item: ItemId,
+        qty: u64,
+        capacity: u64,
+        reg: &ItemRegistry,
+    ) -> bool {
+        if capacity == 0 {
+            return true;
+        }
+        let unit = reg.get(item).map(|d| d.volume).unwrap_or(1) as u64;
+        let used = self.used_volume(owner, system, reg);
+        used.saturating_add(unit.saturating_mul(qty)) <= capacity
+    }
+
+    /// Положить предметы с проверкой ёмкости. `false` — не влезло (ничего не
+    /// меняя). `capacity == 0` — безлимитный отсек.
+    pub fn add_checked(
+        &mut self,
+        owner: OwnerId,
+        system: SystemId,
+        item: ItemId,
+        qty: u64,
+        capacity: u64,
+        reg: &ItemRegistry,
+    ) -> bool {
+        if !self.fits(owner, system, item, qty, capacity, reg) {
+            return false;
+        }
+        self.add(owner, system, item, qty);
+        true
+    }
+
+    /// Положить столько, сколько влезает, и вернуть, сколько реально легло.
+    ///
+    /// Нужно для добычи/покупки: трюм может быть почти полон, и предметы
+    /// кладутся «до края», а остаток теряется (игрок получает сигнал).
+    /// `capacity == 0` — безлимитный отсек (кладём всё).
+    pub fn add_capped(
+        &mut self,
+        owner: OwnerId,
+        system: SystemId,
+        item: ItemId,
+        qty: u64,
+        capacity: u64,
+        reg: &ItemRegistry,
+    ) -> u64 {
+        if qty == 0 {
+            return 0;
+        }
+        if capacity == 0 {
+            self.add(owner, system, item, qty);
+            return qty;
+        }
+        let unit = reg.get(item).map(|d| d.volume).unwrap_or(1) as u64;
+        let used = self.used_volume(owner, system, reg);
+        let free = capacity.saturating_sub(used);
+        let can = if unit == 0 { qty } else { free / unit };
+        let put = can.min(qty);
+        if put > 0 {
+            self.add(owner, system, item, put);
+        }
+        put
     }
 }
 
@@ -647,6 +792,9 @@ impl Production {
             find("двигатель"),
             find("корабль"),
         );
+        let container = find("контейнер");
+        let tank = find("топливный бак");
+        let generator = find("генератор");
         p.add("выплавка металла", &[(ore, 2)], (metal, 1), 5);
         p.add("перегонка топлива", &[(ice, 2)], (fuel, 1), 4);
         p.add("выплавка сплава", &[(metal, 2), (crystal, 1)], (alloy, 1), 8);
@@ -654,6 +802,10 @@ impl Production {
         p.add("штамповка корпуса", &[(alloy, 3)], (hull, 1), 10);
         p.add("сборка двигателя", &[(alloy, 2), (elec, 1)], (engine, 1), 15);
         p.add("сборка корабля", &[(hull, 1), (engine, 2), (elec, 2)], (ship, 1), 30);
+        // Модули корабля (груз, топливо, энергия).
+        p.add("сборка контейнера", &[(alloy, 2), (elec, 1)], (container, 1), 14);
+        p.add("сборка топливного бака", &[(alloy, 2), (metal, 1)], (tank, 1), 12);
+        p.add("сборка генератора", &[(elec, 2), (alloy, 1)], (generator, 1), 18);
         p
     }
 
@@ -741,9 +893,56 @@ mod tests {
     #[test]
     fn registry_has_expected_items() {
         let r = ItemRegistry::default_universe();
-        assert_eq!(r.len(), 10);
+        assert_eq!(r.len(), 13, "10 базовых предметов + 3 модуля корабля");
         assert_eq!(r.get(1).unwrap().name, "руда");
         assert_eq!(r.get(10).unwrap().category, Category::Construct);
+        // Модули: контейнер/бак/генератор — «конструкции» с объёмом 20.
+        assert_eq!(r.get(11).unwrap().name, "контейнер");
+        assert_eq!(r.get(11).unwrap().volume, 20);
+        assert_eq!(r.get(12).unwrap().name, "топливный бак");
+        assert_eq!(r.get(13).unwrap().name, "генератор");
+    }
+
+    #[test]
+    fn item_volumes_depend_on_category() {
+        let r = ItemRegistry::default_universe();
+        let ore = item(&r, "руда");
+        let metal = item(&r, "металл");
+        let hull = item(&r, "корпус");
+        let ship = item(&r, "корабль");
+        assert_eq!(r.get(ore).unwrap().volume, 1, "сырьё компактно");
+        assert_eq!(r.get(metal).unwrap().volume, 2, "переработка крупнее");
+        assert_eq!(r.get(hull).unwrap().volume, 5, "деталь ещё крупнее");
+        assert_eq!(r.get(ship).unwrap().volume, 20, "конструкция самая объёмная");
+    }
+
+    #[test]
+    fn cargo_capacity_limits_volume() {
+        let r = ItemRegistry::default_universe();
+        let ore = item(&r, "руда");
+        let ship = item(&r, "корабль");
+        let mut inv = Inventory::new();
+        // Трюм на 10 единиц: 10 руды влезает (объём 1), 11 — нет.
+        assert!(inv.add_checked(1, 1, ore, 10, 10, &r));
+        assert_eq!(inv.used_volume(1, 1, &r), 10);
+        assert!(!inv.add_checked(1, 1, ore, 1, 10, &r), "места больше нет");
+        assert_eq!(inv.amount(1, 1, ore), 10, "неудачная укладка не меняет трюм");
+        // Корабль (объём 20) в трюм на 10 не влезает вовсе.
+        let mut inv2 = Inventory::new();
+        assert!(!inv2.add_checked(1, 1, ship, 1, 10, &r));
+        // Ёмкость 0 — безлимитный отсек (стартовый инвентарь без модулей).
+        assert!(inv2.add_checked(1, 1, ship, 100, 0, &r));
+    }
+
+    #[test]
+    fn container_modules_have_recipes() {
+        let r = ItemRegistry::default_universe();
+        let p = Production::default_chain(&r);
+        let names: Vec<&str> = p.iter().map(|rec| rec.name.as_str()).collect();
+        assert!(names.contains(&"сборка контейнера"));
+        assert!(names.contains(&"сборка топливного бака"));
+        assert!(names.contains(&"сборка генератора"));
+        assert_eq!(p.iter().count(), 10, "7 базовых + 3 модуля");
     }
 
     #[test]
@@ -931,7 +1130,7 @@ mod tests {
     fn production_chain_refines_raw_materials() {
         let reg = ItemRegistry::default_universe();
         let prod = Production::default_chain(&reg);
-        assert_eq!(prod.len(), 7);
+        assert_eq!(prod.len(), 10, "7 базовых рецептов + 3 модуля корабля");
 
         let ore = item(&reg, "руда");
         let crystal = item(&reg, "кристалл");

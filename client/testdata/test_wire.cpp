@@ -613,6 +613,45 @@ int main(int argc, char** argv)
             "поля шарда совпали");
     }
 
+    // --- 6p. Бортовые системы (тег 58) ---
+    std::printf("\n=== 6p. Бортовые системы (трюм/топливо/энергия) ===\n");
+    {
+        std::vector<uint8_t> sb;
+        sb.push_back(OUWire::TagSystems);
+        OUWire::push_varint(sb, 7);        // entity
+        OUWire::push_varint(sb, 3);        // cargo_used
+        OUWire::push_varint(sb, 600);      // cargo_max
+        OUWire::push_varint(sb, 1000);     // fuel
+        OUWire::push_varint(sb, 20000);    // fuel_max
+        OUWire::push_varint(sb, 500);      // energy
+        OUWire::push_varint(sb, 5000);     // energy_max
+        OUWire::SystemsState ss;
+        Check(OUWire::DecodeSystems(sb.data(), sb.size(), ss), "бортовые системы разобраны");
+        Check(ss.Entity == 7 && ss.CargoUsed == 3 && ss.CargoMax == 600 &&
+              ss.Fuel == 1000 && ss.FuelMax == 20000 && ss.Energy == 500 && ss.EnergyMax == 5000,
+            "поля систем совпали");
+    }
+
+    // --- 6q. Результат заправки (тег 60) ---
+    std::printf("\n=== 6q. Заправка (запрос+результат) ===\n");
+    {
+        const std::vector<uint8_t> q = OUWire::EncodeRefuel();
+        Check(q.size() == 1 && q[0] == OUWire::TagRefuel, "запрос заправки = тег 59");
+
+        std::vector<uint8_t> rb;
+        rb.push_back(OUWire::TagRefuelResult);
+        rb.push_back(1);                   // ok
+        OUWire::push_varint(rb, 2000);     // added
+        OUWire::push_varint(rb, 4000);     // fuel
+        const char* msg = "заправлено";
+        OUWire::push_varint(rb, std::strlen(msg));
+        rb.insert(rb.end(), msg, msg + std::strlen(msg));
+        OUWire::RefuelResult rr;
+        Check(OUWire::DecodeRefuelResult(rb.data(), rb.size(), rr), "результат заправки разобран");
+        Check(rr.Ok && rr.Added == 2000 && rr.Fuel == 4000 && rr.Message == "заправлено",
+            "поля заправки совпали");
+    }
+
     // --- 7. Приветствие сервера (какой сущностью управляем) ---
     std::printf("\n=== 7. Приветствие сервера (welcome) ===\n");
     {

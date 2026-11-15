@@ -886,6 +886,48 @@ public:
 	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Shard")
 	int32 ShardOwner = 0;
 
+	// --- Бортовые системы: трюм, топливо, энергия ---
+
+	/** Занято места в трюме (единиц грузового отсека). */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Systems")
+	int64 CargoUsed = 0;
+
+	/** Ёмкость трюма (от модулей-контейнеров). */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Systems")
+	int64 CargoMax = 0;
+
+	/** Топливо в баках. */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Systems")
+	int64 Fuel = 0;
+
+	/** Максимум топлива (от модулей-баков). */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Systems")
+	int64 FuelMax = 0;
+
+	/** Энергия в сети. */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Systems")
+	int64 Energy = 0;
+
+	/** Максимум энергии (от модулей-генераторов). */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Systems")
+	int64 EnergyMax = 0;
+
+	/** Приходили ли бортовые системы. */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Systems")
+	bool bSystemsReceived = false;
+
+	/** Последний результат заправки (для всплывающей подсказки). */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Systems")
+	FString LastRefuelMessage;
+
+	/** Время последней заправки (мир) — для подсказки. */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Systems")
+	float LastRefuelTime = -100.f;
+
+	/** Запросить заправку корабля (топливо-предмет → баки). */
+	UFUNCTION(BlueprintCallable, Category = "Open Universe|Systems")
+	void SendRefuel();
+
 	/** Подключиться к серверу. */
 	UFUNCTION(BlueprintCallable, Category = "Open Universe|Net")
 	bool Connect();

@@ -96,6 +96,9 @@ namespace OUWire
         TagProgress = 55,
         TagSpendTalent = 56,
         TagShard = 57,
+        TagSystems = 58,
+        TagRefuel = 59,
+        TagRefuelResult = 60,
     };
 
     /// Действия редактора конструкций.
@@ -1520,6 +1523,63 @@ namespace OUWire
         if (!r.Bool(Out.Owned)) return false;
         if (!r.Varint(owner)) return false;
         Out.Owner = static_cast<uint32_t>(owner);
+        return true;
+    }
+
+    /// Бортовые системы сущности (сервер → клиент, тег 58).
+    struct SystemsState
+    {
+        uint32_t Entity = 0;
+        uint64_t CargoUsed = 0;
+        uint64_t CargoMax = 0;
+        uint64_t Fuel = 0;
+        uint64_t FuelMax = 0;
+        uint64_t Energy = 0;
+        uint64_t EnergyMax = 0;
+    };
+
+    inline bool DecodeSystems(const uint8_t* body, size_t len, SystemsState& Out)
+    {
+        Reader r{body, len, 0};
+        uint8_t tag = 0;
+        if (!r.U8(tag) || tag != TagSystems) return false;
+        uint64_t entity = 0;
+        if (!r.Varint(entity)) return false;
+        Out.Entity = static_cast<uint32_t>(entity);
+        if (!r.Varint(Out.CargoUsed) || !r.Varint(Out.CargoMax)) return false;
+        if (!r.Varint(Out.Fuel) || !r.Varint(Out.FuelMax)) return false;
+        if (!r.Varint(Out.Energy) || !r.Varint(Out.EnergyMax)) return false;
+        return true;
+    }
+
+    /// Запросить заправку корабля (клиент → сервер, тег 59).
+    inline std::vector<uint8_t> EncodeRefuel()
+    {
+        return std::vector<uint8_t>{TagRefuel};
+    }
+
+    /// Результат заправки (сервер → клиент, тег 60).
+    struct RefuelResult
+    {
+        bool Ok = false;
+        uint64_t Added = 0;
+        uint64_t Fuel = 0;
+        std::string Message;
+    };
+
+    inline bool DecodeRefuelResult(const uint8_t* body, size_t len, RefuelResult& Out)
+    {
+        Reader r{body, len, 0};
+        uint8_t tag = 0;
+        if (!r.U8(tag) || tag != TagRefuelResult) return false;
+        if (!r.Bool(Out.Ok)) return false;
+        if (!r.Varint(Out.Added)) return false;
+        if (!r.Varint(Out.Fuel)) return false;
+        uint64_t slen = 0;
+        if (!r.Varint(slen)) return false;
+        const uint8_t* sp = nullptr;
+        if (!r.Take(static_cast<size_t>(slen), sp)) return false;
+        Out.Message.assign(reinterpret_cast<const char*>(sp), static_cast<size_t>(slen));
         return true;
     }
 

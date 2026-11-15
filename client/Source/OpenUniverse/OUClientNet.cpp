@@ -402,6 +402,13 @@ void UOUClientNet::SendSpendTalent(int32 Talent)
 	TArray<uint8> Arr; Arr.Append(Body.data(), static_cast<int32>(Body.size())); SendPacket(Arr);
 }
 
+void UOUClientNet::SendRefuel()
+{
+	if (!IsConnected()) { return; }
+	const std::vector<uint8_t> Body = OUWire::EncodeRefuel();
+	TArray<uint8> Arr; Arr.Append(Body.data(), static_cast<int32>(Body.size())); SendPacket(Arr);
+}
+
 void UOUClientNet::UpdateTerritoryAt(double ServerX, double ServerY, double ServerZ)
 {
 	// Точка игрока в серверных единицах; зоны тоже в серверных.
@@ -1069,6 +1076,33 @@ void UOUClientNet::Poll()
 				ShardOwner = static_cast<int32>(S.Owner);
 				UE_LOG(LogOUClient, Log, TEXT("Шард: узел %d из %d зон, владелец зоны %d (owned=%d)"),
 					ShardNode, ShardZones, ShardOwner, S.Owned ? 1 : 0);
+			}
+		}
+		else if (Body[0] == OUWire::TagSystems) // бортовые системы
+		{
+			OUWire::SystemsState S;
+			if (OUWire::DecodeSystems(Body.GetData(), static_cast<size_t>(Body.Num()), S))
+			{
+				CargoUsed = static_cast<int64>(S.CargoUsed);
+				CargoMax = static_cast<int64>(S.CargoMax);
+				Fuel = static_cast<int64>(S.Fuel);
+				FuelMax = static_cast<int64>(S.FuelMax);
+				Energy = static_cast<int64>(S.Energy);
+				EnergyMax = static_cast<int64>(S.EnergyMax);
+				bSystemsReceived = true;
+				UE_LOG(LogOUClient, Log, TEXT("Системы: трюм %lld/%lld, топливо %lld/%lld, энергия %lld/%lld"),
+					CargoUsed, CargoMax, Fuel, FuelMax, Energy, EnergyMax);
+			}
+		}
+		else if (Body[0] == OUWire::TagRefuelResult) // результат заправки
+		{
+			OUWire::RefuelResult R;
+			if (OUWire::DecodeRefuelResult(Body.GetData(), static_cast<size_t>(Body.Num()), R))
+			{
+				LastRefuelMessage = FString(UTF8_TO_TCHAR(R.Message.c_str()));
+				LastRefuelTime = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.f;
+				UE_LOG(LogOUClient, Log, TEXT("Заправка: %s (+%lld топлива)"),
+					*LastRefuelMessage, static_cast<long long>(R.Added));
 			}
 		}
 		else if (Body[0] == OUWire::TagMarketState) // состояние экономики

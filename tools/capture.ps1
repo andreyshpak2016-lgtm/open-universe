@@ -65,6 +65,7 @@ $Presets = @(
   [pscustomobject]@{ Name='combat';    Flags=@('-OUAutoConnect','-OUCombatDemo');                      Cats=@('LogOUShip'); Expect=@('Бой: выстрел'); Wait=40; Desc='Бой: демо-сражение у тела' }
   [pscustomobject]@{ Name='pause';     Flags=@('-OUAutoConnect','-OUPauseMenu');                       Cats=@('LogOUMenu'); Expect=@('ESC'); Wait=38; Desc='Пауза-меню (ESC)' }
   [pscustomobject]@{ Name='base';      Flags=@('-OUAutoConnect','-OUBaseOverview');                    Cats=@('LogOUBase'); Expect=@('Комплекс построен'); Wait=38; Desc='Обзор базы: посадочное поле и строения' }
+  [pscustomobject]@{ Name='systems';   Flags=@('-OUAutoConnect','-OUStartInShip','-OUAutoFire');       Cats=@('LogOUClient'); Expect=@('Системы: трюм'); Wait=42; Desc='Бортовые системы: трюм, топливо, энергия (модули)' }
 )
 
 if ($List) {

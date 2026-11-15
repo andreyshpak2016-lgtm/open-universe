@@ -2123,8 +2123,8 @@ void AOUPlayerMenuController::DrawGameHud(UCanvas* InCanvas)
 	AOUShipPawn* ShipPawn = Cast<AOUShipPawn>(MyPawn);
 	if (ShipPawn)
 	{
-		const FVector2D P(16, H - 132);
-		GlassPanel(InCanvas, P, FVector2D(260, 100), PanelB, Line);
+		const FVector2D P(16, H - 176);
+		GlassPanel(InCanvas, P, FVector2D(260, 144), PanelB, Line);
 		const float Speed = ShipPawn->State.Velocity.Size();
 		DrawText(InCanvas, Small, FString::Printf(TEXT("СКОРОСТЬ  %.0f м/с"), Speed), P + FVector2D(12, 8), ColText);
 		Bar(InCanvas, P + FVector2D(12, 34), FVector2D(236, 10), Speed / 400.f, ColAccent2, FLinearColor(0.1f, 0.12f, 0.2f, 0.9f));
@@ -2135,6 +2135,21 @@ void AOUPlayerMenuController::DrawGameHud(UCanvas* InCanvas)
 			Bar(InCanvas, P + FVector2D(52, 54), FVector2D(196, 8), Sh / 100.f, FLinearColor(0.3f, 0.7f, 1.f), FLinearColor(0.1f, 0.12f, 0.2f, 0.9f));
 			DrawText(InCanvas, Tiny, TEXT("БРОНЯ"), P + FVector2D(12, 68), Dim);
 			Bar(InCanvas, P + FVector2D(52, 70), FVector2D(196, 8), Ar / 100.f, FLinearColor(1.f, 0.7f, 0.3f), FLinearColor(0.1f, 0.12f, 0.2f, 0.9f));
+
+			// Бортовые системы: топливо, энергия, трюм (от модулей).
+			if (Net->bSystemsReceived)
+			{
+				const float FuelF = Net->FuelMax > 0 ? static_cast<float>(Net->Fuel) / static_cast<float>(Net->FuelMax) : 0.f;
+				const float EnF = Net->EnergyMax > 0 ? static_cast<float>(Net->Energy) / static_cast<float>(Net->EnergyMax) : 0.f;
+				const float CargoF = Net->CargoMax > 0 ? static_cast<float>(Net->CargoUsed) / static_cast<float>(Net->CargoMax) : 0.f;
+				DrawText(InCanvas, Tiny, TEXT("ТОПЛИВО"), P + FVector2D(12, 86), Dim);
+				Bar(InCanvas, P + FVector2D(74, 88), FVector2D(174, 8), FuelF, FLinearColor(0.4f, 0.9f, 0.5f), FLinearColor(0.1f, 0.12f, 0.2f, 0.9f));
+				DrawText(InCanvas, Tiny, TEXT("ЭНЕРГИЯ"), P + FVector2D(12, 102), Dim);
+				Bar(InCanvas, P + FVector2D(74, 104), FVector2D(174, 8), EnF, FLinearColor(0.6f, 0.5f, 1.f), FLinearColor(0.1f, 0.12f, 0.2f, 0.9f));
+				DrawText(InCanvas, Tiny, TEXT("ТРЮМ"), P + FVector2D(12, 118), Dim);
+				Bar(InCanvas, P + FVector2D(74, 120), FVector2D(174, 8), CargoF, ColAccent2, FLinearColor(0.1f, 0.12f, 0.2f, 0.9f));
+				DrawText(InCanvas, Tiny, FString::Printf(TEXT("%lld/%lld"), Net->CargoUsed, Net->CargoMax), P + FVector2D(12, 130), Dim);
+			}
 		}
 	}
 
@@ -2163,7 +2178,7 @@ void AOUPlayerMenuController::DrawGameHud(UCanvas* InCanvas)
 	{
 		const bool bInShip = ShipPawn != nullptr;
 		const FString Hint = bInShip
-			? TEXT("Мышь — обзор   ·   W/S — тяга   ·   A/D — стрейф   ·   Пробел/Ctrl — вверх/вниз   ·   ЛКМ — огонь   ·   L — скрипты   ·   F — выход")
+			? TEXT("Мышь — обзор   ·   W/S — тяга   ·   A/D — стрейф   ·   Пробел/Ctrl — вверх/вниз   ·   ЛКМ — огонь   ·   Shift — сверхсвет   ·   N — заправить   ·   L — скрипты   ·   F — выход")
 			: TEXT("Мышь — обзор   ·   W/A/S/D — ходьба   ·   ЛКМ — копать   ·   M — рынок   ·   B — строительство   ·   T — захват зоны   ·   L — скрипты   ·   K — мастерская   ·   O — организация   ·   P — персонаж");
 		DrawText(InCanvas, Tiny, Hint, FVector2D(18, H - 22), Dim);
 	}

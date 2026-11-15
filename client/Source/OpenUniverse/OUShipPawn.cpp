@@ -394,6 +394,8 @@ void AOUShipPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 	// Сверхсвет: удержание Shift — сверхскоростной перелёт между телами системы.
 	PlayerInputComponent->BindAction(TEXT("ShipBoost"), IE_Pressed, this, &AOUShipPawn::OnBoostPressed);
 	PlayerInputComponent->BindAction(TEXT("ShipBoost"), IE_Released, this, &AOUShipPawn::OnBoostReleased);
+	// Заправка: N — топливо-предметы из трюма в баки.
+	PlayerInputComponent->BindAction(TEXT("Refuel"), IE_Pressed, this, &AOUShipPawn::RefuelShip);
 }
 
 void AOUShipPawn::AxisYawMouse(float Value)
@@ -561,6 +563,24 @@ void AOUShipPawn::ToggleTalents()
 		}
 		Menu->SetMenuCursor(Menu->bTalentsOpen);
 		UE_LOG(LogOUShip, Log, TEXT("Таланты: %s"), Menu->bTalentsOpen ? TEXT("открыто") : TEXT("закрыто"));
+	}
+}
+
+void AOUShipPawn::RefuelShip()
+{
+	// Заправка: топливо-предметы из трюма переливаются в баки (авторитетно на
+	// сервере, бак и расход считает он же).
+	if (!Net)
+	{
+		Net = FindComponentByClass<UOUClientNet>();
+	}
+	if (Net && Net->IsConnected())
+	{
+		Net->SendRefuel();
+	}
+	else
+	{
+		UE_LOG(LogOUShip, Log, TEXT("Заправка: нет соединения с сервером"));
 	}
 }
 

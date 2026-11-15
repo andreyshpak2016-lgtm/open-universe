@@ -115,7 +115,7 @@ window.PLAN = {
         { "title": "Переработка и производственные цепочки (в игре, окно M)", "title_en": "Refining and production chains (in game, window M)", "status": "done" },
         { "title": "Игрок-рынок: ордера, стакан, сделки (в игре, клавиша M)", "title_en": "Player market: orders, order book, trades (in game, key M)", "status": "done" },
         { "title": "Отображение добычи и производства в HUD", "title_en": "Digging and production shown in the HUD", "status": "done" },
-        { "title": "Модули контейнеров, топлива, энергии", "title_en": "Container, fuel and energy modules", "status": "in_progress" },
+        { "title": "Модули контейнеров, топлива, энергии (трюм/бак/генератор: ёмкость от модулей, расход топлива и энергии, заправка на N, полосы в HUD)", "title_en": "Container, fuel and energy modules (cargo/tank/generator: capacity from modules, fuel and energy drain, refuel on N, HUD bars)", "status": "done" },
         { "title": "Экономическая симуляция и баланс", "title_en": "Economic simulation and balance", "status": "in_progress" }
       ]
     },
