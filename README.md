@@ -18,6 +18,7 @@
 - `assets/er-data.svg` — ER-диаграмма данных (таблицы и связи)
 - `assets/seq-frame.svg` — sequence-диаграмма одного сетевого кадра
 - `docs/adr-0001-engine.md` — решение о выборе движка (Unreal Engine 5) и стека
+- `docs/gdd.md` — дизайн-документ игры (GDD): идея, столпы, цикл, системы
 - `docs/economy-model.md` — экономическая модель и результаты симуляции рынка
 - `docs/running.md` — как запустить игру (сервер, клиент, рендер)
 - `docs/market-research.md` — исследование рынка и конкурентов
@@ -142,7 +143,7 @@ management и генерация мира.
 
 ```bash
 cd server
-cargo test --workspace                  # 58 тестов
+cargo test --workspace                  # 316 тестов
 cargo run -p ou-server                  # демо interest management и дельт
 cargo run -p ou-client                  # демо предсказания и реконсиляции
 cargo run -p ou-sim --bin ou-worldgen   # генерация звёздных систем

@@ -27,7 +27,7 @@ server/
 
 ```bash
 cd server
-cargo test --workspace                       # 97 тестов
+cargo test --workspace                       # 316 тестов
 cargo run -p ou-server                       # демо interest management и дельт
 cargo run -p ou-client                       # демо предсказания и реконсиляции
 cargo run -p ou-sim --bin ou-worldgen        # генерация звёздных систем
