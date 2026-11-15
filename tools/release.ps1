@@ -82,6 +82,7 @@ $files = @(
   (Join-Path $server 'target\release\ou-build-demo.exe'),
   (Join-Path $server 'target\release\ou-dump-packet.exe'),
   (Join-Path $server 'target\release\ou-health.exe'),
+  (Join-Path $server 'target\release\ou-auth-demo.exe'),
   (Join-Path $root 'tools\play.ps1'),
   (Join-Path $root 'tools\server.ps1'),
   (Join-Path $root 'tools\game.ps1'),
