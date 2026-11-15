@@ -765,10 +765,19 @@ void AOUCharacterPawn::PlaceCoreBlock()
 		UE_LOG(LogOUChar, Log, TEXT("Ядро: нет соединения с сервером"));
 		return;
 	}
+	// Ядро ставится ПРЯМО под прицел (а не снапом к чужим блокам, как обычный
+	// воксель): иначе оно появлялось бы внутри уже стоящей постройки и его не
+	// было бы видно. Ищем ячейку на земле под прицелом.
+	FVector GroundDir;
 	FIntVector Target;
-	if (!ComputeBuildTarget(Target))
+	if (AimTerrainDir(GroundDir))
 	{
-		return;
+		Target = WorldToVoxel(GroundDir * (SurfaceRadius(GroundDir) + 75.f));
+	}
+	else
+	{
+		// Прицел в небо — ставим перед игроком (запасной путь).
+		Target = WorldToVoxel(GetActorLocation() + GetActorForwardVector() * 600.f);
 	}
 	Net->SendPlaceCore(CoreSizeVoxels(), CoreKindSel, Target.X, Target.Y, Target.Z);
 	UE_LOG(LogOUChar, Log, TEXT("Ядро: поставить %s %s в (%d,%d,%d)"),
@@ -919,9 +928,9 @@ void AOUCharacterPawn::UpdateBuildGhost()
 		FVector(Col.R * 0.8f + 0.2f, Col.G * 0.8f + 0.2f, Col.B * 0.8f + 0.2f));
 	BuildGhost->SetVisibility(true);
 
-	// Сетка ядра: когда выбран слот «ЯДРО», показываем «еле видный» каркас куба
-	// размером с будущее ядро — границы, в которых можно строить. Центр — ячейка
-	// под прицелом (не куб кисти), чтобы игрок понимал, где встанет ядро.
+	// Сетка области ядра. Когда выбран слот «ЯДРО» — сетка показывается в месте
+	// под прицелом (куда встанет). Когда ядро уже стоит и слот не выбран —
+	// показываем сетку вокруг ПОСТАВЛЕННОГО ядра: так установка ядра видна.
 	if (bCoreSel)
 	{
 		UWorld* World = GetWorld();
@@ -933,6 +942,20 @@ void AOUCharacterPawn::UpdateBuildGhost()
 		{
 			const FVector CoreCenter = VoxelWorld(FVector(Target.X, Target.Y, Target.Z));
 			BuildGrid->Setup(CoreCenter, 150.0 * static_cast<double>(CoreSizeVoxels()), BuildGridRotation());
+		}
+	}
+	else if (Net && Net->CoreSize > 0)
+	{
+		// Ядро уже поставлено — держим его сетку видимой (еле заметную).
+		UWorld* World = GetWorld();
+		if (!BuildGrid && World)
+		{
+			BuildGrid = World->SpawnActor<AOUBuildGrid>(AOUBuildGrid::StaticClass(), FTransform::Identity);
+		}
+		if (BuildGrid)
+		{
+			const FVector CoreCenter = VoxelWorld(FVector(Net->CoreCoord.X, Net->CoreCoord.Y, Net->CoreCoord.Z));
+			BuildGrid->Setup(CoreCenter, 150.0 * static_cast<double>(Net->CoreSize), BuildGridRotation());
 		}
 	}
 	else if (BuildGrid)
@@ -1235,7 +1258,26 @@ bool AOUCharacterPawn::ComputeBuildTarget(FIntVector& OutTarget) const
 
 void AOUCharacterPawn::ApplyServerBuildEdits()
 {
-	if (!Net || Net->PendingBuildEdits.Num() == 0)
+	if (!Net)
+	{
+		return;
+	}
+	// Сервер поставил новое ядро — он очистил сетку постройки. Убираем старые
+	// кубы и у себя: иначе установка ядра «не видна» (её закрывают старые блоки).
+	if (Net->bCoreResetPending)
+	{
+		Net->bCoreResetPending = false;
+		for (const TPair<FIntVector, TObjectPtr<AOUBuildBlock>>& P : ServerBlocks)
+		{
+			if (P.Value) { P.Value->Destroy(); }
+		}
+		ServerBlocks.Reset();
+		BlockCoords.Reset();
+		BuiltCoords.Reset();
+		BuiltCount = 0;
+		UE_LOG(LogOUChar, Log, TEXT("Ядро: сброшены локальные блоки (новое ядро)"));
+	}
+	if (Net->PendingBuildEdits.Num() == 0)
 	{
 		return;
 	}
@@ -1265,7 +1307,12 @@ void AOUCharacterPawn::ApplyServerBuildEdits()
 					// разного размера видны как кубы разной величины.
 					const int32 VSize = FMath::Clamp(static_cast<int32>(E.Size), 1, 3);
 					Block->BlockSize = 150.f * static_cast<float>(VSize);
-					Block->BlockColor = FLinearColor(E.R / 255.f, E.G / 255.f, E.B / 255.f);
+					// Ядро — особым акцентным цветом, чтобы его было видно среди
+					// обычных блоков (по координате ядра из сервера).
+					const bool bIsCore = (E.Entity == Net->OwnEntityId && Key == Net->CoreCoord);
+					Block->BlockColor = bIsCore
+						? FLinearColor(0.16f, 0.62f, 0.72f)   // акцентный (ядро)
+						: FLinearColor(E.R / 255.f, E.G / 255.f, E.B / 255.f);
 					Block->ApplyLook();
 					ServerBlocks.Add(Key, Block);
 					BlockCoords.Add(Block, Key);
@@ -1275,8 +1322,15 @@ void AOUCharacterPawn::ApplyServerBuildEdits()
 					{
 						++BuiltCount;
 					}
-					UE_LOG(LogOUChar, Log, TEXT("Авторитетный блок (%d,%d,%d) размера %d от сервера"),
-						E.X, E.Y, E.Z, VSize);
+					UE_LOG(LogOUChar, Log, TEXT("Авторитетный блок (%d,%d,%d) размера %d%s от сервера"),
+						E.X, E.Y, E.Z, VSize, bIsCore ? TEXT(" [ЯДРО]") : TEXT(""));
+					if (bIsCore)
+					{
+						const FVector CamPos = Camera ? Camera->GetComponentLocation() : GetActorLocation();
+						UE_LOG(LogOUChar, Log, TEXT("Ядро: мир %s, игрок %s, дист до камеры %.0f см"),
+							*Pos.ToCompactString(), *CamPos.ToCompactString(),
+							FVector::Dist(Pos, CamPos));
+					}
 				}
 			}
 		}

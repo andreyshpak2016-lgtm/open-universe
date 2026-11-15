@@ -954,6 +954,9 @@ public:
 	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Build")
 	FIntVector CoreCoord = FIntVector::ZeroValue;
 
+	/** Нужно сбросить локальные блоки (сервер поставил новое ядро). */
+	bool bCoreResetPending = false;
+
 	/** Последнее сообщение по ядру (для подсказки в HUD). */
 	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Build")
 	FString LastCoreMessage;

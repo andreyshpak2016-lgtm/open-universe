@@ -1138,11 +1138,24 @@ void UOUClientNet::Poll()
 			OUWire::CoreInfo S;
 			if (OUWire::DecodeCore(Body.GetData(), static_cast<size_t>(Body.Num()), S))
 			{
-				CoreSize = static_cast<int32>(S.Size);
-				CoreKind = static_cast<int32>(S.Kind);
-				CoreCoord = FIntVector(S.X, S.Y, S.Z);
-				UE_LOG(LogOUClient, Log, TEXT("Ядро: %dx%d, тип %d, ячейка (%d,%d,%d)"),
-					CoreSize, CoreSize, CoreKind, S.X, S.Y, S.Z);
+				const FIntVector NewCoord(S.X, S.Y, S.Z);
+				const int32 NewSize = static_cast<int32>(S.Size);
+				const int32 NewKind = static_cast<int32>(S.Kind);
+				// Сброс локальных блоков нужен ТОЛЬКО когда ядро реально сменилось
+				// (сервер шлёт ServerCore и при каждой полной выгрузке — иначе
+				// постройка мигала бы, удаляясь и создаваясь заново).
+				const bool bCoreChanged =
+					(CoreSize != NewSize) || (CoreKind != NewKind) || (CoreCoord != NewCoord);
+				CoreSize = NewSize;
+				CoreKind = NewKind;
+				CoreCoord = NewCoord;
+				if (bCoreChanged)
+				{
+					bCoreResetPending = true;
+				}
+				UE_LOG(LogOUClient, Log, TEXT("Ядро: %dx%d, тип %d, ячейка (%d,%d,%d)%s"),
+					CoreSize, CoreSize, CoreKind, S.X, S.Y, S.Z,
+					bCoreChanged ? TEXT(" (новое)") : TEXT(""));
 			}
 		}
 		else if (Body[0] == OUWire::TagCoreResult) // результат установки ядра
