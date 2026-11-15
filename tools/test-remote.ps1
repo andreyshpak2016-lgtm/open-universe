@@ -128,15 +128,41 @@ Write-Host "[5/5] Запускаю tools/test-all.ps1 на удалённом П
 $runScript = Join-Path $env:TEMP 'ou-run.ps1'
 $skip = if ($SkipUE) { ' -SkipUE' } else { '' }
 $eng = if ($EngineRoot) { " -EngineRoot `"$EngineRoot`"" } else { '' }
+# Скриншоты: если не SkipUE и на удалённом ПК есть движок — после тестов снимем
+# кадры ключевых сценариев через tools/capture.ps1 (без мыши второго ПК).
+$capNames = if ($SkipUE) { '' } else { '"menus","voxels"' }
 @"
 Set-Location '$RemoteDir\open-universe'
 powershell -ExecutionPolicy Bypass -File tools/test-all.ps1$skip$eng
-exit `$LASTEXITCODE
+`$rc = `$LASTEXITCODE
+if (-not [string]::IsNullOrEmpty('$capNames')) {
+  foreach (`$p in @($capNames)) {
+    powershell -ExecutionPolicy Bypass -File tools/capture.ps1 -Preset `$p -Window
+  }
+  # Кадры фича-сценария (смешанные воксели, ядра, коллизия).
+  powershell -ExecutionPolicy Bypass -File tools/capture.ps1 -Flag '-OUAutoConnect -OUMix -OUCore -OUCoreKinds -OUWalkInto -OUGhostLog' -Name features -Window
+}
+exit `$rc
 "@ | Set-Content $runScript -Encoding UTF8
 & scp @Scp $runScript "${SshTarget}:$RemoteDir-run.ps1" 2>&1 | Out-Null
 $report = Remote "powershell -NoProfile -ExecutionPolicy Bypass -File `"$RemoteDir-run.ps1`"; echo OU_EXIT:`$LASTEXITCODE"
 Write-Host $report
 $exitCode = [int](([regex]'OU_EXIT:(\d+)').Match($report).Groups[1].Value)
+
+# --- 6. Забрать скриншоты с удалённого ПК ----------------------------------
+$shotsLocal = Join-Path $root 'shots'
+New-Item -ItemType Directory -Force -Path $shotsLocal | Out-Null
+Write-Host "[+] Забираю скриншоты с удалённого ПК..." -ForegroundColor Cyan
+& scp @Scp -r "${SshTarget}:$RemoteDir/open-universe/shots/*remote*" "$shotsLocal/" 2>&1 | Out-Null
+# Кадры capture.ps1 лежат в каталоге shots на удалённом ПК (capture-*.png).
+& scp @Scp "${SshTarget}:$RemoteDir/open-universe/shots/capture-*.png" "$shotsLocal/" 2>&1 | Out-Null
+$got = @(Get-ChildItem $shotsLocal -Filter 'capture-*.png' -ErrorAction SilentlyContinue)
+if ($got.Count -gt 0) {
+  Write-Host ("      получено кадров: " + $got.Count) -ForegroundColor Green
+  $got | Select-Object -Last 5 | ForEach-Object { Write-Host ("      " + $_.Name) -ForegroundColor DarkGray }
+} else {
+  Write-Host "      кадров не получено (возможно, на удалённом ПК нет UE)" -ForegroundColor Yellow
+}
 
 Remove-Item $invScript, $deployScript, $runScript -ErrorAction SilentlyContinue
 if (-not $KeepBundle) { Remove-Item $bundle -ErrorAction SilentlyContinue }
