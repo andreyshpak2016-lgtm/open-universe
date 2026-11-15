@@ -81,12 +81,16 @@ void AOUGameMode::BeginPlay()
 		UWorld* World = GetWorld();
 		if (World)
 		{
+			// Задержку можно задать явно: `-OUShotAt=40` (секунды). Иначе 25 с.
+			float ShotAt = 25.0f;
+			FParse::Value(FCommandLine::Get(), TEXT("OUShotAt="), ShotAt);
+			ShotAt = FMath::Clamp(ShotAt, 1.0f, 300.0f);
 			FTimerHandle Handle;
 			World->GetTimerManager().SetTimer(Handle, [this]()
 			{
 				RequestShot(TEXT("late"));
-			}, 25.0f, false);
-			UE_LOG(LogOUGameMode, Log, TEXT("Запланирован отложенный снимок (25 с)"));
+			}, ShotAt, false);
+			UE_LOG(LogOUGameMode, Log, TEXT("Запланирован отложенный снимок (%.0f с)"), ShotAt);
 		}
 	}
 }

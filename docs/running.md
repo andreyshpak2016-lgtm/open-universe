@@ -167,6 +167,28 @@ powershell -File tools/test-client.ps1
 
 ---
 
+## Проверка клиента одним инструментом (capture.ps1)
+
+`tools/capture.ps1` — универсальный помощник: запускает клиент, снимает кадр
+(графическая составляющая) и по логу отвечает «что реализовано, а что нет».
+
+```powershell
+powershell -File tools\capture.ps1 -List                  # список сценариев
+powershell -File tools\capture.ps1 -Preset build          # проверить строительство
+powershell -File tools\capture.ps1 -Preset workshop -Window   # кадр через реальное окно
+powershell -File tools\capture.ps1 -Preset all            # все сценарии + таблица
+powershell -File tools\capture.ps1 -Flag "-OUAutoOrg" -Name org   # свои флаги
+```
+
+Каждый сценарий проверяет три вещи: **живость модулей** (категории лога),
+**факт срабатывания фичи** (маркеры в логе) и **графику** кадра (доля
+непустых пикселей и число цветов). Кадр сохраняется в `shots\capture-<имя>.png`.
+
+Режимы: по умолчанию — без окна (`-RenderOffscreen`, кадр пишет движок);
+`-Window` — реальное окно и кадр через GDI; `-Shipping` — упакованная сборка
+(та, что у игрока). Есть `-Preset all` — прогон всех сценариев с итоговой
+таблицей «фича → статус».
+
 ## Порт занят?
 
 Ошибка `не удалось занять UDP-порт` — выберите другой порт:
