@@ -1,13 +1,31 @@
 {
-    "generated":  "2026-11-15T00:19:48Z",
+    "generated":  "2026-11-15T00:56:26Z",
     "repo":  "andreyshpak2016-lgtm/open-universe",
     "releases":  [
                      {
+                         "tag":  "v0.80.0",
+                         "name":  "Open Universe 0.80.0",
+                         "notes":  "# Changelog\n\nВсе значимые изменения проекта. Формат близок к [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/),\nверсии — [SemVer](https://semver.org/lang/ru/).\n\n## [0.80.0] — 2026-11-15\n\nПроект и план сверены — расхождения устранены.\n\n### Документация\n- **Дизайн-документ (GDD)** `docs/gdd.md`: идея, столпы, ядровой цикл, мир и\n  масштаб, роли и прогрессия, экономика, бой и территории, скриптинг, интерфейс\n  и технические принципы.\n- **Сверка «план ↔ проект»** по всем задачам: устранены расхождения (план и код\n  совпадают). Обновлены устаревшие числа тестов в README (316).\n\n## [0.79.0] — 2026-11-15\n\nБэкенд стал шардированным: узлы делят зоны, добавлен сервис аутентификации.\n\n### Добавлено\n- **Шардирование подключено к серверу.** `ou-netd` принимает `--shard N\n  --nodes 1,2,3` и делит зоны (звёздные системы) между узлами через consistent\n  hashing. Клиент показывает узел в HUD (`шард N`, или `шард N→M` при миграции).\n- **Микросервис `auth`.** Выдаёт и проверяет билеты сессии (детерминированная\n  подпись, срок, «один игрок — одна сессия», продление). Отдельный бинарник\n  `ou-auth-demo`.\n- **Оркестрация в Kubernetes:** манифесты `deploy/k8s` (StatefulSet узлов шарда,\n  Deployment auth, сервисы) и **автомасштабирование** (HPA). Документация —\n  `docs/deploy.md`.\n\n## [0.78.0] — 2026-11-15\n\nИсправлено подключение к серверу вручную.\n\n### Исправлено\n- **Ручное подключение к серверу.** При подключении кнопкой «Подключиться»\n  (не авто-подключением) игра «застревала» на экране вы",
+                         "date":  "2026-11-15T00:55:15Z",
+                         "latest":  true,
+                         "prerelease":  false,
+                         "size":  267519734,
+                         "gameSetup":  "https://github.com/andreyshpak2016-lgtm/open-universe/releases/download/v0.80.0/OpenUniverse-Game-Setup-0.80.0.exe",
+                         "gameSetupTag":  "v0.80.0",
+                         "setup":  "https://github.com/andreyshpak2016-lgtm/open-universe/releases/download/v0.80.0/OpenUniverse-Setup-0.80.0.exe",
+                         "setupSize":  3259887,
+                         "launcher":  "https://github.com/andreyshpak2016-lgtm/open-universe/releases/download/v0.80.0/OpenUniverseLauncher.exe",
+                         "launcherSize":  125440,
+                         "client":  "https://github.com/andreyshpak2016-lgtm/open-universe/releases/download/v0.80.0/ou-netclient.exe",
+                         "zip":  "https://github.com/andreyshpak2016-lgtm/open-universe/releases/download/v0.80.0/open-universe-0.80.0-windows-x64.zip",
+                         "page":  "https://github.com/andreyshpak2016-lgtm/open-universe/releases/tag/v0.80.0"
+                     },
+                     {
                          "tag":  "v0.79.0",
-                         "name":  "Open Universe 0.79.0",
+                         "name":  "Open Universe v0.79.0",
                          "notes":  "# Changelog\n\nВсе значимые изменения проекта. Формат близок к [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/),\nверсии — [SemVer](https://semver.org/lang/ru/).\n\n## [0.79.0] — 2026-11-15\n\nБэкенд стал шардированным: узлы делят зоны, добавлен сервис аутентификации.\n\n### Добавлено\n- **Шардирование подключено к серверу.** `ou-netd` принимает `--shard N\n  --nodes 1,2,3` и делит зоны (звёздные системы) между узлами через consistent\n  hashing. Клиент показывает узел в HUD (`шард N`, или `шард N→M` при миграции).\n- **Микросервис `auth`.** Выдаёт и проверяет билеты сессии (детерминированная\n  подпись, срок, «один игрок — одна сессия», продление). Отдельный бинарник\n  `ou-auth-demo`.\n- **Оркестрация в Kubernetes:** манифесты `deploy/k8s` (StatefulSet узлов шарда,\n  Deployment auth, сервисы) и **автомасштабирование** (HPA). Документация —\n  `docs/deploy.md`.\n\n## [0.78.0] — 2026-11-15\n\nИсправлено подключение к серверу вручную.\n\n### Исправлено\n- **Ручное подключение к серверу.** При подключении кнопкой «Подключиться»\n  (не авто-подключением) игра «застревала» на экране выбора сервера: меню не\n  опрашивало сеть, поэтому ответ сервера (welcome и снимки) не читался. Теперь\n  меню само опрашивает сеть и переходит в игру сразу после подключения.\n\n## [0.77.0] — 2026-11-15\n\nНовичков ведёт пошаговое обучение.\n\n### Добавлено\n- **Обучение для новичков.** Семь последовательных целей, которые засчитываются\n  по реальным действиям: движение, копание, постройка блока, рынок, крафт, бой\n  и открыт",
                          "date":  "2026-11-15T00:18:41Z",
-                         "latest":  true,
+                         "latest":  false,
                          "prerelease":  false,
                          "size":  267591737,
                          "gameSetup":  "https://github.com/andreyshpak2016-lgtm/open-universe/releases/download/v0.79.0/OpenUniverse-Game-Setup-0.79.0.exe",
@@ -131,7 +149,7 @@
                      {
                          "tag":  "v0.72.0",
                          "name":  "Open Universe v0.72.0",
-                         "notes":  "# Changelog\n\nВсе значимые изменения проекта. Формат близок к [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/),\nверсии — [SemVer](https://semver.org/lang/ru/).\n\n## [0.72.0] — 2026-11-14\n\nУ соседних тел системы появился настоящий рельеф — луна и планета больше не гладкие шары.\n\n### Добавлено\n- **Рельеф на соседних телах.** Луна и соседняя планета теперь имеют настоящий\n  ландшафт: сервер задаёт каждому телу амплитуду и сид, а клиент строит\n  поверхность **той же формулой высоты**, что и домашняя планета, — картинка и\n  физика совпадают. Видны горы, долины и «берега».\n- **Посадка по рельефу.** Корабль при посадке на луну/планету учитывает реальную\n  высоту поверхности, а не ровную сферу.\n- Звёзды и газовые гиганты остаются гладкими сферами (рельефа у них нет).\n\n### Полезно знать\n- Рельеф соседних тел — тот же детерминированный генератор, что у домашней\n  планеты, поэтому сервер и клиент всегда считают одну и ту же поверхность.\n\n## [0.71.0] — 2026-11-14\n\nВ редакторе строительства появились шаблоны построек (blueprints).\n\n### Добавлено\n- **Шаблоны постройки (blueprints).** Библиотека готовых форм: Корабль, Куб\n  5×5×5, Стена 10×4, Башня 3×8, Платформа 12×12, Рамка 7×7. В редакторе\n  строительства (**B**) панель «ШАБЛОНЫ»: **Z/X** — выбрать, **G** — поставить\n  у точки под прицелом (на землю или в грань блока).\n- **Авторитетная штамповка.** Воксели шаблона расставляет сервер с проверкой\n  прав, целостности, границ и лимитов — форму подделать нельзя; правки приходят\n  обычно",
+                         "notes":  "",
                          "date":  "2026-11-14T17:19:39Z",
                          "latest":  false,
                          "prerelease":  false,
@@ -1783,24 +1801,6 @@
                          "client":  null,
                          "zip":  "https://github.com/andreyshpak2016-lgtm/open-universe/releases/download/v0.3.2/open-universe-0.3.2-windows-x64.zip",
                          "page":  "https://github.com/andreyshpak2016-lgtm/open-universe/releases/tag/v0.3.2"
-                     },
-                     {
-                         "tag":  "v0.3.1",
-                         "name":  "v0.3.1",
-                         "notes":  "",
-                         "date":  "2026-11-11T15:45:59Z",
-                         "latest":  false,
-                         "prerelease":  false,
-                         "size":  209243,
-                         "gameSetup":  null,
-                         "gameSetupTag":  null,
-                         "setup":  null,
-                         "setupSize":  0,
-                         "launcher":  null,
-                         "launcherSize":  0,
-                         "client":  null,
-                         "zip":  "https://github.com/andreyshpak2016-lgtm/open-universe/releases/download/v0.3.1/open-universe-0.3.0-windows-x64.zip",
-                         "page":  "https://github.com/andreyshpak2016-lgtm/open-universe/releases/tag/v0.3.1"
                      }
                  ]
 }
