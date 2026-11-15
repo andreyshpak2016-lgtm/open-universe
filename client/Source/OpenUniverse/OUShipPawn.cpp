@@ -155,6 +155,17 @@ void AOUShipPawn::BeginPlay()
 		// Тангаж вниз (в серверных осях Y — вверх, отрицательный — к поверхности).
 		State.Pitch = -0.9f;
 	}
+	else if (FParse::Param(FCommandLine::Get(), TEXT("OUBeltOrbit")))
+	{
+		// Диагностика: корабль у пояса астероидов (кольцо вокруг центра системы,
+		// радиус 700 000 серверных единиц — за луной). Чуть выше плоскости пояса,
+		// смотрим вниз на кольцо.
+		const FVector BeltRUE = OUInterop::ServerToUE(FVector(700000.f, 0.f, 0.f));
+		const FVector SpawnUE = BeltRUE + FVector(0.f, 0.f, 8000.f);
+		State.Position = OUInterop::UEToServer(SpawnUE);
+		SetActorLocation(SpawnUE);
+		State.Pitch = -0.55f;
+	}
 	else if (FParse::Param(FCommandLine::Get(), TEXT("OUCombatDemo")))
 	{
 		// Диагностика: корабль рядом с боевыми целями (для снимка HUD боя).
@@ -1052,9 +1063,10 @@ void AOUShipPawn::Tick(float DeltaSeconds)
 			}
 			// Какая территория под кораблём (для HUD и клавиши захвата T).
 			Net->UpdateTerritoryAt(State.Position.X, State.Position.Y, State.Position.Z);
-			// Диагностика `-OUMoonOrbit`/`-OUCombatDemo`: не реконсилимся —
-			// держим корабль на месте для снимка.
+			// Диагностика `-OUMoonOrbit`/`-OUBeltOrbit`/`-OUCombatDemo`: не
+			// реконсилимся — держим корабль на месте для снимка.
 			if (!FParse::Param(FCommandLine::Get(), TEXT("OUMoonOrbit")) &&
+				!FParse::Param(FCommandLine::Get(), TEXT("OUBeltOrbit")) &&
 				!FParse::Param(FCommandLine::Get(), TEXT("OUCombatDemo")))
 			{
 				// Реконсиляция: принимаем авторитетное состояние своей сущности

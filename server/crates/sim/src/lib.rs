@@ -373,6 +373,19 @@ pub fn home_system() -> StarSystem {
         phase: 0.0,
         resources: 0,
     });
+    // Пояс астероидов — достижим сверхсветом, богат ресурсами. Не тело для
+    // посадки: в физике пропускается (нет рельефа), на клиенте рисуется
+    // кольцом камней. Ставим ЗА луной (560 км) — на 700 км от центра: он вне
+    // домашней планеты (радиус 500 км) и виден с её поверхности.
+    bodies.push(Body {
+        id: 4,
+        kind: BodyKind::AsteroidBelt,
+        pos: Vec3::new(700_000.0, 0.0, 0.0),        // 700 км от центра
+        radius: 30_000.0,                           // 30 км разброс по радиусу
+        orbit: 0.0,
+        phase: 0.0,
+        resources: 5_000,
+    });
     StarSystem {
         id: 0,
         name: system_name(0, HOME_PLANET_SEED),
@@ -512,6 +525,11 @@ impl World {
         self.bodies.push(home_planet());
         for b in home_system().bodies {
             if b.id == home_body_id() {
+                continue;
+            }
+            // Пояс астероидов — не твёрдое тело: на него не садятся, гравитации и
+            // столкновений у него нет (только визуал на клиенте).
+            if matches!(b.kind, BodyKind::AsteroidBelt | BodyKind::BlackHole) {
                 continue;
             }
             if b.radius <= 0.0 {

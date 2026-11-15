@@ -136,7 +136,7 @@ window.PLAN = {
         { "title": "Сверхсвет (удержание Shift): сверхскоростной перелёт между телами", "title_en": "Supercruise (hold Shift): high-speed travel between bodies", "status": "done" },
         { "title": "Гравитация и посадка на соседних телах (луна/планета — с рельефом, гигант/звезда — сфера)", "title_en": "Gravity and landing on neighbouring bodies (moon/planet with terrain, giant/star as spheres)", "status": "done" },
         { "title": "Рельеф на соседних телах (процедурный меш по общей с сервером формуле)", "title_en": "Terrain on neighbouring bodies (procedural mesh from the shared height formula)", "status": "done" },
-        { "title": "Генерация звёздных систем и поясов (генератор есть; обитаемая планета одна)", "title_en": "Star system and belt generation (generator exists; one habitable planet)", "status": "in_progress" },
+        { "title": "Генерация звёздных систем и поясов астероидов (генератор по семени + пояс в домашней системе: кольцо камней в небе, ресурсы)", "title_en": "Star system and asteroid belt generation (deterministic generator + a belt in the home system: a ring of rocks in the sky, resources)", "status": "done" },
         { "title": "Перемещения между системами (межзвёздные)", "title_en": "Travel between systems (interstellar)", "status": "todo" },
         { "title": "Орбитальные станции и шлюзы", "title_en": "Orbital stations and gateways", "status": "todo" },
         { "title": "Опасные зоны: чёрные дыры, радиация", "title_en": "Hazard zones: black holes, radiation", "status": "todo" }

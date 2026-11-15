@@ -360,15 +360,23 @@ void AOUGameMode::BuildSystemBodies()
 			continue;   // домашняя планета уже построена как воксельный мир
 		}
 		// Позиция серверная (1 ед = 1 м) → см UE (×100), оси сервер→UE.
-		const FVector PosUE = OUInterop::ServerToUE(B.Center);
+		const bool bBelt = (B.Kind == 4);
+		// Пояс — кольцо вокруг центра системы: актёр в начале координат, а радиус
+		// кольца — расстояние от центра до пояса (в серверных единицах).
+		const FVector PosUE = bBelt ? FVector::ZeroVector : OUInterop::ServerToUE(B.Center);
 		AOUSolarBody* Body = World->SpawnActor<AOUSolarBody>(
 			AOUSolarBody::StaticClass(), FTransform(FRotator::ZeroRotator, PosUE));
 		if (!Body)
 		{
 			continue;
 		}
-		Body->Kind = (B.Kind == 0) ? EOUSolarKind::Star : EOUSolarKind::Planet;
+		Body->Kind = (B.Kind == 0) ? EOUSolarKind::Star
+			: (bBelt ? EOUSolarKind::Belt : EOUSolarKind::Planet);
 		Body->BodyRadiusCm = B.Radius * OUInterop::ServerUnitToCm;   // радиус в см
+		// Поясу нужен радиус кольца (в серверных единицах) — из позиции пояса.
+		Body->BeltOrbitUnits = bBelt
+			? static_cast<double>(B.Center.Size())
+			: 0.0;
 		// Рельеф: амплитуда/сид с сервера (общая формула высоты). У звёзд — гладко.
 		Body->Amplitude = B.Amplitude;
 		Body->TerrainSeed = B.Seed;

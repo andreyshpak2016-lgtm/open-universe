@@ -216,9 +216,15 @@ void AOUSolarBody::BuildBody()
 	}
 
 	// Есть рельеф — строим процедурную поверхность и прячем сферу.
-	if (Amplitude > 0.0 && Kind != EOUSolarKind::Star)
+	if (Amplitude > 0.0 && Kind != EOUSolarKind::Star && Kind != EOUSolarKind::Belt)
 	{
 		BuildTerrain();
+	}
+	else if (Kind == EOUSolarKind::Belt)
+	{
+		// Пояс астероидов — кольцо мелких камней.
+		Mesh->SetVisibility(false);
+		BuildBelt();
 	}
 	else
 	{
@@ -231,5 +237,84 @@ void AOUSolarBody::BuildBody()
 	}
 
 	UE_LOG(LogOUSolar, Log, TEXT("Небесное тело: %s, радиус %.0f см, амплитуда %.0f"),
-		Kind == EOUSolarKind::Star ? TEXT("звезда") : TEXT("планета"), BodyRadiusCm, Amplitude);
+		Kind == EOUSolarKind::Star ? TEXT("звезда")
+			: (Kind == EOUSolarKind::Belt ? TEXT("пояс астероидов") : TEXT("планета")),
+		BodyRadiusCm, Amplitude);
+}
+
+void AOUSolarBody::BuildBelt()
+{
+	// Кольцо камней в плоскости орбиты (горизонт XZ серверных осей → UE).
+	// Рисуем процедурным мешем: несколько «кубиков» случайного размера по кругу.
+	if (!TerrainMesh)
+	{
+		return;
+	}
+	TerrainMesh->ClearAllMeshSections();
+	TerrainMesh->SetVisibility(true);
+	if (TerrainMesh->GetMaterial(0) == nullptr && TerrainMaterial)
+	{
+		TerrainMesh->SetMaterial(0, TerrainMaterial);
+	}
+
+	// Радиус кольца: BeltOrbitUnits (серверные единицы) → см UE.
+	const double RingR = (BeltOrbitUnits > 0.0 ? BeltOrbitUnits : 4000000.0) * OUInterop::ServerUnitToCm;
+	const double Band = FMath::Max(2.0, static_cast<double>(BodyRadiusCm));   // разброс по радиусу
+
+	TArray<FVector> Verts;
+	TArray<int32> Tris;
+	TArray<FVector> Normals;
+	TArray<FVector2D> UVs;
+	TArray<FLinearColor> Colors;
+
+	// Детерминированный псевдослучайный генератор (без внешних зависимостей).
+	uint64 Seed = 0x9E3779B9u;
+	auto NextF = [&Seed]() -> double {
+		Seed = Seed * 6364136223846793005ull + 1442695040888963407ull;
+		return static_cast<double>((Seed >> 11) & 0xFFFFFFFFull) / 4294967296.0;
+	};
+
+	auto AddBox = [&](const FVector& C, double Half) {
+		const int32 Base = Verts.Num();
+		const double H = Half;
+		const FLinearColor Col(0.55f + 0.15f * static_cast<float>(NextF()),
+			0.5f + 0.15f * static_cast<float>(NextF()), 0.45f + 0.15f * static_cast<float>(NextF()));
+		// 8 вершин куба.
+		for (int sx = -1; sx <= 1; sx += 2)
+			for (int sy = -1; sy <= 1; sy += 2)
+				for (int sz = -1; sz <= 1; sz += 2)
+				{
+					Verts.Add(C + FVector(sx * H, sy * H, sz * H));
+					Normals.Add(FVector(sx, sy, sz).GetSafeNormal());
+					UVs.Add(FVector2D(0, 0));
+					Colors.Add(Col);
+				}
+		// 12 треугольников (6 граней) по индексам вершин.
+		const int32 T[12][3] = {
+			{0,1,3},{0,3,2},{4,6,7},{4,7,5},{0,4,5},{0,5,1},
+			{2,3,7},{2,7,6},{0,2,6},{0,6,4},{1,5,7},{1,7,3}
+		};
+		for (auto& t : T)
+		{
+			Tris.Add(Base + t[0]); Tris.Add(Base + t[1]); Tris.Add(Base + t[2]);
+		}
+	};
+
+	const int32 Count = FMath::Clamp(BeltRockCount, 8, 2000);
+	for (int32 i = 0; i < Count; ++i)
+	{
+		const double a = 6.283185307179586 * (static_cast<double>(i) / static_cast<double>(Count))
+			+ NextF() * 0.05;
+		const double r = RingR + (NextF() - 0.5) * Band;
+		// Плоскость орбит тел — горизонтальная (UE XY); Z — толщина пояса.
+		const double z = (NextF() - 0.5) * Band * 0.5;
+		const FVector C(r * FMath::Cos(a), r * FMath::Sin(a), z);
+		const double Half = 4000.0 + NextF() * 16000.0;  // 40–200 м камни
+		AddBox(C, Half);
+	}
+
+	TerrainMesh->CreateMeshSection_LinearColor(0, Verts, Tris, Normals, UVs, Colors,
+		TArray<FProcMeshTangent>(), false);
+	UE_LOG(LogOUSolar, Log, TEXT("Пояс астероидов: камней %d, радиус кольца %.0f см, вершин %d"),
+		Count, RingR, Verts.Num());
 }

@@ -16,7 +16,8 @@ UENUM(BlueprintType)
 enum class EOUSolarKind : uint8
 {
 	Star UMETA(DisplayName = "Звезда"),
-	Planet UMETA(DisplayName = "Планета")
+	Planet UMETA(DisplayName = "Планета"),
+	Belt UMETA(DisplayName = "Пояс астероидов")
 };
 
 /**
@@ -58,6 +59,14 @@ public:
 	UFUNCTION(BlueprintCallable, CallInEditor, Category = "Open Universe|System")
 	void BuildBody();
 
+	/** Радиус орбиты пояса (серверные единицы) и число камней. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Open Universe|System")
+	double BeltOrbitUnits = 0.0;
+
+	/** Сколько камней рисовать в поясе (визуал). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Open Universe|System")
+	int32 BeltRockCount = 900;
+
 protected:
 	virtual void OnConstruction(const FTransform& Transform) override;
 
@@ -71,6 +80,9 @@ protected:
 private:
 	/** Построить процедурную поверхность тела по рельефу. */
 	void BuildTerrain();
+
+	/** Построить пояс астероидов (кольцо камней). */
+	void BuildBelt();
 
 	UPROPERTY(Transient)
 	TObjectPtr<UStaticMesh> SphereMesh = nullptr;

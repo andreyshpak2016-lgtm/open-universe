@@ -62,6 +62,7 @@ $Presets = @(
   [pscustomobject]@{ Name='walk';      Flags=@('-OUAutoConnect','-OUAutoWalk');                        Cats=@('LogOUChar','LogOUGameMode'); Expect=@(); Wait=38; Desc='Пеший персонаж: движение и анимация' }
   [pscustomobject]@{ Name='ship';      Flags=@('-OUAutoConnect','-OUStartInShip');                     Cats=@('LogOUShip'); Expect=@(); Wait=40; Desc='Корабль: старт в корабле, полёт' }
   [pscustomobject]@{ Name='system';    Flags=@('-OUAutoConnect','-OUMoonOrbit');                       Cats=@('LogOUSolar'); Expect=@('Тела системы построены'); Wait=40; Desc='Звёздная система: тела, луна, орбита' }
+  [pscustomobject]@{ Name='belt';      Flags=@('-OUAutoConnect','-OUStartInShip','-OUBeltOrbit');      Cats=@('LogOUSolar'); Expect=@('Пояс астероидов: камней'); Wait=44; Desc='Пояс астероидов: кольцо камней (генерация системы)' }
   [pscustomobject]@{ Name='combat';    Flags=@('-OUAutoConnect','-OUCombatDemo');                      Cats=@('LogOUShip'); Expect=@('Бой: выстрел'); Wait=40; Desc='Бой: демо-сражение у тела' }
   [pscustomobject]@{ Name='pause';     Flags=@('-OUAutoConnect','-OUPauseMenu');                       Cats=@('LogOUMenu'); Expect=@('ESC'); Wait=38; Desc='Пауза-меню (ESC)' }
   [pscustomobject]@{ Name='base';      Flags=@('-OUAutoConnect','-OUBaseOverview');                    Cats=@('LogOUBase'); Expect=@('Комплекс построен'); Wait=38; Desc='Обзор базы: посадочное поле и строения' }
