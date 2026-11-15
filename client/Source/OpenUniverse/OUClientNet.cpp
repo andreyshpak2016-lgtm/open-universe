@@ -576,6 +576,12 @@ void UOUClientNet::Poll()
 			if (OUWire::DecodeWelcome(Body.GetData(), static_cast<size_t>(Body.Num()), Entity))
 			{
 				OwnEntityId = Entity;
+				// По умолчанию активная постройка — стартовая (её id = сущность
+				// игрока): так можно строить сразу, без отдельной постановки ядра.
+				if (ActiveCoreId == 0)
+				{
+					ActiveCoreId = Entity;
+				}
 				State = EOUConnState::Connected;
 				UE_LOG(LogOUClient, Log, TEXT("Сервер принял: моя сущность = %d"), Entity);
 			}
@@ -1151,6 +1157,7 @@ void UOUClientNet::Poll()
 					Found->Owner = Owner;
 					Found->Size = NewSize;
 					Found->Kind = NewKind;
+					Found->bCounted = S.Counted;
 					Found->Coord = NewCoord;
 				}
 				else
@@ -1160,6 +1167,7 @@ void UOUClientNet::Poll()
 					C.Owner = Owner;
 					C.Size = NewSize;
 					C.Kind = NewKind;
+					C.bCounted = S.Counted;
 					C.Coord = NewCoord;
 					Cores.Add(C);
 				}

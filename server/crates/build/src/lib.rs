@@ -347,6 +347,13 @@ impl VoxelGrid {
     /// Поставить воксель размера `size` (1/2/3) минимальным углом в `c`.
     pub fn place_sized(&mut self, c: Coord, color: Color, size: u8) -> Result<(), BuildError> {
         let size = size.clamp(1, 3);
+        // Постройка ещё не основана (ядра нет): первый воксель сам задаёт ядро —
+        // границы считаем от него, а не от начала координат. Так игрок может
+        // строить сразу, без отдельной постановки ядра (ядро встанет на блок).
+        if !self.founded {
+            self.core = c;
+            self.core_voxel_size = size;
+        }
         // Все единичные ячейки нового куба — в границах и не заняты.
         let occ = self.occupancy();
         for cell in Self::voxel_cells(c, size) {
@@ -365,14 +372,15 @@ impl VoxelGrid {
         }
         // Примыкание по граням: хотя бы одна ячейка нового куба касается
         // существующего вокселя (общая грань). Первый воксель игрока основывает
-        // постройку (ядро переезжает на него).
+        // постройку — он же становится ядром (можно строить без отдельного ядра).
         if !self.touches_occupied(&occ, c, size) {
-            if !self.founded && self.voxels.len() <= 1 {
-                self.voxels.clear();
-                self.core = c;
-                self.core_voxel_size = size;
+            if !self.founded {
                 self.voxels.insert(c, Voxel::new(color, size));
                 self.founded = true;
+                // Размер ядра-основания — по размеру вокселя (1→16, 2→32, 3→64),
+                // назначение по умолчанию — статичная база.
+                let core_size = match size { 3 => 64, 2 => 32, _ => 16 };
+                self.spec = CoreSpec { size: core_size, kind: 0 };
                 return Ok(());
             }
             return Err(BuildError::Disconnected(c));

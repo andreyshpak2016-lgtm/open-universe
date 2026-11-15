@@ -478,6 +478,7 @@ fn main() {
                                             size: spec.size as u8,
                                             kind: spec.kind,
                                             coord,
+                                            counted: true,
                                         },
                                     )
                                     .ok();

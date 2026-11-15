@@ -293,8 +293,9 @@ pub enum Message {
     ///
     /// `entity` — id ядра (ключ постройки, ≥ 100000), `owner` — игрок-владелец
     /// (по нему клиент считает свои ядра и лимиты), `size`/`kind` — параметры,
-    /// `coord` — ячейка ядра в сетке.
-    ServerCore { entity: NetId, owner: NetId, size: u8, kind: u8, coord: (i32, i32, i32) },
+    /// `coord` — ячейка ядра в сетке. `counted` — поставлено ли ядро ЯВНО (идёт в
+    /// лимит); постройка, основанная первым вокселем без ядра, — `counted=false`.
+    ServerCore { entity: NetId, owner: NetId, size: u8, kind: u8, coord: (i32, i32, i32), counted: bool },
     /// Сервер: отказ в установке ядра (не подходит место и т. п.).
     ServerCoreResult { ok: bool, message: String },
     /// Сервер: список территорий системы (владение, статус, налог) для HUD.
@@ -1311,7 +1312,7 @@ mod wire {
                 w.i32(coord.1);
                 w.i32(coord.2);
             }
-            Message::ServerCore { entity, owner, size, kind, coord } => {
+            Message::ServerCore { entity, owner, size, kind, coord, counted } => {
                 w.u8(TAG_CORE);
                 w.varint(*entity as u64);
                 w.varint(*owner as u64);
@@ -1320,6 +1321,7 @@ mod wire {
                 w.i32(coord.0);
                 w.i32(coord.1);
                 w.i32(coord.2);
+                w.bool(*counted);
             }
             Message::ServerCoreResult { ok, message } => {
                 w.u8(TAG_CORE_RESULT);
@@ -1790,6 +1792,7 @@ mod wire {
                 size: r.u8()?,
                 kind: r.u8()?,
                 coord: (r.i32()?, r.i32()?, r.i32()?),
+                counted: r.bool().unwrap_or(true),
             }),
             TAG_CORE_RESULT => Ok(Message::ServerCoreResult {
                 ok: r.bool()?,

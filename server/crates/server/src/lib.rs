@@ -301,6 +301,9 @@ pub struct Server {
     pub core_owner: BTreeMap<NetId, NetId>,
     /// Ядра игрока: игрок → список id ядер (в порядке постановки).
     pub player_cores: BTreeMap<NetId, Vec<NetId>>,
+    /// Ядра, поставленные ЯВНО (через `place_core_as`) — только они считаются в
+    /// лимиты. Постройка, основанная первым вокселем (без ядра), в лимит не идёт.
+    pub counted_cores: BTreeSet<NetId>,
     /// Следующий свободный id ядра.
     next_core_id: NetId,
     /// Корпус каждой сущности: щит, броня, критические повреждения.
@@ -460,6 +463,7 @@ impl Server {
             constructions: BTreeMap::new(),
             core_owner: BTreeMap::new(),
             player_cores: BTreeMap::new(),
+            counted_cores: BTreeSet::new(),
             next_core_id: 100_000,
             hulls: BTreeMap::new(),
             weapons: BTreeMap::new(),
@@ -866,8 +870,9 @@ impl Server {
         let Some(c) = self.constructions.get_mut(&cmd.entity) else {
             return BuildReason::Invalid;
         };
-        // Строить можно только в существующем ядре и только с правами.
-        if !c.can_edit(author) || !c.grid.founded() {
+        // Строить можно в существующую постройку и только с правами. Постройку без
+        // ядра тоже можно — первый воксель сам её основывает (ядро встанет на него).
+        if !c.can_edit(author) {
             return BuildReason::Invalid;
         }
         let color = BuildColor(cmd.color.0, cmd.color.1, cmd.color.2);
@@ -878,9 +883,14 @@ impl Server {
         };
         match res {
             Ok(()) => {
+                // Постройка могла «основаться» первым вокселем (ядра не было):
+                // тогда регистрируем её как ядро владельца — иначе автор не
+                // получит снимок (репликация идёт по списку ядер игрока).
+                self.note_founded(cmd.entity);
                 // Записываем правку и готовим её к рассылке ВСЕМ, включая автора:
                 // клиент рисует только то, что сервер авторитетно принял. Иначе
                 // автор не увидел бы свой блок (а при отказе — нарисовал бы лишнее).
+                let c = self.constructions.get_mut(&cmd.entity).unwrap();
                 c.revision += 1;
                 let edit = BuildEdit {
                     entity: cmd.entity,
@@ -899,6 +909,26 @@ impl Server {
             Err(BuildError::TooManyVoxels { .. }) => BuildReason::LimitReached,
             Err(BuildError::Disconnected(_)) => BuildReason::Disconnected,
             Err(_) => BuildReason::Invalid,
+        }
+    }
+
+    /// Если постройка основана (есть ядро), а как «постройка игрока» ещё не
+    /// учтена — регистрируем её: владелец и список. Так постройка, основанная
+    /// первым вокселем (без отдельной постановки ядра), попадает в репликацию.
+    /// В лимит ядер такая постройка НЕ идёт (её нет в `counted_cores`).
+    fn note_founded(&mut self, entity: NetId) {
+        let owner = match self.constructions.get(&entity) {
+            Some(c) if c.grid.founded() => c.owner,
+            _ => return,
+        };
+        // Уже учтено как ядро — ничего не делаем.
+        if self.core_owner.get(&entity) == Some(&owner) {
+            return;
+        }
+        self.core_owner.insert(entity, owner);
+        let ids = self.player_cores.entry(owner).or_default();
+        if !ids.contains(&entity) {
+            ids.push(entity);
         }
     }
 
@@ -1004,6 +1034,7 @@ impl Server {
         }
 
         // Лимиты ядер по назначению: базы — 2, корабли — 3, динамические — 2.
+        // Считаем только ЯВНО поставленные ядра (автооснованные постройки — нет).
         let (limit, kind_name) = match kind {
             0 => (START_CORE_BASE, "статичная база"),
             1 => (START_CORE_SHIP, "корабль"),
@@ -1014,6 +1045,7 @@ impl Server {
             .get(&player)
             .map(|ids| {
                 ids.iter()
+                    .filter(|id| self.counted_cores.contains(id))
                     .filter(|id| {
                         self.constructions
                             .get(id)
@@ -1035,11 +1067,17 @@ impl Server {
             64 => 3,
             _ => 1,
         };
-        // Первое ядро занимает стартовую постройку игрока (её id — сущность
-        // игрока): клиент уже подключается к ней. Последующие ядра — новые
-        // постройки со своими id (≥ 100000).
-        if self.player_cores.get(&player).map(|v| v.is_empty()).unwrap_or(true) {
-            let entity = self.entity_of(player);
+        // Первое ЯВНОЕ ядро занимает стартовую (пустую) постройку игрока — её id
+        // равен сущности игрока. Если игрок сначала построил воксели без ядра
+        // (постройка основалась сама), стартовая постройка уже не пуста: тогда
+        // создаём НОВОЕ ядро, чтобы не затирать его работу.
+        let entity = self.entity_of(player);
+        let start_free = self
+            .constructions
+            .get(&entity)
+            .map(|c| !c.grid.founded())
+            .unwrap_or(true);
+        if start_free {
             let c = self
                 .constructions
                 .entry(entity)
@@ -1048,7 +1086,11 @@ impl Server {
             c.revision += 1;
             c.pending.clear();
             self.core_owner.insert(entity, player);
-            self.player_cores.entry(player).or_default().push(entity);
+            self.counted_cores.insert(entity);
+            let ids = self.player_cores.entry(player).or_default();
+            if !ids.contains(&entity) {
+                ids.push(entity);
+            }
             return Ok((entity, spec));
         }
         let id = self.next_core_id;
@@ -1059,6 +1101,7 @@ impl Server {
         // Ядро сразу занимает свою ячейку — полная выгрузка при первом синке.
         self.constructions.insert(id, c);
         self.core_owner.insert(id, player);
+        self.counted_cores.insert(id);
         self.player_cores.entry(player).or_default().push(id);
         Ok((id, spec))
     }
@@ -2601,6 +2644,7 @@ impl Server {
                         size: spec.size as u8,
                         kind: spec.kind,
                         coord: c.grid.core(),
+                        counted: self.counted_cores.contains(&entity),
                     });
                 }
                 for e in edits {
@@ -2961,6 +3005,57 @@ mod tests {
         assert_eq!(r, BuildReason::Ok);
         let g = s.constructions.get(&core).unwrap();
         assert_eq!(g.grid.len(), 2, "ядро + новый воксель");
+    }
+
+    #[test]
+    fn building_without_explicit_core_founds_the_build() {
+        // Игрок со старта может строить БЕЗ отдельной постановки ядра: первый
+        // воксель основывает постройку (её id — сущность игрока), и она попадает
+        // в репликацию владельцу.
+        let mut s = Server::new();
+        let e = s.connect_on_planet(1); // ядро НЕ ставим
+        // Первый блок — принимается (постройка основывается сама).
+        let r = s.apply_build_as(1, &cmd_in(e, BuildAction::Place, (0, 0, 0)));
+        assert_eq!(r, BuildReason::Ok, "без ядра первый блок можно");
+        let c = s.constructions.get(&e).unwrap();
+        assert_eq!(c.grid.len(), 1, "в постройке один воксель (он же ядро)");
+        assert!(c.grid.founded(), "постройка основана первым блоком");
+        // Постройка учтена как постройка игрока (пойдёт в репликацию).
+        assert_eq!(s.core_owner.get(&e).copied(), Some(1), "владелец записан");
+        assert_eq!(s.player_cores.get(&1).map(|v| v.contains(&e)), Some(true), "ядро в списке игрока");
+        // Второй блок в пустоте (в границах куба ядра, но без связи) — отклонён.
+        assert_eq!(
+            s.apply_build_as(1, &cmd_in(e, BuildAction::Place, (5, 5, 0))),
+            BuildReason::Disconnected
+        );
+        // Второй блок рядом — принимается.
+        assert_eq!(
+            s.apply_build_as(1, &cmd_in(e, BuildAction::Place, (1, 0, 0))),
+            BuildReason::Ok
+        );
+        assert_eq!(s.constructions[&e].grid.len(), 2);
+    }
+
+    #[test]
+    fn auto_founded_build_does_not_consume_core_limit() {
+        // Постройка, основанная вокселем без ядра, НЕ тратит лимит ядер: игрок
+        // всё ещё может поставить 2 базы + 3 корабля + 2 динамических ЯВНО.
+        let mut s = Server::new();
+        let e = s.connect_on_planet(1);
+        s.apply_build_as(1, &cmd_in(e, BuildAction::Place, (0, 0, 0))); // автооснование
+        assert!(s.place_core_as(1, 16, 0, (100, 0, 0)).is_ok(), "1-я база");
+        assert!(s.place_core_as(1, 16, 0, (140, 0, 0)).is_ok(), "2-я база");
+        assert!(s.place_core_as(1, 16, 0, (180, 0, 0)).is_err(), "3-я база — лимит");
+    }
+
+    #[test]
+    fn explicit_core_reuses_empty_start_build() {
+        // Если игрок НЕ строил воксели, первое явное ядро занимает стартовую
+        // постройку (её id = сущность игрока), а не создаёт отдельную.
+        let mut s = Server::new();
+        let e = s.connect_on_planet(1);
+        let (core, _) = s.place_core_as(1, 32, 0, (0, 0, 0)).unwrap();
+        assert_eq!(core, e, "первое ядро — стартовая постройка игрока");
     }
 
     #[test]
@@ -4454,7 +4549,7 @@ mod tests {
     fn core_message_roundtrips_on_wire() {
         let c = Message::ClientPlaceCore { size: 32, kind: 2, coord: (1, -2, 3) };
         assert_eq!(ou_protocol::decode(&ou_protocol::encode(&c)).unwrap(), c);
-        let s = Message::ServerCore { entity: 7, owner: 3, size: 16, kind: 0, coord: (0, 0, 0) };
+        let s = Message::ServerCore { entity: 7, owner: 3, size: 16, kind: 0, coord: (0, 0, 0), counted: true };
         assert_eq!(ou_protocol::decode(&ou_protocol::encode(&s)).unwrap(), s);
         let r = Message::ServerCoreResult { ok: false, message: "нет".to_string() };
         assert_eq!(ou_protocol::decode(&ou_protocol::encode(&r)).unwrap(), r);

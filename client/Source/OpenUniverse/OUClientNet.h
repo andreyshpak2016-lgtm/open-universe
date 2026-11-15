@@ -102,6 +102,11 @@ struct FOUCoreInfo
 	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Build")
 	int32 Kind = 0;
 
+	/** Поставлено ли ядро ЯВНО (идёт в лимит). Постройка, основанная первым
+	 *  вокселем без ядра, — false (в лимит не идёт). */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Build")
+	bool bCounted = true;
+
 	/** Ячейка (мин. угол куба) ядра в общей сетке вокселей. */
 	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Build")
 	FIntVector Coord = FIntVector::ZeroValue;
@@ -973,14 +978,15 @@ public:
 	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Build")
 	TArray<FOUCoreInfo> Cores;
 
-	/** Сколько ядер каждого назначения поставил сам игрок (для лимитов). */
+	/** Сколько ЯВНО поставленных ядер каждого назначения у самого игрока
+	 *  (для лимитов). Автооснованные постройки не считаются. */
 	UFUNCTION(BlueprintPure, Category = "Open Universe|Build")
 	int32 OwnCoreCount(int32 Kind) const
 	{
 		int32 N = 0;
 		for (const FOUCoreInfo& C : Cores)
 		{
-			if (C.Owner == OwnEntityId && C.Kind == Kind) { ++N; }
+			if (C.Owner == OwnEntityId && C.Kind == Kind && C.bCounted) { ++N; }
 		}
 		return N;
 	}

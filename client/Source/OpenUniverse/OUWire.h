@@ -1646,6 +1646,9 @@ namespace OUWire
         uint8_t Size = 0;
         uint8_t Kind = 0;
         int32_t X = 0, Y = 0, Z = 0;
+        /// Поставлено ли ядро ЯВНО (идёт в лимит). Постройка, основанная первым
+        /// вокселем без ядра, — false.
+        bool Counted = true;
     };
 
     inline bool DecodeCore(const uint8_t* body, size_t len, CoreInfo& Out)
@@ -1659,6 +1662,9 @@ namespace OUWire
         Out.Owner = static_cast<uint32_t>(owner);
         if (!r.U8(Out.Size) || !r.U8(Out.Kind)) return false;
         if (!r.I32(Out.X) || !r.I32(Out.Y) || !r.I32(Out.Z)) return false;
+        // Необязательный байт (совместимость): без него считаем ядро «явным».
+        uint8_t counted = 1;
+        Out.Counted = r.U8(counted) ? (counted != 0) : true;
         return true;
     }
 
