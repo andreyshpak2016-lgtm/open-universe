@@ -488,6 +488,19 @@ void AOUPlayerMenuController::OnLeftClick()
 				}
 				return;
 			}
+			// Палитра строительства: 2000+ — выбрать слот (в т.ч. «ЯДРО»),
+			// 3000/3001 — размер/назначение ядра.
+			if (AOUCharacterPawn* BChar = Cast<AOUCharacterPawn>(GetPawn()))
+			{
+				if (BChar->bBuildMenuOpen && B.Id >= 2000)
+				{
+					if (B.Id == 3000) { BChar->CoreSizeNext(); return; }
+					if (B.Id == 3001) { BChar->CoreKindNext(); return; }
+					BChar->SelectBuildPart(B.Id - 2000);
+					UE_LOG(LogOUMenu, Log, TEXT("Палитра: выбран слот %d"), B.Id - 2000);
+					return;
+				}
+			}
 			// Организация: 700 — создать, 701 — выйти, 710+ вступить,
 			// 720+ повысить участника, 750+ дипломатия.
 			if (bOrgOpen && B.Id >= 700)
@@ -1055,6 +1068,8 @@ void AOUPlayerMenuController::DrawBuildMenu(UCanvas* InCanvas)
 	const float H = InCanvas->SizeY;
 	UFont* Font = GEngine->GetLargeFont();
 	UFont* Small = GEngine->GetMediumFont();
+	UFont* Tiny = GEngine->GetSmallFont();
+	const FLinearColor Dim(0.66f, 0.72f, 0.86f, 1.f);
 
 	// Прицел в центре экрана: показывает, что ЛКМ/Е/R работают «по направлению
 	// взгляда». Рисуем маленький крест.
@@ -1081,27 +1096,55 @@ void AOUPlayerMenuController::DrawBuildMenu(UCanvas* InCanvas)
 	{
 		const FVector2D SlotPos(X, SlotY);
 		const FVector2D SlotSize(SlotW, SlotH);
-		const FLinearColor PartCol = AOUCharacterPawn::BuildPartColor(i);
+		const bool bIsCore = ((EOUBuildPart)i == EOUBuildPart::Core);
+		const FLinearColor PartCol = bIsCore
+			? FLinearColor(0.35f, 0.75f, 1.0f)
+			: AOUCharacterPawn::BuildPartColor(i);
 		const bool bSel = (i == Char->BuildSelection);
 		FillBox(InCanvas, SlotPos, SlotSize, bSel ? FLinearColor(0.16f, 0.22f, 0.44f, 1.f) : FLinearColor(0.05f, 0.07f, 0.16f, 1.f));
 		StrokeBox(InCanvas, SlotPos, SlotSize, bSel ? ColAccent2 : ColPanelBorder, bSel ? 3.f : 1.f);
 		// Образец цвета блока.
 		FillBox(InCanvas, SlotPos + FVector2D(12, 12), FVector2D(SlotW - 24, 34), PartCol);
 		DrawText(InCanvas, Small, AOUCharacterPawn::BuildPartName(i), SlotPos + FVector2D(12, 54), ColText);
+		if (bIsCore)
+		{
+			DrawText(InCanvas, Tiny, FString::Printf(TEXT("%s · %s"), *Char->CoreSizeName(), *Char->CoreKindName()),
+				SlotPos + FVector2D(12, 70), Dim);
+		}
+		// Клик по слоту выбирает деталь (id = 2000 + индекс).
+		Buttons.Add({ SlotPos, SlotSize, 2000 + i });
 		X += SlotW + Gap;
 	}
 
-	DrawText(InCanvas, Small, TEXT("B — закрыть   ·   ЛКМ — поставить   ·   E — удалить   ·   R — покрасить   ·   Z/X — шаблон   ·   G — поставить шаблон   ·   H — дать право строить"),
+	DrawText(InCanvas, Small, TEXT("B — закрыть   ·   ЛКМ — поставить   ·   E — удалить   ·   R — покрасить   ·   Z/X — шаблон   ·   G — поставить шаблон   ·   Y — размер ядра"),
 		FVector2D(PanelPos.X + 24, PanelPos.Y + PanelSize.Y + 8), ColMuted);
 
 	// Размер кисти (C/V): заметная плашка, чтобы было видно, чем строим.
 	{
-		const FString BrushText = FString::Printf(TEXT("КИСТЬ: %s"), *Char->BuildBrushName());
+		const FString BrushText = FString::Printf(TEXT("ВОКСЕЛЬ: %s"), *Char->BuildBrushName());
 		const FVector2D BP(PanelPos.X + 24 + 250.f, PanelPos.Y + 14);
 		FillBox(InCanvas, BP + FVector2D(-8, -4), FVector2D(210, 26), FLinearColor(0.10f, 0.16f, 0.30f, 0.95f));
 		StrokeBox(InCanvas, BP + FVector2D(-8, -4), FVector2D(210, 26), ColAccent2, 1.f);
 		DrawText(InCanvas, Small, BrushText, BP, ColAccent2);
 		DrawText(InCanvas, Small, TEXT("C/V — размер"), BP + FVector2D(0, 20), ColMuted);
+	}
+
+	// Ядро: если выбран слот «ЯДРО» — показываем выбор размера (16/32/64) и
+	// назначения (статичная база / корабль / орбитальная). Клик переключает.
+	const bool bCoreSel = ((EOUBuildPart)Char->BuildSelection == EOUBuildPart::Core);
+	if (bCoreSel)
+	{
+		const FVector2D CP(PanelPos.X + 24 + 250.f + 226.f, PanelPos.Y + 14);
+		FillBox(InCanvas, CP + FVector2D(-8, -4), FVector2D(320, 26), FLinearColor(0.10f, 0.16f, 0.30f, 0.95f));
+		StrokeBox(InCanvas, CP + FVector2D(-8, -4), FVector2D(320, 26), ColAccent2, 1.f);
+		DrawText(InCanvas, Small,
+			FString::Printf(TEXT("ЯДРО: %s (%d) · %s"),
+				*Char->CoreSizeName(), Char->CoreSizeVoxels(), *Char->CoreKindName()),
+			CP, ColAccent2);
+		DrawText(InCanvas, Small, TEXT("клик — размер · Shift+C — назначение"),
+			CP + FVector2D(0, 20), ColMuted);
+		Buttons.Add({ CP + FVector2D(-8, -4), FVector2D(320, 26), 3000 });
+		Buttons.Add({ CP + FVector2D(-8, 18), FVector2D(320, 22), 3001 });
 	}
 
 	// Права: если сервер запретил строить — показываем явно.

@@ -11,7 +11,7 @@ fn top_view(g: &VoxelGrid) -> String {
     if w == 0 {
         return "(пусто)".into();
     }
-    let cells: Vec<(i32, i32, i32)> = g.iter().map(|(c, _)| c).collect();
+    let cells: Vec<(i32, i32, i32)> = g.iter().map(|(c, _col, _sz)| c).collect();
     let min_x = cells.iter().map(|c| c.0).min().unwrap();
     let max_x = cells.iter().map(|c| c.0).max().unwrap();
     let min_z = cells.iter().map(|c| c.2).min().unwrap();

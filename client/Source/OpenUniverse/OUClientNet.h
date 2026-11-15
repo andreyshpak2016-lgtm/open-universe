@@ -71,6 +71,10 @@ struct FOUBuildEdit
 	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Build")
 	int32 B = 0;
 
+	/** Размер вокселя-куба: 1 малый, 2 средний, 3 большой. */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Build")
+	int32 Size = 1;
+
 	/** Номер правки (для подтверждения). */
 	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Build")
 	int64 Revision = 0;
@@ -936,6 +940,32 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Open Universe|Systems")
 	void SendSetEngine(int32 NewEngine);
 
+	// --- Ядро конструкции ---
+
+	/** Сторона куба ядра в вокселях (0 — ядро ещё не поставлено). */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Build")
+	int32 CoreSize = 0;
+
+	/** Назначение ядра: 0 статичная база, 1 корабль, 2 орбитальная. */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Build")
+	int32 CoreKind = 0;
+
+	/** Ячейка ядра в сетке (цепляется к нему). */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Build")
+	FIntVector CoreCoord = FIntVector::ZeroValue;
+
+	/** Последнее сообщение по ядру (для подсказки в HUD). */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Build")
+	FString LastCoreMessage;
+
+	/** Время последнего сообщения по ядру (мир). */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Build")
+	float LastCoreTime = -100.f;
+
+	/** Поставить ядро: размер (16/32/64), назначение (0/1/2), ячейка. */
+	UFUNCTION(BlueprintCallable, Category = "Open Universe|Build")
+	void SendPlaceCore(int32 Size, int32 Kind, int32 X, int32 Y, int32 Z);
+
 	/** Подключиться к серверу. */
 	UFUNCTION(BlueprintCallable, Category = "Open Universe|Net")
 	bool Connect();
@@ -961,7 +991,7 @@ public:
 
 	/** Отправить команду строительства (поставить/удалить/покрасить воксель). */
 	UFUNCTION(BlueprintCallable, Category = "Open Universe|Build")
-	void SendBuild(int32 Entity, int32 Action, int32 X, int32 Y, int32 Z, int32 R, int32 G, int32 B);
+	void SendBuild(int32 Entity, int32 Action, int32 X, int32 Y, int32 Z, int32 R, int32 G, int32 B, int32 Size = 1);
 
 	/** Отправить запрос копания грунта в направлении (серверные оси). */
 	UFUNCTION(BlueprintCallable, Category = "Open Universe|Terrain")

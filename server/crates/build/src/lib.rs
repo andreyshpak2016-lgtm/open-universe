@@ -23,6 +23,22 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 /// Целочисленная координата вокселя в сетке конструкции.
 pub type Coord = (i32, i32, i32);
 
+/// Воксель: цвет и размер (сторона в единицах: 1 — малый, 2 — средний,
+/// 3 — большой). Разные размеры стыкуются по граням, поэтому сторона хранится
+/// целой и координата задаётся минимальным углом куба в единичной решётке.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Voxel {
+    pub color: Color,
+    /// Сторона куба в единицах (1..=3).
+    pub size: u8,
+}
+
+impl Voxel {
+    pub fn new(color: Color, size: u8) -> Self {
+        Voxel { color, size: size.clamp(1, 3) }
+    }
+}
+
 /// Цвет вокселя (RGB, 0..255). Хранится целым — детерминированно.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Color(pub u8, pub u8, pub u8);
@@ -96,15 +112,58 @@ impl Default for BuildLimits {
     }
 }
 
+/// Ядро конструкции: размер (сторона в вокселях) и назначение.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CoreSpec {
+    /// Сторона куба постройки в вокселях (16/32/64).
+    pub size: i32,
+    /// Назначение: 0 — статичная база (на планете), 1 — корабль, 2 — орбитальная.
+    pub kind: u8,
+}
+
+impl Default for CoreSpec {
+    fn default() -> Self {
+        CoreSpec { size: 16, kind: 0 }
+    }
+}
+
+impl CoreSpec {
+    /// Допустимый размер ядра — только 16, 32 или 64.
+    pub fn is_valid_size(size: i32) -> bool {
+        matches!(size, 16 | 32 | 64)
+    }
+
+    /// Полурадиус (в вокселях) от центра ядра до границы куба.
+    pub fn half(&self) -> i32 {
+        self.size / 2
+    }
+
+    /// Имя назначения (для интерфейса/логов).
+    pub fn kind_name(&self) -> &'static str {
+        match self.kind {
+            1 => "корабль",
+            2 => "орбитальная база",
+            _ => "статичная база",
+        }
+    }
+}
+
 /// Воксельная конструкция.
 #[derive(Clone, Debug)]
 pub struct VoxelGrid {
-    voxels: BTreeMap<Coord, Color>,
+    /// Воксели: ключ — минимальный угол куба в единичной решётке, значение —
+    /// цвет и размер стороны (1/2/3). Разрешены разные размеры: они стыкуются
+    /// по граням, как кубики разного калибра (как в voxel-играх).
+    voxels: BTreeMap<Coord, Voxel>,
     /// Ячейка «ядра» — обязательная точка, с которой всё должно быть связано.
     core: Coord,
     /// Основана ли постройка игроком. Пока `false`, первый поставленный блок
     /// переносит ядро на себя (как в DU); после — нужна связность с ядром.
     founded: bool,
+    /// Размер и назначение ядра (куб, в котором можно строить).
+    spec: CoreSpec,
+    /// Размер вокселя-ядра (сторона, 1..3): ядро — тоже воксель.
+    core_voxel_size: u8,
     pub limits: BuildLimits,
 }
 
@@ -115,11 +174,37 @@ impl VoxelGrid {
             voxels: BTreeMap::new(),
             core: (0, 0, 0),
             founded: false,
+            spec: CoreSpec::default(),
+            core_voxel_size: 1,
             limits: BuildLimits::default(),
         };
-        // Ядро — первый воксель.
-        g.voxels.insert((0, 0, 0), Color::ACCENT);
+        // Ядро — первый воксель (малый размер по умолчанию).
+        g.voxels.insert((0, 0, 0), Voxel::new(Color::ACCENT, 1));
         g
+    }
+
+    /// Размер и назначение ядра.
+    pub fn spec(&self) -> CoreSpec {
+        self.spec
+    }
+
+    /// Размер вокселя-ядра (сторона в единицах).
+    pub fn core_voxel_size(&self) -> u8 {
+        self.core_voxel_size
+    }
+
+    /// Установить ядро: задаёт размер/назначение и переносит центр сетки.
+    ///
+    /// Ядро — воксель выбранного размера (`voxel_size` 1/2/3), к его граням
+    /// пристыковываются воксели игрока (в т.ч. другого размера).
+    pub fn set_core(&mut self, coord: Coord, spec: CoreSpec, voxel_size: u8) {
+        self.core = coord;
+        self.spec = spec;
+        self.core_voxel_size = voxel_size.clamp(1, 3);
+        self.founded = true;
+        // Ядро само занимает свой куб (центр постройки).
+        self.voxels.clear();
+        self.voxels.insert(coord, Voxel::new(Color::ACCENT, self.core_voxel_size));
     }
 
     pub fn with_limits(limits: BuildLimits) -> Self {
@@ -140,13 +225,41 @@ impl VoxelGrid {
         self.voxels.is_empty()
     }
 
+    /// Цвет вокселя, накрывающего единичную ячейку `c`.
     pub fn get(&self, c: Coord) -> Option<Color> {
-        self.voxels.get(&c).copied()
+        self.voxel_at_cell(c)
+            .and_then(|corner| self.voxels.get(&corner))
+            .map(|v| v.color)
     }
 
-    /// Все занятые ячейки в детерминированном порядке.
-    pub fn iter(&self) -> impl Iterator<Item = (Coord, Color)> + '_ {
-        self.voxels.iter().map(|(k, v)| (*k, *v))
+    /// Все воксели (мин. угол, цвет, сторона) в детерминированном порядке.
+    pub fn iter(&self) -> impl Iterator<Item = (Coord, Color, u8)> + '_ {
+        self.voxels.iter().map(|(k, v)| (*k, v.color, v.size))
+    }
+
+    /// Ячейки (единичные), которые занимает воксель со сторонами `size` от угла `c`.
+    fn voxel_cells(c: Coord, size: u8) -> Vec<Coord> {
+        let s = size.max(1) as i32;
+        let mut out = Vec::with_capacity((s * s * s) as usize);
+        for dx in 0..s {
+            for dy in 0..s {
+                for dz in 0..s {
+                    out.push((c.0 + dx, c.1 + dy, c.2 + dz));
+                }
+            }
+        }
+        out
+    }
+
+    /// Карта занятости: единичная ячейка → мин. угол вокселя-владельца.
+    fn occupancy(&self) -> BTreeMap<Coord, Coord> {
+        let mut m = BTreeMap::new();
+        for (c, v) in &self.voxels {
+            for cell in Self::voxel_cells(*c, v.size) {
+                m.insert(cell, *c);
+            }
+        }
+        m
     }
 
     /// Центр масс конструкции (для камеры и физики).
@@ -182,17 +295,37 @@ impl VoxelGrid {
     }
 
     fn in_bounds(&self, c: Coord) -> bool {
+        // Границы — куб ядра (постройка не выходит за размер ядра), но не больше
+        // общего лимита конструкции.
         let e = self.limits.max_extent;
-        c.0.abs() <= e && c.1.abs() <= e && c.2.abs() <= e
+        let h = self.spec.half().min(e);
+        let (dx, dy, dz) = (c.0 - self.core.0, c.1 - self.core.1, c.2 - self.core.2);
+        dx.abs() <= h && dy.abs() <= h && dz.abs() <= h
     }
 
-    /// Поставить воксель.
-    pub fn place(&mut self, c: Coord, color: Color) -> Result<(), BuildError> {
-        if !self.in_bounds(c) {
-            return Err(BuildError::OutOfBounds(c));
-        }
-        if self.voxels.contains_key(&c) {
-            return Err(BuildError::Occupied(c));
+    /// Ограничивающий куб сетки ядра (мин/макс по каждой оси) — для отрисовки
+    /// призрачной сетки и проверок.
+    pub fn core_bounds(&self) -> (Coord, Coord) {
+        let h = self.spec.half();
+        let c = self.core;
+        (
+            (c.0 - h, c.1 - h, c.2 - h),
+            (c.0 + h, c.1 + h, c.2 + h),
+        )
+    }
+
+    /// Поставить воксель размера `size` (1/2/3) минимальным углом в `c`.
+    pub fn place_sized(&mut self, c: Coord, color: Color, size: u8) -> Result<(), BuildError> {
+        let size = size.clamp(1, 3);
+        // Все единичные ячейки нового куба — в границах и не заняты.
+        let occ = self.occupancy();
+        for cell in Self::voxel_cells(c, size) {
+            if !self.in_bounds(cell) {
+                return Err(BuildError::OutOfBounds(cell));
+            }
+            if occ.contains_key(&cell) {
+                return Err(BuildError::Occupied(cell));
+            }
         }
         if self.voxels.len() >= self.limits.max_voxels {
             return Err(BuildError::TooManyVoxels {
@@ -200,27 +333,24 @@ impl VoxelGrid {
                 current: self.voxels.len(),
             });
         }
-        // Деталь должна примыкать к существующей (иначе нельзя ставить в пустоте).
-        // Исключение — САМЫЙ ПЕРВЫЙ воксель игрока: конструкция пока состоит лишь
-        // из ядра, и игрок ставит блок там, куда смотрит. Тогда «ядро» переезжает
-        // на этот блок (как в Dual Universe: первый блок основывает постройку),
-        // и вся дальнейшая цепочка связна от него. Без этого постановка блока на
-        // земле вдали от фиксированного ядра отклонялась бы как «нет связи».
-        if !self.touches_existing(c) {
+        // Примыкание по граням: хотя бы одна ячейка нового куба касается
+        // существующего вокселя (общая грань). Первый воксель игрока основывает
+        // постройку (ядро переезжает на него).
+        if !self.touches_occupied(&occ, c, size) {
             if !self.founded && self.voxels.len() <= 1 {
                 self.voxels.clear();
                 self.core = c;
-                self.voxels.insert(c, color);
+                self.core_voxel_size = size;
+                self.voxels.insert(c, Voxel::new(color, size));
                 self.founded = true;
                 return Ok(());
             }
             return Err(BuildError::Disconnected(c));
         }
         self.founded = true;
-        self.voxels.insert(c, color);
+        self.voxels.insert(c, Voxel::new(color, size));
         if self.limits.check_integrity {
             if let Err(e) = self.validate() {
-                // Откат: не оставляем мир в неконсистентном виде.
                 self.voxels.remove(&c);
                 return Err(e);
             }
@@ -228,26 +358,62 @@ impl VoxelGrid {
         Ok(())
     }
 
-    /// Удалить воксель.
+    /// Поставить воксель (малый размер 1) — совместимость.
+    pub fn place(&mut self, c: Coord, color: Color) -> Result<(), BuildError> {
+        self.place_sized(c, color, 1)
+    }
+
+    /// Есть ли у куба `[c, c+size)` общая грань с занятой ячейкой.
+    fn touches_occupied(&self, occ: &BTreeMap<Coord, Coord>, c: Coord, size: u8) -> bool {
+        // Проверяем шесть сторон куба: достаточно одной соседней занятой ячейки
+        // за пределами куба (общая грань — стыковка разных размеров допускается).
+        let s = size.max(1) as i32;
+        for cell in Self::voxel_cells(c, size) {
+            for (dx, dy, dz) in [(1, 0, 0), (-1, 0, 0), (0, 1, 0), (0, -1, 0), (0, 0, 1), (0, 0, -1)] {
+                let n = (cell.0 + dx, cell.1 + dy, cell.2 + dz);
+                // Сосед вне куба (внутри куба — часть самого вокселя).
+                let inside = n.0 >= c.0 && n.0 < c.0 + s
+                    && n.1 >= c.1 && n.1 < c.1 + s
+                    && n.2 >= c.2 && n.2 < c.2 + s;
+                if !inside && occ.contains_key(&n) {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    /// Найти воксель, накрывающий единичную ячейку `cell` (мин. угол), если есть.
+    pub fn voxel_at_cell(&self, cell: Coord) -> Option<Coord> {
+        self.voxels
+            .iter()
+            .find(|(c, v)| {
+                Self::voxel_cells(**c, v.size).iter().any(|x| *x == cell)
+            })
+            .map(|(c, _)| *c)
+    }
+
+    /// Удалить воксель по единичной ячейке (по любому накрывающему кубу).
     pub fn remove(&mut self, c: Coord) -> Result<Color, BuildError> {
-        let color = self.voxels.get(&c).copied().ok_or(BuildError::Empty(c))?;
-        if c == self.core {
+        let corner = self
+            .voxel_at_cell(c)
+            .ok_or(BuildError::Empty(c))?;
+        if corner == self.core {
             // Ядро нельзя снести — иначе конструкция рассыпается целиком.
             return Err(BuildError::Empty(c));
         }
-        self.voxels.remove(&c);
-        Ok(color)
+        let v = self.voxels.remove(&corner).unwrap();
+        Ok(v.color)
     }
 
-    /// Перекрасить воксель.
+    /// Перекрасить воксель по единичной ячейке.
     pub fn paint(&mut self, c: Coord, color: Color) -> Result<(), BuildError> {
-        match self.voxels.get_mut(&c) {
-            Some(slot) => {
-                *slot = color;
-                Ok(())
-            }
-            None => Err(BuildError::Empty(c)),
+        let corner = self.voxel_at_cell(c).ok_or(BuildError::Empty(c))?;
+        if let Some(v) = self.voxels.get_mut(&corner) {
+            v.color = color;
+            return Ok(());
         }
+        Err(BuildError::Empty(c))
     }
 
     /// Примыкает ли ячейка к уже существующему вокселю (6-связность).
@@ -269,25 +435,15 @@ impl VoxelGrid {
     }
 
     /// Проверить связность: все воксели должны быть достижимы от ядра.
+    ///
+    /// Связность — по граням: два вокселя соединены, если их кубы касаются
+    /// (любые размеры). Ищем компоненту от ядра через карту занятости.
     pub fn validate(&self) -> Result<(), BuildError> {
         if self.voxels.is_empty() {
             return Err(BuildError::Empty(self.core));
         }
-        let mut seen: BTreeSet<Coord> = BTreeSet::new();
-        let mut queue = VecDeque::new();
-        queue.push_back(self.core);
-        seen.insert(self.core);
-
-        while let Some(c) = queue.pop_front() {
-            for n in self.neighbors(c) {
-                if self.voxels.contains_key(&n) && seen.insert(n) {
-                    queue.push_back(n);
-                }
-            }
-        }
-
+        let seen = self.connected_from_core();
         if seen.len() != self.voxels.len() {
-            // Найти первый оторванный воксель (детерминированно).
             for c in self.voxels.keys() {
                 if !seen.contains(c) {
                     return Err(BuildError::Disconnected(*c));
@@ -297,6 +453,36 @@ impl VoxelGrid {
         Ok(())
     }
 
+    /// Множество мин. углов вокселей, соединённых с ядром по граням.
+    fn connected_from_core(&self) -> BTreeSet<Coord> {
+        let occ = self.occupancy();
+        let mut seen: BTreeSet<Coord> = BTreeSet::new();
+        let mut queue: VecDeque<Coord> = VecDeque::new();
+        // Владелец ядра — сам воксель ядра.
+        let core_owner = self.voxel_at_cell(self.core).unwrap_or(self.core);
+        if !self.voxels.contains_key(&core_owner) {
+            return seen;
+        }
+        queue.push_back(core_owner);
+        seen.insert(core_owner);
+        while let Some(corner) = queue.pop_front() {
+            let size = self.voxels.get(&corner).map(|v| v.size).unwrap_or(1);
+            // Соседи по граням: для каждой ячейки куба — внешний сосед, его
+            // владелец — смежный воксель.
+            for cell in Self::voxel_cells(corner, size) {
+                for (dx, dy, dz) in [(1, 0, 0), (-1, 0, 0), (0, 1, 0), (0, -1, 0), (0, 0, 1), (0, 0, -1)] {
+                    let n = (cell.0 + dx, cell.1 + dy, cell.2 + dz);
+                    if let Some(owner) = occ.get(&n) {
+                        if *owner != corner && seen.insert(*owner) {
+                            queue.push_back(*owner);
+                        }
+                    }
+                }
+            }
+        }
+        seen
+    }
+
     /// Снять все оторванные воксели (уборка «мусора»).
     ///
     /// Возвращает число удалённых.
@@ -304,17 +490,7 @@ impl VoxelGrid {
         if self.voxels.is_empty() {
             return 0;
         }
-        let mut seen: BTreeSet<Coord> = BTreeSet::new();
-        let mut queue = VecDeque::new();
-        queue.push_back(self.core);
-        seen.insert(self.core);
-        while let Some(c) = queue.pop_front() {
-            for n in self.neighbors(c) {
-                if self.voxels.contains_key(&n) && seen.insert(n) {
-                    queue.push_back(n);
-                }
-            }
-        }
+        let seen = self.connected_from_core();
         let orphans: Vec<Coord> = self
             .voxels
             .keys()
@@ -330,20 +506,28 @@ impl VoxelGrid {
     /// Контрольная сумма конструкции (для сохранения и проверки).
     pub fn checksum(&self) -> u64 {
         let mut h: u64 = 0xcbf29ce484222325;
-        for (c, col) in &self.voxels {
-            for v in [c.0 as i64, c.1 as i64, c.2 as i64] {
-                h ^= v as u64;
+        for (c, v) in &self.voxels {
+            for k in [c.0 as i64, c.1 as i64, c.2 as i64] {
+                h ^= k as u64;
                 h = h.wrapping_mul(0x100000001b3);
             }
-            h ^= ((col.0 as u64) << 16) | ((col.1 as u64) << 8) | col.2 as u64;
+            h ^= ((v.color.0 as u64) << 16) | ((v.color.1 as u64) << 8) | v.color.2 as u64;
+            h = h.wrapping_mul(0x100000001b3);
+            h ^= v.size as u64;
             h = h.wrapping_mul(0x100000001b3);
         }
         h
     }
 
-    /// Масса конструкции (вокселей × масса одного) — для физики.
+    /// Масса конструкции: сумма объёмов вокселей × масса одного малого вокселя.
+    /// Большие воксели тяжелее пропорционально объёму — это нужно для физики.
     pub fn mass(&self, per_voxel: f64) -> f64 {
-        self.voxels.len() as f64 * per_voxel
+        let vol: u64 = self
+            .voxels
+            .values()
+            .map(|v| (v.size as u64).pow(3))
+            .sum();
+        vol as f64 * per_voxel
     }
 }
 
@@ -525,13 +709,13 @@ mod tests {
     #[test]
     fn cannot_place_in_empty_space() {
         let mut g = VoxelGrid::new();
-        // Первый блок игрока переносит ядро на себя (основание постройки).
+        // Первый блок (в пределах куба ядра) основывает постройку: ядро переезжает.
         assert!(g.place((5, 0, 0), Color::HULL).is_ok());
         assert_eq!(g.core(), (5, 0, 0), "ядро переехало на первый блок");
         assert_eq!(g.len(), 1);
-        // Второй блок уже обязан примыкать к конструкции: далёкий отклоняется.
-        let err = g.place((20, 0, 0), Color::HULL).unwrap_err();
-        assert_eq!(err, BuildError::Disconnected((20, 0, 0)));
+        // Второй блок обязан примыкать: далёкий (но в границах куба) — отклонён.
+        let err = g.place((5 + 5, 0, 0), Color::HULL).unwrap_err();
+        assert_eq!(err, BuildError::Disconnected((10, 0, 0)));
     }
 
     #[test]
@@ -591,7 +775,7 @@ mod tests {
             g.place((x, 0, 0), Color::HULL).unwrap();
         }
         // Вручную добавляем оторванный воксель (имитируем повреждение).
-        g.voxels.insert((10, 10, 10), Color::RED);
+        g.voxels.insert((10, 10, 10), Voxel::new(Color::RED, 1));
         assert!(g.validate().is_err(), "оторванный воксель должен ломать целостность");
         let removed = g.prune_disconnected();
         assert_eq!(removed, 1);
@@ -599,8 +783,36 @@ mod tests {
     }
 
     #[test]
-    fn extent_and_centroid() {
+    fn different_voxel_sizes_connect_face_to_face() {
         let mut g = VoxelGrid::new();
+        // Ядро — большой воксель (3) в начале координат.
+        g.set_core((0, 0, 0), CoreSpec { size: 16, kind: 0 }, 3);
+        assert_eq!(g.len(), 1);
+        assert_eq!(g.get((0, 0, 0)), Some(Color::ACCENT));
+        // Малый воксель к грани большого: угол (3,0,0) — вплотную по X.
+        assert!(g.place_sized((3, 0, 0), Color::HULL, 1).is_ok(), "малый встаёт к большому по грани");
+        // Средний — тоже стыкуется (грань с ядром 3×3×3 сверху: угол (0,3,0)).
+        assert!(g.place_sized((0, 3, 0), Color::DARK, 2).is_ok(), "средний стыкуется по грани");
+        // Связность цела: оба вокселя соединены с ядром.
+        assert!(g.validate().is_ok());
+        // Постановка в пустоте (не касается) — отклоняется.
+        assert!(g.place_sized((10, 10, 10), Color::RED, 1).is_err(), "в пустоте нельзя");
+    }
+
+    #[test]
+    fn big_voxel_occupies_whole_cube() {
+        let mut g = VoxelGrid::new();
+        // Средний воксель (2) занимает 8 единичных ячеек: вторая постановка в
+        // накрытую ячейку отклоняется как «занято».
+        assert!(g.place_sized((1, 0, 0), Color::HULL, 2).is_ok());
+        assert_eq!(g.get((1, 0, 0)), Some(Color::HULL));
+        assert_eq!(g.get((2, 1, 1)), Some(Color::HULL), "ячейки куба принадлежат вокселю");
+        // Ячейка (2,0,0) занята тем же вокселем — повторная постановка отклонена.
+        assert!(g.place_sized((2, 0, 0), Color::RED, 1).is_err());
+    }
+
+    #[test]
+    fn extent_and_centroid() {        let mut g = VoxelGrid::new();
         g.place((1, 0, 0), Color::HULL).unwrap();
         g.place((-1, 0, 0), Color::HULL).unwrap();
         let (w, h, d) = g.extent();

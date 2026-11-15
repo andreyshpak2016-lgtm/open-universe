@@ -282,6 +282,16 @@ pub enum Message {
     ClientSetEngine { engine: u8 },
     /// Сервер: у корабля теперь такой двигатель (эхо для HUD).
     ServerEngine { entity: NetId, engine: u8 },
+    /// Клиент: поставить ЯДРО конструкции (создаёт/переносит постройку).
+    ///
+    /// `size` — размер ядра в вокселях по стороне (16/32/64), `kind` — назначение
+    /// (0 статичная база на планете, 1 корабль, 2 орбитальная база). Сервер
+    /// проверяет допустимость места по `kind` и привязывает сетку к ячейке.
+    ClientPlaceCore { size: u8, kind: u8, coord: (i32, i32, i32) },
+    /// Сервер: ядро конструкции установлено (размер, назначение, ячейка).
+    ServerCore { entity: NetId, size: u8, kind: u8, coord: (i32, i32, i32) },
+    /// Сервер: отказ в установке ядра (не подходит место и т. п.).
+    ServerCoreResult { ok: bool, message: String },
     /// Сервер: список территорий системы (владение, статус, налог) для HUD.
     ///
     /// Шлётся при подключении и при каждом изменении (захват, смена статуса).
@@ -482,6 +492,8 @@ pub struct BuildEdit {
     pub action: BuildAction,
     pub coord: (i32, i32, i32),
     pub color: Color,
+    /// Размер вокселя-куба (1 малый, 2 средний, 3 большой) — для отрисовки.
+    pub size: u8,
     /// Монотонный номер правки внутри конструкции (начиная с 1).
     pub revision: u64,
 }
@@ -503,6 +515,9 @@ pub struct BuildCommand {
     pub coord: (i32, i32, i32),
     /// Цвет (для Place/Paint).
     pub color: Color,
+    /// Размер вокселя-куба при постановке: 1 малый, 2 средний, 3 большой.
+    /// При 0 (совместимость) считается малым.
+    pub size: u8,
 }
 
 /// Цвет вокселя на проводе.
@@ -771,6 +786,9 @@ mod wire {
     const TAG_REFUEL_RESULT: u8 = 60;
     const TAG_SET_ENGINE: u8 = 61;
     const TAG_ENGINE: u8 = 62;
+    const TAG_PLACE_CORE: u8 = 63;
+    const TAG_CORE: u8 = 64;
+    const TAG_CORE_RESULT: u8 = 65;
 
     pub fn encode(msg: &Message) -> Vec<u8> {
         let mut w = Writer::new();
@@ -827,6 +845,7 @@ mod wire {
                 w.u8(cmd.color.0);
                 w.u8(cmd.color.1);
                 w.u8(cmd.color.2);
+                w.u8(cmd.size);
             }
             Message::ServerBuildResult { accepted, reason } => {
                 w.u8(TAG_BUILD_RESULT);
@@ -857,6 +876,7 @@ mod wire {
                 w.u8(e.color.0);
                 w.u8(e.color.1);
                 w.u8(e.color.2);
+                w.u8(e.size);
                 w.varint(e.revision);
             }
             Message::ClientBuildAck { entity, revision } => {
@@ -1278,6 +1298,28 @@ mod wire {
                 w.varint(*entity as u64);
                 w.u8(*engine);
             }
+            Message::ClientPlaceCore { size, kind, coord } => {
+                w.u8(TAG_PLACE_CORE);
+                w.u8(*size);
+                w.u8(*kind);
+                w.i32(coord.0);
+                w.i32(coord.1);
+                w.i32(coord.2);
+            }
+            Message::ServerCore { entity, size, kind, coord } => {
+                w.u8(TAG_CORE);
+                w.varint(*entity as u64);
+                w.u8(*size);
+                w.u8(*kind);
+                w.i32(coord.0);
+                w.i32(coord.1);
+                w.i32(coord.2);
+            }
+            Message::ServerCoreResult { ok, message } => {
+                w.u8(TAG_CORE_RESULT);
+                w.bool(*ok);
+                w.str(message);
+            }
         }
         w.buf
     }
@@ -1350,7 +1392,9 @@ mod wire {
                 };
                 let coord = (r.i32()?, r.i32()?, r.i32()?);
                 let color = Color(r.u8()?, r.u8()?, r.u8()?);
-                Ok(Message::ClientBuild(BuildCommand { entity, action, coord, color }))
+                // Размер вокселя необязателен (совместимость): без него — малый.
+                let size = r.u8().unwrap_or(1);
+                Ok(Message::ClientBuild(BuildCommand { entity, action, coord, color, size }))
             }
             TAG_BUILD_RESULT => {
                 let accepted = r.bool()?;
@@ -1375,8 +1419,9 @@ mod wire {
                 };
                 let coord = (r.i32()?, r.i32()?, r.i32()?);
                 let color = Color(r.u8()?, r.u8()?, r.u8()?);
+                let size = r.u8().unwrap_or(1);
                 let revision = r.varint()?;
-                Ok(Message::ServerBuildEdit(BuildEdit { entity, author, action, coord, color, revision }))
+                Ok(Message::ServerBuildEdit(BuildEdit { entity, author, action, coord, color, size, revision }))
             }
             TAG_BUILD_ACK => Ok(Message::ClientBuildAck {
                 entity: r.varint()? as NetId,
@@ -1727,6 +1772,21 @@ mod wire {
             TAG_ENGINE => Ok(Message::ServerEngine {
                 entity: r.varint()? as u32,
                 engine: r.u8()?,
+            }),
+            TAG_PLACE_CORE => Ok(Message::ClientPlaceCore {
+                size: r.u8()?,
+                kind: r.u8()?,
+                coord: (r.i32()?, r.i32()?, r.i32()?),
+            }),
+            TAG_CORE => Ok(Message::ServerCore {
+                entity: r.varint()? as u32,
+                size: r.u8()?,
+                kind: r.u8()?,
+                coord: (r.i32()?, r.i32()?, r.i32()?),
+            }),
+            TAG_CORE_RESULT => Ok(Message::ServerCoreResult {
+                ok: r.bool()?,
+                message: r.str()?,
             }),
             other => Err(WireError::BadTag(other)),
         }
@@ -2113,7 +2173,8 @@ mod tests {
             coord: (-4, 7, 0),
             color: Color(11, 22, 33),
             revision: 128,
-        });
+                    size: 1
+                });
         let bytes = encode(&m);
         assert_eq!(decode(&bytes).unwrap(), m);
     }
@@ -2220,7 +2281,8 @@ mod tests {
             action: BuildAction::Paint,
             coord: (-3, 0, 12),
             color: Color(10, 20, 30),
-        });
+                    size: 1
+                });
         let bytes = encode(&m);
         assert_eq!(decode(&bytes).unwrap(), m);
     }
@@ -2233,7 +2295,8 @@ mod tests {
                 action,
                 coord: (1, 2, 3),
                 color: Color(255, 128, 0),
-            });
+                    size: 1
+                });
             assert_eq!(decode(&encode(&m)).unwrap(), m);
         }
     }

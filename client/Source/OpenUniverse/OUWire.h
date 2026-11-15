@@ -101,6 +101,9 @@ namespace OUWire
         TagRefuelResult = 60,
         TagSetEngine = 61,
         TagEngine = 62,
+        TagPlaceCore = 63,
+        TagCore = 64,
+        TagCoreResult = 65,
     };
 
     /// Действия редактора конструкций.
@@ -158,6 +161,8 @@ namespace OUWire
         BuildAction Action = BuildPlace;
         int32_t X = 0, Y = 0, Z = 0;
         uint8_t R = 0, G = 0, B = 0;
+        /// Размер вокселя-куба: 1 малый, 2 средний, 3 большой.
+        uint8_t Size = 1;
     };
 
     /// Результат строительства (сервер → клиент).
@@ -175,6 +180,8 @@ namespace OUWire
         BuildAction Action = BuildPlace;
         int32_t X = 0, Y = 0, Z = 0;
         uint8_t R = 0, G = 0, B = 0;
+        /// Размер вокселя-куба: 1 малый, 2 средний, 3 большой.
+        uint8_t Size = 1;
         uint64_t Revision = 0;
     };
 
@@ -483,6 +490,9 @@ namespace OUWire
         out.Action = static_cast<BuildAction>(action);
         if (!r.I32(out.X) || !r.I32(out.Y) || !r.I32(out.Z)) return false;
         if (!r.U8(out.R) || !r.U8(out.G) || !r.U8(out.B)) return false;
+        // Размер вокселя необязателен (совместимость): без него — малый.
+        uint8_t vold = 0;
+        out.Size = r.U8(vold) ? vold : 1;
         if (!r.Varint(out.Revision)) return false;
         return true;
     }
@@ -1610,6 +1620,61 @@ namespace OUWire
         return true;
     }
 
+    /// Поставить ядро конструкции (клиент → сервер, тег 63).
+    inline std::vector<uint8_t> EncodePlaceCore(uint8_t Size, uint8_t Kind, int32_t X, int32_t Y, int32_t Z)
+    {
+        std::vector<uint8_t> out;
+        out.push_back(TagPlaceCore);
+        out.push_back(Size);
+        out.push_back(Kind);
+        auto put_i32 = [&out](int32_t v) {
+            const uint32_t u = static_cast<uint32_t>(v);
+            for (int i = 0; i < 4; ++i) { out.push_back(static_cast<uint8_t>((u >> (8 * i)) & 0xFF)); }
+        };
+        put_i32(X);
+        put_i32(Y);
+        put_i32(Z);
+        return out;
+    }
+
+    /// Ядро конструкции (сервер → клиент, тег 64).
+    struct CoreInfo
+    {
+        uint32_t Entity = 0;
+        uint8_t Size = 0;
+        uint8_t Kind = 0;
+        int32_t X = 0, Y = 0, Z = 0;
+    };
+
+    inline bool DecodeCore(const uint8_t* body, size_t len, CoreInfo& Out)
+    {
+        Reader r{body, len, 0};
+        uint8_t tag = 0;
+        if (!r.U8(tag) || tag != TagCore) return false;
+        uint64_t entity = 0;
+        if (!r.Varint(entity)) return false;
+        Out.Entity = static_cast<uint32_t>(entity);
+        if (!r.U8(Out.Size) || !r.U8(Out.Kind)) return false;
+        if (!r.I32(Out.X) || !r.I32(Out.Y) || !r.I32(Out.Z)) return false;
+        return true;
+    }
+
+    /// Результат установки ядра (сервер → клиент, тег 65).
+    struct CoreResult
+    {
+        bool Ok = false;
+        std::string Message;
+    };
+
+    inline bool DecodeCoreResult(const uint8_t* body, size_t len, CoreResult& Out)
+    {
+        Reader r{body, len, 0};
+        uint8_t tag = 0;
+        if (!r.U8(tag) || tag != TagCoreResult) return false;
+        if (!r.Bool(Out.Ok)) return false;
+        return r.Str(Out.Message);
+    }
+
     /// Собрать кадр ввода (клиент → сервер, тег 2).
     /// Формат (должен совпадать с `ou_protocol`):
     /// [tag][count u16][seq u32][throttle i16][yaw i16][pitch i16][strafe i16][up i16][fire u8][boost u8].
@@ -1698,6 +1763,7 @@ namespace OUWire
         out.push_back(cmd.R);
         out.push_back(cmd.G);
         out.push_back(cmd.B);
+        out.push_back(cmd.Size);
         return out;
     }
 

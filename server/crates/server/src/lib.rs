@@ -8,7 +8,7 @@
 //! абстрагированы, поэтому ядро можно прогонять в тестах и симуляциях. Реальный
 //! UDP‑транспорт подключается поверх (см. `Transport`).
 
-use ou_build::{BuildError, Color as BuildColor, VoxelGrid};
+use ou_build::{BuildError, Color as BuildColor, CoreSpec, VoxelGrid};
 use ou_combat::{weapon, Claim, ShipHull, Territory, TerritoryStatus, Weapon};
 use ou_economy::{Inventory, ItemRegistry, Market, MatchingEngine, Production, Side};
 use ou_protocol::{
@@ -845,7 +845,7 @@ impl Server {
             .or_insert_with(|| Construction::new(author));
         let color = BuildColor(cmd.color.0, cmd.color.1, cmd.color.2);
         let res: Result<(), BuildError> = match cmd.action {
-            BuildAction::Place => c.grid.place(cmd.coord, color),
+            BuildAction::Place => c.grid.place_sized(cmd.coord, color, cmd.size.max(1)),
             BuildAction::Remove => c.grid.remove(cmd.coord).map(|_| ()),
             BuildAction::Paint => c.grid.paint(cmd.coord, color),
         };
@@ -861,6 +861,7 @@ impl Server {
                     action: cmd.action,
                     coord: cmd.coord,
                     color: ou_protocol::Color(cmd.color.0, cmd.color.1, cmd.color.2),
+                    size: cmd.size.max(1),
                     revision: c.revision,
                 };
                 for (_player, slot) in c.pending.iter_mut() {
@@ -888,13 +889,14 @@ impl Server {
             if full {
                 // Полная выгрузка: каждая занятая ячейка — отдельная правка.
                 let mut edits: Vec<BuildEdit> = Vec::with_capacity(c.grid.len());
-                for (coord, bcolor) in c.grid.iter() {
+                for (coord, bcolor, vsize) in c.grid.iter() {
                     edits.push(BuildEdit {
                         entity: *entity,
                         author: c.owner,
                         action: BuildAction::Place,
                         coord,
                         color: ou_protocol::Color(bcolor.0, bcolor.1, bcolor.2),
+                        size: vsize,
                         revision: c.revision,
                     });
                 }
@@ -904,6 +906,85 @@ impl Server {
             // Напоминаем права (клиент может их и не знать).
             let _ = can_edit;
         }
+    }
+
+    /// Поставить ЯДРО конструкции игроком (авторитетно).
+    ///
+    /// `kind`: 0 — статичная база (только на поверхности планеты), 1 — корабль
+    /// (где угодно), 2 — орбитальная база (только в космосе, вдали от планеты).
+    /// `size` — сторона куба постройки (16/32/64). Ядро создаёт/переносит
+    /// постройку игрока и привязывает к себе сетку — строить можно только в
+    /// пределах куба ядра. Возвращает созданное ядро или строку-ошибку.
+    pub fn place_core_as(
+        &mut self,
+        player: NetId,
+        size: u8,
+        kind: u8,
+        coord: (i32, i32, i32),
+    ) -> Result<CoreSpec, String> {
+        let size_i = size as i32;
+        if !CoreSpec::is_valid_size(size_i) {
+            return Err(format!("недопустимый размер ядра: {size} (нужно 16/32/64)"));
+        }
+        if kind > 2 {
+            return Err(format!("неизвестное назначение ядра: {kind}"));
+        }
+        // Позиция игрока (серверные единицы) — по ней определяем место установки.
+        let pos = self
+            .connections
+            .get(&player)
+            .and_then(|c| self.world.entities.get(&c.entity_id))
+            .map(|e| e.state.pos)
+            .ok_or_else(|| "игрок не в мире".to_string())?;
+
+        // Высота над ФАКТИЧЕСКИМ рельефом под игроком (не над базовым радиусом):
+        // рельеф поднимается выше радиуса планеты, поэтому иначе поверхность
+        // «улетала» бы на километры вверх и статичная база всегда отклонялась.
+        // `height` берём от направления (нормали), а не от `height_at_point`:
+        // позиция игрока задана в мировых осях (центр планеты — в начале).
+        let dir = ou_sim::normalize(pos.sub(self.planet.center));
+        let surface = self.planet.params.radius + self.planet.height(dir);
+        let altitude = pos.sub(self.planet.center).length() - surface;
+        // Атмосфера — 20 км (совпадает с множителем двигателей на клиенте).
+        const ORBIT_MIN_ALT: f64 = 40_000.0; // выше атмосферы — уже орбита
+        match kind {
+            0 => {
+                // Статичная база: только у поверхности (в пределах ~1 км над ней).
+                if altitude > 1_000.0 {
+                    return Err(format!(
+                        "статичную базу ставят на поверхности (высота {:.0} м)",
+                        altitude
+                    ));
+                }
+            }
+            2 => {
+                // Орбитальная база: только в космосе (выше атмосферы).
+                if altitude < ORBIT_MIN_ALT {
+                    return Err(format!(
+                        "орбитальную базу ставят в космосе (нужно выше {:.0} км)",
+                        ORBIT_MIN_ALT / 1000.0
+                    ));
+                }
+            }
+            _ => {} // корабль — ставится где угодно
+        }
+
+        let spec = CoreSpec { size: size_i, kind };
+        // Воксель-ядро — тоже куб: 16→малый, 32→средний, 64→большой.
+        let core_voxel_size: u8 = match size_i {
+            16 => 1,
+            32 => 2,
+            64 => 3,
+            _ => 1,
+        };
+        let entity = self.entity_of(player);
+        let c = self.constructions.entry(entity).or_insert_with(|| Construction::new(player));
+        c.grid.set_core(coord, spec, core_voxel_size);
+        c.revision += 1;
+        // Сбрасываем очереди правок: при следующем синке все клиенты получат
+        // полную выгрузку (новое ядро + пустая сетка) и увидят сетку ядра.
+        c.pending.clear();
+        Ok(spec)
     }
 
     /// Владелец разрешает другому игроку строить в конструкции.
@@ -1278,6 +1359,7 @@ impl Server {
                     action: BuildAction::Place,
                     coord,
                     color: ou_protocol::Color(col.0, col.1, col.2),
+                    size: 1,
                     revision: c.revision,
                 });
                 placed += 1;
@@ -1306,7 +1388,7 @@ impl Server {
         let voxels: Vec<((i32, i32, i32), BuildColor)> = self
             .constructions
             .get(&entity)
-            .map(|c| c.grid.iter().collect())
+            .map(|c| c.grid.iter().map(|(coord, col, _sz)| (coord, col)).collect())
             .unwrap_or_default();
         if voxels.is_empty() {
             return Err("нечего публиковать: конструкция пуста".to_string());
@@ -1401,6 +1483,7 @@ impl Server {
                     action: BuildAction::Place,
                     coord,
                     color: ou_protocol::Color(col.0, col.1, col.2),
+                    size: 1,
                     revision: c.revision,
                 });
                 placed += 1;
@@ -1569,6 +1652,11 @@ impl Server {
     /// Запомнить позывной игрока (для чата и подписей).
     pub fn set_name(&mut self, player: NetId, name: String) {
         self.names.insert(player, name);
+    }
+
+    /// Сущность игрока (или сам id, если это не игрок). Публично для демона.
+    pub fn entity_of_public(&self, player: NetId) -> NetId {
+        self.entity_of(player)
     }
 
     /// Сущность игрока (или сам id, если это не игрок).
@@ -2401,6 +2489,17 @@ impl Server {
                 let can_edit = c.can_edit(player);
                 let entry = build_msgs.entry(player).or_default();
                 entry.push(Message::ServerBuildAccess { entity, can_edit });
+                // Ядро конструкции (размер/назначение/ячейка) — чтобы клиент
+                // нарисовал призрачную сетку и понял границы постройки.
+                let spec = c.grid.spec();
+                if spec.size > 0 {
+                    entry.push(Message::ServerCore {
+                        entity,
+                        size: spec.size as u8,
+                        kind: spec.kind,
+                        coord: c.grid.core(),
+                    });
+                }
                 for e in edits {
                     entry.push(Message::ServerBuildEdit(e));
                 }
@@ -2739,7 +2838,7 @@ mod tests {
     // --- редактор конструкций ---
 
     fn cmd(action: BuildAction, coord: (i32, i32, i32)) -> BuildCommand {
-        BuildCommand { entity: 1, action, coord, color: ou_protocol::Color(200, 200, 200) }
+        BuildCommand { entity: 1, action, coord, color: ou_protocol::Color(200, 200, 200), size: 1 }
     }
 
     #[test]
@@ -2757,15 +2856,14 @@ mod tests {
         let mut s = Server::new();
         s.connect(1, Vec3::ZERO);
         // Первый блок основывает постройку (ядро переезжает) — принимается.
-        assert_eq!(s.apply_build(&cmd(BuildAction::Place, (20, 0, 0))), BuildReason::Ok);
-        // Дальше постановка в пустоте (вдали от конструкции) отклоняется.
-        let r = s.apply_build(&cmd(BuildAction::Place, (60, 0, 0)));
+        assert_eq!(s.apply_build(&cmd(BuildAction::Place, (5, 0, 0))), BuildReason::Ok);
+        // Дальше постановка в пустоте (не примыкает к конструкции) отклоняется.
+        let r = s.apply_build(&cmd(BuildAction::Place, (5, 5, 0)));
         assert_eq!(r, BuildReason::Disconnected);
     }
 
     #[test]
-    fn build_brush_cube_is_fully_accepted() {
-        // Кисть 3×3×3: если клиент ставит куб «слоями от центра», сервер
+    fn build_brush_cube_is_fully_accepted() {        // Кисть 3×3×3: если клиент ставит куб «слоями от центра», сервер
         // принимает ВСЕ воксели (ни одного отказа) — это ключ к тому, что
         // постройка реально отображается, а счётчик не врёт.
         let mut s = Server::new();
@@ -2825,7 +2923,8 @@ mod tests {
             action: BuildAction::Remove,
             coord: (1, 0, 0),
             color: ou_protocol::Color(0, 0, 0),
-        });
+                    size: 1
+                });
         assert_eq!(r2, BuildReason::Invalid, "у второго игрока этой ячейки нет");
         assert_eq!(s.constructions.get(&1).unwrap().grid.len(), 2);
     }
@@ -2855,7 +2954,8 @@ mod tests {
             action: BuildAction::Place,
             coord: (1, 0, 0),
             color: ou_protocol::Color(10, 20, 30),
-        });
+                    size: 1
+                });
         assert_eq!(reason, BuildReason::Ok);
 
         // Следующий тик: правка должна быть отправлена НЕ только автору.
@@ -2879,7 +2979,8 @@ mod tests {
             action: BuildAction::Place,
             coord: (1, 0, 0),
             color: ou_protocol::Color(1, 1, 1),
-        });
+                    size: 1
+                });
         assert_eq!(bad, BuildReason::Invalid, "чужой строить не может");
 
         // Владелец (игрок 1) разрешает игроку 2.
@@ -2889,7 +2990,8 @@ mod tests {
             action: BuildAction::Place,
             coord: (1, 0, 0),
             color: ou_protocol::Color(1, 1, 1),
-        });
+                    size: 1
+                });
         assert_eq!(ok, BuildReason::Ok, "после разрешения строить можно");
     }
 
@@ -2903,7 +3005,8 @@ mod tests {
             action: BuildAction::Place,
             coord: (1, 0, 0),
             color: ou_protocol::Color(5, 5, 5),
-        });
+                    size: 1
+                });
         // Подключается игрок 2 рядом.
         s.connect(2, Vec3::new(10.0, 0.0, 0.0));
         let plan = s.tick();
@@ -2925,7 +3028,8 @@ mod tests {
             action: BuildAction::Place,
             coord: (1, 0, 0),
             color: ou_protocol::Color(1, 1, 1),
-        });
+                    size: 1
+                });
         let plan = s.tick();
         let rev = build_edits(&plan.messages[&2]).iter().map(|e| e.revision).max().unwrap();
         // Игрок 2 подтверждает: повторно слать не нужно.
@@ -2945,7 +3049,8 @@ mod tests {
                 action: BuildAction::Place,
                 coord: (i, 0, 0),
                 color: ou_protocol::Color(1, 1, 1),
-            });
+                    size: 1
+                });
         }
         assert_eq!(s.constructions[&e1].revision, 3, "ревизия растёт по числу правок");
     }
@@ -3609,7 +3714,8 @@ mod tests {
             action: BuildAction::Place,
             coord: (1, 0, 0),
             color: ou_protocol::Color(1, 2, 3),
-        });
+                    size: 1
+                });
         let id = s.publish_blueprint(1, "Дом".to_string(), 500).unwrap();
         // Витрина содержит объявление.
         match s.workshop_state(2) {
@@ -3654,7 +3760,8 @@ mod tests {
             action: BuildAction::Place,
             coord: (1, 0, 0),
             color: ou_protocol::Color(10, 20, 30),
-        });
+                    size: 1
+                });
         let id = s.publish_blueprint(1, "База".to_string(), 0).unwrap();
         // Ставим свой шаблон ВПЛОТНУЮ к ядру — появляются блоки.
         let before = s.constructions[&e1].grid.len();
@@ -3672,7 +3779,8 @@ mod tests {
             action: BuildAction::Place,
             coord: (1, 0, 0),
             color: ou_protocol::Color(1, 1, 1),
-        });
+                    size: 1
+                });
         s.publish_blueprint(1, "Т".to_string(), 10).unwrap();
         let plan = s.tick();
         let seen = plan.messages[&1]
@@ -4157,5 +4265,95 @@ mod tests {
         assert_eq!(ou_protocol::decode(&ou_protocol::encode(&c)).unwrap(), c);
         let e = Message::ServerEngine { entity: 5, engine: 0 };
         assert_eq!(ou_protocol::decode(&ou_protocol::encode(&e)).unwrap(), e);
+    }
+
+    // --- Ядра конструкций ---
+
+    #[test]
+    fn placing_core_sets_size_kind_and_binds_grid() {
+        let mut s = Server::new();
+        s.connect_on_planet(1);
+        // Статичная база 32 у поверхности — можно.
+        let spec = s.place_core_as(1, 32, 0, (10, 0, 0)).unwrap();
+        assert_eq!(spec.size, 32);
+        assert_eq!(spec.kind, 0);
+        let g = &s.constructions[&1].grid;
+        assert_eq!(g.spec().size, 32);
+        assert_eq!(g.core(), (10, 0, 0));
+        // Границы куба ядра: ±16 вокруг центра.
+        let (lo, hi) = g.core_bounds();
+        assert_eq!(lo, (10 - 16, -16, -16));
+        assert_eq!(hi, (10 + 16, 16, 16));
+    }
+
+    #[test]
+    fn static_core_rejected_in_space() {
+        let mut s = Server::new();
+        s.connect(1, Vec3::ZERO);
+        // Игрок далеко от планеты (в космосе): статичную базу нельзя.
+        let far = Vec3::new(0.0, 0.0, 900_000.0);
+        s.world.entities.get_mut(&1).unwrap().state.pos = far;
+        assert!(s.place_core_as(1, 16, 0, (0, 0, 0)).is_err(), "статичная база только на поверхности");
+    }
+
+    #[test]
+    fn orbital_core_rejected_on_surface() {
+        let mut s = Server::new();
+        s.connect_on_planet(1);
+        // На поверхности орбитальную базу не поставить.
+        assert!(s.place_core_as(1, 16, 2, (0, 0, 0)).is_err(), "орбитальная база только в космосе");
+    }
+
+    #[test]
+    fn ship_core_allowed_anywhere() {
+        let mut s = Server::new();
+        s.connect(1, Vec3::ZERO);
+        s.world.entities.get_mut(&1).unwrap().state.pos = Vec3::new(0.0, 0.0, 900_000.0);
+        assert!(s.place_core_as(1, 64, 1, (0, 0, 0)).is_ok(), "корабль можно где угодно");
+    }
+
+    #[test]
+    fn core_rejects_bad_size() {
+        let mut s = Server::new();
+        s.connect_on_planet(1);
+        assert!(s.place_core_as(1, 20, 0, (0, 0, 0)).is_err(), "допустимы только 16/32/64");
+    }
+
+    #[test]
+    fn core_message_roundtrips_on_wire() {
+        let c = Message::ClientPlaceCore { size: 32, kind: 2, coord: (1, -2, 3) };
+        assert_eq!(ou_protocol::decode(&ou_protocol::encode(&c)).unwrap(), c);
+        let s = Message::ServerCore { entity: 7, size: 16, kind: 0, coord: (0, 0, 0) };
+        assert_eq!(ou_protocol::decode(&ou_protocol::encode(&s)).unwrap(), s);
+        let r = Message::ServerCoreResult { ok: false, message: "нет".to_string() };
+        assert_eq!(ou_protocol::decode(&ou_protocol::encode(&r)).unwrap(), r);
+    }
+
+    #[test]
+    fn core_is_a_voxel_and_accepts_different_sizes() {
+        // Ядро — воксель: средний размер (32 → воксель 2). К нему пристыковываются
+        // воксели разного размера (малый/большой) — стыковка по граням.
+        let mut s = Server::new();
+        s.connect_on_planet(1);
+        let spec = s.place_core_as(1, 32, 0, (0, 0, 0)).unwrap();
+        assert_eq!(spec.size, 32);
+        let g = s.constructions.get(&1).unwrap();
+        assert_eq!(g.grid.core_voxel_size(), 2, "ядро 32 → воксель среднего размера");
+        assert_eq!(g.grid.len(), 1, "ядро — один воксель");
+        // Малый воксель к грани ядра (2×2×2): угол (2,0,0) — вплотную.
+        let small = s.apply_build_as(1, &BuildCommand {
+            entity: 1, action: BuildAction::Place, coord: (2, 0, 0),
+            color: ou_protocol::Color(200, 200, 200), size: 1,
+        });
+        assert_eq!(small, BuildReason::Ok, "малый воксель стыкуется к ядру");
+        // Большой воксель — тоже (грань сверху ядра).
+        let big = s.apply_build_as(1, &BuildCommand {
+            entity: 1, action: BuildAction::Place, coord: (0, 2, 0),
+            color: ou_protocol::Color(150, 150, 150), size: 3,
+        });
+        assert_eq!(big, BuildReason::Ok, "большой воксель стыкуется к ядру");
+        let g = s.constructions.get(&1).unwrap();
+        assert_eq!(g.grid.len(), 3, "ядро + малый + большой воксели");
+        assert!(g.grid.validate().is_ok(), "цепочка связна");
     }
 }

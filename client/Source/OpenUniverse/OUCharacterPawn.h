@@ -25,6 +25,7 @@ enum class EOUBuildPart : uint8
 	Panel   UMETA(DisplayName = "Панель"),
 	Beam    UMETA(DisplayName = "Балка"),
 	Light   UMETA(DisplayName = "Свет"),
+	Core    UMETA(DisplayName = "ЯДРО"),
 	Count   UMETA(Hidden)
 };
 
@@ -137,6 +138,42 @@ public:
 	/** Задать размер кисти напрямую (1/2/3) — клик по квадрату в панели. */
 	UFUNCTION(BlueprintCallable, Category = "Open Universe|Build")
 	void SetBuildBrush(int32 Size);
+
+	// --- Ядро конструкции (в палитре — слот «ЯДРО») ---
+
+	/** Размер будущего ядра: 0 малый(16), 1 средний(32), 2 большой(64). */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Build")
+	int32 CoreSizeSel = 0;
+
+	/** Назначение ядра: 0 статичная база, 1 корабль, 2 орбитальная база. */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Build")
+	int32 CoreKindSel = 0;
+
+	/** Сторона ядра в вокселях по выбору (16/32/64). */
+	UFUNCTION(BlueprintPure, Category = "Open Universe|Build")
+	int32 CoreSizeVoxels() const;
+
+	/** Имя размера ядра (малый/средний/большой). */
+	UFUNCTION(BlueprintPure, Category = "Open Universe|Build")
+	FString CoreSizeName() const;
+
+	/** Имя назначения ядра. */
+	UFUNCTION(BlueprintPure, Category = "Open Universe|Build")
+	FString CoreKindName() const;
+
+	/** Размер вокселя-ядра (1/2/3) — ядро тоже воксель-куб. */
+	UFUNCTION(BlueprintPure, Category = "Open Universe|Build")
+	int32 CoreVoxelSize() const;
+
+	/** Циклически переключить размер/назначение ядра. */
+	UFUNCTION(BlueprintCallable, Category = "Open Universe|Build")
+	void CoreSizeNext();
+	UFUNCTION(BlueprintCallable, Category = "Open Universe|Build")
+	void CoreKindNext();
+
+	/** Поставить ядро в ячейку под прицелом (выбранного размера/назначения). */
+	UFUNCTION(BlueprintCallable, Category = "Open Universe|Build")
+	void PlaceCoreBlock();
 
 	/** Открыть/закрыть отдельное окно размеров вокселя (клавиша V). */
 	UFUNCTION(BlueprintCallable, Category = "Open Universe|Build")
@@ -283,6 +320,9 @@ public:
 	/** Таймер/счётчик проверки всех окон (`-OUAutoMenus`). */
 	float AutoMenuTimer = 0.f;
 	int32 AutoMenuCount = 0;
+	/** Таймер/счётчик проверки ядра (`-OUCore`). */
+	float CoreTimer = 0.f;
+	int32 CoreCount = 0;
 	/** Таймер/счётчик тестового крафта (`-OUAutoCraft`). */
 	float CraftTimer = 0.f;
 	int32 CraftCount = 0;
@@ -502,6 +542,10 @@ private:
 
 	/** Воксели, уже применённые с сервера: ключ «(x,y,z)» → актор блока. */
 	TMap<FIntVector, TObjectPtr<AOUBuildBlock>> ServerBlocks;
+
+	/** Призрачная сетка постройки (каркас куба ядра). Создаётся по необходимости. */
+	UPROPERTY()
+	TObjectPtr<class AOUBuildGrid> BuildGrid = nullptr;
 
 	/** Обратный указатель: актор блока → его координата в сетке. Нужен, чтобы
 	 *  точно адресовать удаление/покраску по блоку, на который смотрит игрок

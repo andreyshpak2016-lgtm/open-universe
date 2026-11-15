@@ -463,6 +463,46 @@ fn main() {
                             }
                         }
                     }
+                    Message::ClientPlaceCore { size, kind, coord } => {
+                        if let Some(pid) = clients.get(&from) {
+                            match server.place_core_as(*pid, size, kind, coord) {
+                                Ok(spec) => {
+                                    let entity = server.entity_of_public(*pid);
+                                    net.send_to(
+                                        token,
+                                        from,
+                                        &Message::ServerCore { entity, size, kind, coord },
+                                    )
+                                    .ok();
+                                    net.send_to(
+                                        token,
+                                        from,
+                                        &Message::ServerCoreResult {
+                                            ok: true,
+                                            message: format!(
+                                                "ядро {}×{} ({})",
+                                                spec.size, spec.size, spec.kind_name()
+                                            ),
+                                        },
+                                    )
+                                    .ok();
+                                    println!(
+                                        "игрок {pid}: ядро {}×{} тип {} в {:?}",
+                                        spec.size, spec.size, kind, coord
+                                    );
+                                }
+                                Err(e) => {
+                                    net.send_to(
+                                        token,
+                                        from,
+                                        &Message::ServerCoreResult { ok: false, message: e.clone() },
+                                    )
+                                    .ok();
+                                    println!("ядро: игрок {pid}: {e}");
+                                }
+                            }
+                        }
+                    }
                     _ => {}
                 },
                 Ok(None) => break,

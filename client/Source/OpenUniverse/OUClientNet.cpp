@@ -416,6 +416,16 @@ void UOUClientNet::SendSetEngine(int32 NewEngine)
 	TArray<uint8> Arr; Arr.Append(Body.data(), static_cast<int32>(Body.size())); SendPacket(Arr);
 }
 
+void UOUClientNet::SendPlaceCore(int32 Size, int32 Kind, int32 X, int32 Y, int32 Z)
+{
+	if (!IsConnected()) { return; }
+	const std::vector<uint8_t> Body = OUWire::EncodePlaceCore(
+		static_cast<uint8_t>(FMath::Clamp(Size, 0, 255)),
+		static_cast<uint8_t>(FMath::Clamp(Kind, 0, 2)),
+		X, Y, Z);
+	TArray<uint8> Arr; Arr.Append(Body.data(), static_cast<int32>(Body.size())); SendPacket(Arr);
+}
+
 void UOUClientNet::UpdateTerritoryAt(double ServerX, double ServerY, double ServerZ)
 {
 	// Точка игрока в серверных единицах; зоны тоже в серверных.
@@ -439,12 +449,12 @@ void UOUClientNet::UpdateTerritoryAt(double ServerX, double ServerY, double Serv
 	bInPeacefulZone = bPeaceful;
 }
 
-void UOUClientNet::SendBuild(int32 Entity, int32 Action, int32 X, int32 Y, int32 Z, int32 R, int32 G, int32 B)
+void UOUClientNet::SendBuild(int32 Entity, int32 Action, int32 X, int32 Y, int32 Z, int32 R, int32 G, int32 B, int32 Size)
 {	if (!IsConnected())
 	{
 		return;
 	}
-	// Тело (тег 6): [tag][entity u32][action u8][x i32][y i32][z i32][r][g][b].
+	// Тело (тег 6): [tag][entity u32][action u8][x i32][y i32][z i32][r][g][b][size].
 	TArray<uint8> Body;
 	Body.Add(6);
 	auto AddU32 = [&Body](uint32 V)
@@ -462,6 +472,7 @@ void UOUClientNet::SendBuild(int32 Entity, int32 Action, int32 X, int32 Y, int32
 	Body.Add(static_cast<uint8>(FMath::Clamp(R, 0, 255)));
 	Body.Add(static_cast<uint8>(FMath::Clamp(G, 0, 255)));
 	Body.Add(static_cast<uint8>(FMath::Clamp(B, 0, 255)));
+	Body.Add(static_cast<uint8>(FMath::Clamp(Size, 1, 3)));
 	SendPacket(Body);
 }
 
@@ -590,6 +601,7 @@ void UOUClientNet::Poll()
 				Edit.Action = static_cast<int32>(E.Action);
 				Edit.X = E.X; Edit.Y = E.Y; Edit.Z = E.Z;
 				Edit.R = E.R; Edit.G = E.G; Edit.B = E.B;
+				Edit.Size = static_cast<int32>(E.Size);
 				Edit.Revision = static_cast<int64>(E.Revision);
 				PendingBuildEdits.Add(Edit);
 			}
@@ -1119,6 +1131,28 @@ void UOUClientNet::Poll()
 			{
 				Engine = static_cast<int32>(S.Engine);
 				UE_LOG(LogOUClient, Log, TEXT("Двигатель: тип %d"), Engine);
+			}
+		}
+		else if (Body[0] == OUWire::TagCore) // ядро конструкции
+		{
+			OUWire::CoreInfo S;
+			if (OUWire::DecodeCore(Body.GetData(), static_cast<size_t>(Body.Num()), S))
+			{
+				CoreSize = static_cast<int32>(S.Size);
+				CoreKind = static_cast<int32>(S.Kind);
+				CoreCoord = FIntVector(S.X, S.Y, S.Z);
+				UE_LOG(LogOUClient, Log, TEXT("Ядро: %dx%d, тип %d, ячейка (%d,%d,%d)"),
+					CoreSize, CoreSize, CoreKind, S.X, S.Y, S.Z);
+			}
+		}
+		else if (Body[0] == OUWire::TagCoreResult) // результат установки ядра
+		{
+			OUWire::CoreResult R;
+			if (OUWire::DecodeCoreResult(Body.GetData(), static_cast<size_t>(Body.Num()), R))
+			{
+				LastCoreMessage = FString(UTF8_TO_TCHAR(R.Message.c_str()));
+				LastCoreTime = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.f;
+				UE_LOG(LogOUClient, Log, TEXT("Ядро: %s"), *LastCoreMessage);
 			}
 		}
 		else if (Body[0] == OUWire::TagMarketState) // состояние экономики

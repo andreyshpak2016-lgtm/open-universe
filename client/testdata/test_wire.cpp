@@ -140,6 +140,7 @@ int main(int argc, char** argv)
     cmd.Action = OUWire::BuildPaint;
     cmd.X = -3; cmd.Y = 0; cmd.Z = 12;
     cmd.R = 10; cmd.G = 20; cmd.B = 30;
+    cmd.Size = 2;   // средний воксель
 
     const std::vector<uint8_t> body_out = OUWire::EncodeBuild(cmd);
     const std::vector<uint8_t> pkt_out = OUWire::EncodePacket(token, body_out);
@@ -701,6 +702,7 @@ int main(int argc, char** argv)
         };
         push_i32(-4); push_i32(7); push_i32(0);
         b.push_back(11); b.push_back(22); b.push_back(33);
+        b.push_back(2);   // размер вокселя (средний)
         OUWire::push_varint(b, 128);
 
         OUWire::BuildEdit e;
@@ -709,6 +711,7 @@ int main(int argc, char** argv)
               "entity/author/action совпали");
         Check(e.X == -4 && e.Y == 7 && e.Z == 0, "координаты вокселя совпали");
         Check(e.R == 11 && e.G == 22 && e.B == 33, "цвет совпал");
+        Check(e.Size == 2, "размер вокселя совпал");
         Check(e.Revision == 128, "ревизия (varint) совпала");
 
         // Права на редактирование (tag 12).

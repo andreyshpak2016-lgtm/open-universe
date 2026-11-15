@@ -21,6 +21,7 @@
 #include "Misc/Parse.h"
 #include "OUProjectile.h"
 #include "OUBuildBlock.h"
+#include "OUBuildGrid.h"
 #include "UObject/ConstructorHelpers.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogOUChar, Log, All);
@@ -451,6 +452,8 @@ void AOUCharacterPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputCom
 	PlayerInputComponent->BindAction(TEXT("BuildBrushPrev"), IE_Pressed, this, &AOUCharacterPawn::BuildBrushPrev);
 	// Отдельное окно размеров вокселя: V — открыть/закрыть.
 	PlayerInputComponent->BindAction(TEXT("VoxelMenu"), IE_Pressed, this, &AOUCharacterPawn::ToggleVoxelMenu);
+	// Ядро: Y — переключить размер ядра (когда выбран слот «ЯДРО»).
+	PlayerInputComponent->BindAction(TEXT("CoreSize"), IE_Pressed, this, &AOUCharacterPawn::CoreSizeNext);
 	// Захват территории: T — объявить текущую зону своей.
 	PlayerInputComponent->BindAction(TEXT("TerritoryCapture"), IE_Pressed, this, &AOUCharacterPawn::CaptureTerritory);
 	// Совместная стройка: H — разрешить ближайшему игроку строить.
@@ -704,6 +707,74 @@ void AOUCharacterPawn::SetBuildBrush(int32 Size)
 	UE_LOG(LogOUChar, Log, TEXT("Кисть строительства: %s (%d)"), *BuildBrushName(), BuildBrush);
 }
 
+int32 AOUCharacterPawn::CoreSizeVoxels() const
+{
+	switch (CoreSizeSel)
+	{
+	case 1: return 32;
+	case 2: return 64;
+	default: return 16;
+	}
+}
+
+FString AOUCharacterPawn::CoreSizeName() const
+{
+	switch (CoreSizeSel)
+	{
+	case 1: return TEXT("средний");
+	case 2: return TEXT("большой");
+	default: return TEXT("малый");
+	}
+}
+
+FString AOUCharacterPawn::CoreKindName() const
+{
+	switch (CoreKindSel)
+	{
+	case 1: return TEXT("корабль");
+	case 2: return TEXT("орбитальная");
+	default: return TEXT("статичная");
+	}
+}
+
+int32 AOUCharacterPawn::CoreVoxelSize() const
+{
+	// Ядро — тоже воксель: малый (16) → 1, средний (32) → 2, большой (64) → 3.
+	return CoreSizeSel + 1;
+}
+
+void AOUCharacterPawn::CoreSizeNext()
+{
+	CoreSizeSel = (CoreSizeSel + 1) % 3;
+	UE_LOG(LogOUChar, Log, TEXT("Ядро: размер %s (%d)"), *CoreSizeName(), CoreSizeVoxels());
+}
+
+void AOUCharacterPawn::CoreKindNext()
+{
+	CoreKindSel = (CoreKindSel + 1) % 3;
+	UE_LOG(LogOUChar, Log, TEXT("Ядро: назначение %s"), *CoreKindName());
+}
+
+void AOUCharacterPawn::PlaceCoreBlock()
+{
+	// Поставить ядро (слот «ЯДРО» в палитре): размер/назначение — по выбору,
+	// ячейка — под прицелом (или перед игроком, если прицел в небо).
+	Net = Net ? Net : FindComponentByClass<UOUClientNet>();
+	if (!Net || !Net->IsConnected() || Net->OwnEntityId == 0)
+	{
+		UE_LOG(LogOUChar, Log, TEXT("Ядро: нет соединения с сервером"));
+		return;
+	}
+	FIntVector Target;
+	if (!ComputeBuildTarget(Target))
+	{
+		return;
+	}
+	Net->SendPlaceCore(CoreSizeVoxels(), CoreKindSel, Target.X, Target.Y, Target.Z);
+	UE_LOG(LogOUChar, Log, TEXT("Ядро: поставить %s %s в (%d,%d,%d)"),
+		*CoreSizeName(), *CoreKindName(), Target.X, Target.Y, Target.Z);
+}
+
 FString AOUCharacterPawn::BuildPartName(int32 Index)
 {
 	switch ((EOUBuildPart)Index)
@@ -712,6 +783,7 @@ FString AOUCharacterPawn::BuildPartName(int32 Index)
 	case EOUBuildPart::Panel: return TEXT("Панель");
 	case EOUBuildPart::Beam:  return TEXT("Балка");
 	case EOUBuildPart::Light: return TEXT("Свет");
+	case EOUBuildPart::Core:  return TEXT("ЯДРО");
 	default: return TEXT("Блок");
 	}
 }
@@ -740,6 +812,12 @@ void AOUCharacterPawn::PlaceBuildBlock()
 		UE_LOG(LogOUChar, Log, TEXT("Строительство: нет прав на эту конструкцию"));
 		return;
 	}
+	// Выбран слот «ЯДРО» — ставим ядро (оно задаёт размер и назначение постройки).
+	if ((EOUBuildPart)BuildSelection == EOUBuildPart::Core)
+	{
+		PlaceCoreBlock();
+		return;
+	}
 
 	const FLinearColor Col = BuildPartColor(BuildSelection);
 	const int32 R = FMath::RoundToInt(Col.R * 255.f);
@@ -758,47 +836,12 @@ void AOUCharacterPawn::PlaceBuildBlock()
 		{
 			return;
 		}
-		Net->SendBuild(Net->OwnEntityId, /*Place=*/0, Target.X, Target.Y, Target.Z, R, G, B);
+		// Один клик = один воксель-куб выбранного размера (кисть 1/2/3 ед.).
+		// Воксели разного размера стыкуются по граням — сервер проверяет связность.
+		Net->SendBuild(Net->OwnEntityId, /*Place=*/0, Target.X, Target.Y, Target.Z, R, G, B, BuildBrush);
 		BuiltCoords.Add(Target);
-		UE_LOG(LogOUChar, Log, TEXT("Строительство: поставить (%d,%d,%d)"), Target.X, Target.Y, Target.Z);
-		// Кисть больше 1: заполняем куб N×N×N, ЦЕНТРИРОВАННЫЙ на ячейке-якоре.
-		// Порядок важен: сервер требует, чтобы каждый воксель примыкал к уже
-		// поставленному (6-связность к ядру). Поэтому идём «слоями» от центра —
-		// по возрастанию манхэттенского расстояния. Тогда каждая ячейка имеет
-		// соседа ближе к центру, который уже принят.
-		if (BuildBrush > 1)
-		{
-			const int32 Half = BuildBrush / 2;
-			TArray<FIntVector> Offsets;
-			for (int32 dx = -Half; dx < -Half + BuildBrush; ++dx)
-			{
-				for (int32 dy = -Half; dy < -Half + BuildBrush; ++dy)
-				{
-					for (int32 dz = -Half; dz < -Half + BuildBrush; ++dz)
-					{
-						if (dx == 0 && dy == 0 && dz == 0) { continue; }
-						Offsets.Add(FIntVector(dx, dy, dz));
-					}
-				}
-			}
-			Offsets.Sort([](const FIntVector& A, const FIntVector& B)
-			{
-				const int32 DA = FMath::Abs(A.X) + FMath::Abs(A.Y) + FMath::Abs(A.Z);
-				const int32 DB = FMath::Abs(B.X) + FMath::Abs(B.Y) + FMath::Abs(B.Z);
-				if (DA != DB) { return DA < DB; }
-				if (A.X != B.X) { return A.X < B.X; }
-				if (A.Y != B.Y) { return A.Y < B.Y; }
-				return A.Z < B.Z;
-			});
-			for (const FIntVector& O : Offsets)
-			{
-				const FIntVector C(Target.X + O.X, Target.Y + O.Y, Target.Z + O.Z);
-				Net->SendBuild(Net->OwnEntityId, /*Place=*/0, C.X, C.Y, C.Z, R, G, B);
-				BuiltCoords.Add(C);
-			}
-			UE_LOG(LogOUChar, Log, TEXT("Кисть %s: куб %d×%d×%d вокруг (%d,%d,%d)"),
-				*BuildBrushName(), BuildBrush, BuildBrush, BuildBrush, Target.X, Target.Y, Target.Z);
-		}
+		UE_LOG(LogOUChar, Log, TEXT("Строительство: воксель %s в (%d,%d,%d)"),
+			*BuildBrushName(), Target.X, Target.Y, Target.Z);
 		// Обучение: строительство.
 		if (AOUPlayerMenuController* MenuB = Cast<AOUPlayerMenuController>(GetController()))
 		{
@@ -845,6 +888,7 @@ void AOUCharacterPawn::UpdateBuildGhost()
 	if (!bBuildMenuOpen)
 	{
 		BuildGhost->SetVisibility(false);
+		if (BuildGrid) { BuildGrid->SetGridVisible(false); }
 		return;
 	}
 
@@ -857,26 +901,44 @@ void AOUCharacterPawn::UpdateBuildGhost()
 	}
 
 	const FVector Pos = VoxelWorld(FVector(Target.X, Target.Y, Target.Z));
-	// Разметка совпадает с размером ставящегося вокселя: кисть N×N×N → призрак
-	// охватывает весь куб из N вокселей, а не всегда один. Центр куба — середина
-	// набора ячеек (среднее смещение кисти). Так призрак точно накрывает то, что
-	// реально встанет при клике.
-	const int32 Side = BuildBrushSide();
-	const int32 Half = Side / 2;
-	const double Mean = static_cast<double>(-Half) + static_cast<double>(Side - 1) * 0.5;
-	const FVector CubeCenter = VoxelWorld(FVector(Target.X + Mean, Target.Y + Mean, Target.Z + Mean));
-	BuildGhost->SetWorldLocation(CubeCenter);
+	// Размер призрака: у блока — размер кисти (1/2/3 → 1.5/3/4.5 м), у ядра —
+	// размер вокселя-ядра. Призрак — ОДИН куб (клик ставит один воксель).
+	const bool bCoreSel = ((EOUBuildPart)BuildSelection == EOUBuildPart::Core);
+	const int32 VoxSide = bCoreSel ? CoreVoxelSize() : BuildBrushSide();
+	BuildGhost->SetWorldLocation(Pos);
 	// Ориентация призрака — как у реального блока (по осям сетки).
 	BuildGhost->SetWorldRotation(BuildGridRotation());
-	// Масштаб: базовый куб движка — 100 см; воксель — 150 см. Для кисти N призрак
-	// охватывает N вокселей: 150*N / 100.
-	const float Scale = (150.f * static_cast<float>(Side)) / 100.f;
+	// Масштаб: базовый куб движка — 100 см; воксель — 150 см × размер.
+	const float Scale = (150.f * static_cast<float>(VoxSide)) / 100.f;
 	BuildGhost->SetWorldScale3D(FVector(Scale));
-	// Полупрозрачный цвет выбранной детали (ярче — видно поверх земли).
-	const FLinearColor Col = BuildPartColor(BuildSelection);
+	// Ядро — синеватый призрак (отличить от блоков).
+	const FLinearColor Col = bCoreSel
+		? FLinearColor(0.35f, 0.75f, 1.0f)
+		: BuildPartColor(BuildSelection);
 	BuildGhost->SetVectorParameterValueOnMaterials(TEXT("Color"),
 		FVector(Col.R * 0.8f + 0.2f, Col.G * 0.8f + 0.2f, Col.B * 0.8f + 0.2f));
 	BuildGhost->SetVisibility(true);
+
+	// Сетка ядра: когда выбран слот «ЯДРО», показываем «еле видный» каркас куба
+	// размером с будущее ядро — границы, в которых можно строить. Центр — ячейка
+	// под прицелом (не куб кисти), чтобы игрок понимал, где встанет ядро.
+	if (bCoreSel)
+	{
+		UWorld* World = GetWorld();
+		if (!BuildGrid && World)
+		{
+			BuildGrid = World->SpawnActor<AOUBuildGrid>(AOUBuildGrid::StaticClass(), FTransform::Identity);
+		}
+		if (BuildGrid)
+		{
+			const FVector CoreCenter = VoxelWorld(FVector(Target.X, Target.Y, Target.Z));
+			BuildGrid->Setup(CoreCenter, 150.0 * static_cast<double>(CoreSizeVoxels()), BuildGridRotation());
+		}
+	}
+	else if (BuildGrid)
+	{
+		BuildGrid->SetGridVisible(false);
+	}
 	// Диагностика `-OUGhostLog`: печатаем позицию призрака раз в ~секунду.
 	if (FParse::Param(FCommandLine::Get(), TEXT("OUGhostLog")))
 	{
@@ -1199,7 +1261,10 @@ void AOUCharacterPawn::ApplyServerBuildEdits()
 					AOUBuildBlock::StaticClass(), FTransform(BuildGridRotation(), Pos));
 				if (Block)
 				{
-					Block->BlockSize = 150.f;   // 1.5 м — совпадает с шагом сетки
+					// Размер блока — из правки (1/2/3 → 1.5/3/4.5 м). Воксели
+					// разного размера видны как кубы разной величины.
+					const int32 VSize = FMath::Clamp(static_cast<int32>(E.Size), 1, 3);
+					Block->BlockSize = 150.f * static_cast<float>(VSize);
 					Block->BlockColor = FLinearColor(E.R / 255.f, E.G / 255.f, E.B / 255.f);
 					Block->ApplyLook();
 					ServerBlocks.Add(Key, Block);
@@ -1210,7 +1275,8 @@ void AOUCharacterPawn::ApplyServerBuildEdits()
 					{
 						++BuiltCount;
 					}
-					UE_LOG(LogOUChar, Log, TEXT("Авторитетный блок (%d,%d,%d) от сервера"), E.X, E.Y, E.Z);
+					UE_LOG(LogOUChar, Log, TEXT("Авторитетный блок (%d,%d,%d) размера %d от сервера"),
+						E.X, E.Y, E.Z, VSize);
 				}
 			}
 		}
@@ -2151,9 +2217,34 @@ void AOUCharacterPawn::Tick(float DeltaSeconds)
 		}
 	}
 
+	// Диагностика `-OUCore`: открыть стройку, выбрать слот «ЯДРО» и поставить его
+	// под прицелом (проверка ядер и призрачной сетки одним прогоном).
+	if (FParse::Param(FCommandLine::Get(), TEXT("OUCore")))
+	{
+		CoreTimer += DeltaSeconds;
+		if (CoreTimer >= 2.0f && CoreCount < 3)
+		{
+			CoreTimer = 0.f;
+			++CoreCount;
+			if (CoreCount == 1)
+			{
+				if (!bBuildMenuOpen) { ToggleBuildMenu(); }
+				SelectBuildPart((int32)EOUBuildPart::Core);
+				// Диагностика `-OUCoreBig`: выбрать большой размер ядра (64).
+				if (FParse::Param(FCommandLine::Get(), TEXT("OUCoreBig")))
+				{
+					CoreSizeSel = 2;
+				}
+			}
+			else if (CoreCount == 2)
+			{
+				PlaceCoreBlock();
+			}
+		}
+	}
+
 	// Диагностика `-OUAutoMenus`: по очереди открыть все окна в игре, чтобы одним
-	// прогоном проверить их работоспособность (в логе — строка открытия каждого).
-	if (FParse::Param(FCommandLine::Get(), TEXT("OUAutoMenus")))
+	// прогоном проверить их работоспособность (в логе — строка открытия каждого).	if (FParse::Param(FCommandLine::Get(), TEXT("OUAutoMenus")))
 	{
 		if (AOUPlayerMenuController* MM = Cast<AOUPlayerMenuController>(GetController()))
 		{
