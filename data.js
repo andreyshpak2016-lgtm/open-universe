@@ -98,6 +98,7 @@ window.PLAN = {
         { "title": "Размер кисти постановки (C/V: малый/средний/большой, куб N×N×N от центра к краям)", "title_en": "Build brush size (C/V: small/medium/large, an N×N×N cube from centre outward)", "status": "done" },
         { "title": "Типы двигателей: атмосферный/ионный/универсальный (клавиша J; тяга зависит от высоты, бит-в-бит с сервером)", "title_en": "Engine types: atmospheric/ion/universal (key J; thrust depends on altitude, bit-exact with the server)", "status": "done" },
         { "title": "Сетка деталей и «ядра» конструкций", "title_en": "Part and construction core grid", "status": "done" },
+        { "title": "Несколько ядер на игрока с лимитами (2 базы / 3 корабля / 2 динамических; тип «орбитальное» → «динамическое»; своё активное ядро)", "title_en": "Multiple cores per player with per-kind limits (2 base / 3 ship / 2 dynamic; \"orbital\" renamed to \"dynamic\"; own active core)", "status": "done" },
         { "title": "Валидация физической целостности", "title_en": "Physical integrity validation", "status": "done" },
         { "title": "Совместное строительство: репликация правок, выдача прав (H) и индикатор прав в UE", "title_en": "Co-op building: edit replication, granting rights (H) and a rights indicator in UE", "status": "done" },
         { "title": "Редактор в игре: ставить / удалять / красить (прицел, Е/R)", "title_en": "In-game editor: place / remove / paint (crosshair, E/R)", "status": "done" },

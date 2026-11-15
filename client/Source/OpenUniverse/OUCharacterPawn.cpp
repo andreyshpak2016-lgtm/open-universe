@@ -597,8 +597,10 @@ void AOUCharacterPawn::PlaceBlueprint(int32 BlueprintId)
 			Target = WorldToVoxel(GroundDir * (SurfaceRadius(GroundDir) + 75.f));
 		}
 	}
-	Net->SendPlaceBlueprint(BlueprintId, Target.X, Target.Y, Target.Z, Net->OwnEntityId);
-	UE_LOG(LogOUChar, Log, TEXT("Шаблон %d: поставлен в (%d,%d,%d)"), BlueprintId, Target.X, Target.Y, Target.Z);
+	const int32 TargetCore = (Net->ActiveCoreId != 0) ? Net->ActiveCoreId : Net->OwnEntityId;
+	Net->SendPlaceBlueprint(BlueprintId, Target.X, Target.Y, Target.Z, TargetCore);
+	UE_LOG(LogOUChar, Log, TEXT("Шаблон %d: поставлен в (%d,%d,%d) ядро %d"),
+		BlueprintId, Target.X, Target.Y, Target.Z, TargetCore);
 }
 
 void AOUCharacterPawn::BlueprintNext()
@@ -732,7 +734,7 @@ FString AOUCharacterPawn::CoreKindName() const
 	switch (CoreKindSel)
 	{
 	case 1: return TEXT("корабль");
-	case 2: return TEXT("орбитальная");
+	case 2: return TEXT("динамическое");
 	default: return TEXT("статичная");
 	}
 }
@@ -847,10 +849,12 @@ void AOUCharacterPawn::PlaceBuildBlock()
 		}
 		// Один клик = один воксель-куб выбранного размера (кисть 1/2/3 ед.).
 		// Воксели разного размера стыкуются по граням — сервер проверяет связность.
-		Net->SendBuild(Net->OwnEntityId, /*Place=*/0, Target.X, Target.Y, Target.Z, R, G, B, BuildBrush);
+		// Ставим в АКТИВНОЕ ядро (у игрока их может быть несколько).
+		const int32 TargetCore = (Net->ActiveCoreId != 0) ? Net->ActiveCoreId : Net->OwnEntityId;
+		Net->SendBuild(TargetCore, /*Place=*/0, Target.X, Target.Y, Target.Z, R, G, B, BuildBrush);
 		BuiltCoords.Add(Target);
-		UE_LOG(LogOUChar, Log, TEXT("Строительство: воксель %s в (%d,%d,%d)"),
-			*BuildBrushName(), Target.X, Target.Y, Target.Z);
+		UE_LOG(LogOUChar, Log, TEXT("Строительство: воксель %s в (%d,%d,%d) ядро %d"),
+			*BuildBrushName(), Target.X, Target.Y, Target.Z, TargetCore);
 		// Обучение: строительство.
 		if (AOUPlayerMenuController* MenuB = Cast<AOUPlayerMenuController>(GetController()))
 		{
@@ -945,15 +949,17 @@ void AOUCharacterPawn::UpdateCoreGrid()
 {
 	// Сетка-радиус постройки (каркас области ядра). Показывается:
 	//  * при выборе слота «ЯДРО» в палитре — превью в месте постановки;
-	//  * когда прицел НАВЕДЁН на поставленное ядро — видно радиус постройки.
+	//  * когда прицел НАВЕДЁН на ядро (своё или чужое) — видно радиус постройки.
 	// В остальное время скрыта (не мешает обзору).
 	bool bShowGrid = false;
 	FVector GridCenter = FVector::ZeroVector;
 	double GridSideCm = 0.0;
 
+	Net = Net ? Net : FindComponentByClass<UOUClientNet>();
 	const bool bCoreSel = ((EOUBuildPart)BuildSelection == EOUBuildPart::Core);
 	if (bBuildMenuOpen && bCoreSel)
 	{
+		// Превью: где встанет ядро выбранного размера.
 		FIntVector Target;
 		if (ComputeBuildTarget(Target))
 		{
@@ -962,17 +968,23 @@ void AOUCharacterPawn::UpdateCoreGrid()
 			GridSideCm = 150.0 * static_cast<double>(CoreSizeVoxels());
 		}
 	}
-	else if (Net && Net->CoreSize > 0)
+	else if (Net)
 	{
 		// Наведён ли прицел на ядро (координата под прицелом == ячейка ядра)?
 		FIntVector AimCoord;
 		FVector AimHit, AimNormal;
-		if (TraceBuildTarget(AimCoord, AimHit, AimNormal) && AimCoord == Net->CoreCoord)
+		if (TraceBuildTarget(AimCoord, AimHit, AimNormal))
 		{
-			bShowGrid = true;
-			GridCenter = VoxelWorld(
-				FVector(Net->CoreCoord.X, Net->CoreCoord.Y, Net->CoreCoord.Z), Net->CoreSize);
-			GridSideCm = 150.0 * static_cast<double>(Net->CoreSize);
+			for (const FOUCoreInfo& C : Net->Cores)
+			{
+				if (C.Size > 0 && C.Coord == AimCoord)
+				{
+					bShowGrid = true;
+					GridCenter = VoxelWorld(FVector(C.Coord.X, C.Coord.Y, C.Coord.Z), C.Size);
+					GridSideCm = 150.0 * static_cast<double>(C.Size);
+					break;
+				}
+			}
 		}
 	}
 
@@ -1142,8 +1154,10 @@ void AOUCharacterPawn::RemoveBuildBlock()
 	}
 	if (Net && Net->IsConnected() && Net->OwnEntityId != 0)
 	{
-		Net->SendBuild(Net->OwnEntityId, /*Remove=*/1, Coord.X, Coord.Y, Coord.Z, 0, 0, 0);
-		UE_LOG(LogOUChar, Log, TEXT("Строительство: удалить (%d,%d,%d)"), Coord.X, Coord.Y, Coord.Z);
+		const int32 TargetCore = (Net->ActiveCoreId != 0) ? Net->ActiveCoreId : Net->OwnEntityId;
+		Net->SendBuild(TargetCore, /*Remove=*/1, Coord.X, Coord.Y, Coord.Z, 0, 0, 0);
+		UE_LOG(LogOUChar, Log, TEXT("Строительство: удалить (%d,%d,%d) ядро %d"),
+			Coord.X, Coord.Y, Coord.Z, TargetCore);
 	}
 }
 
@@ -1161,11 +1175,13 @@ void AOUCharacterPawn::PaintBuildBlock()
 	if (Net && Net->IsConnected() && Net->OwnEntityId != 0)
 	{
 		const FLinearColor Col = BuildPartColor(BuildSelection);
-		Net->SendBuild(Net->OwnEntityId, /*Paint=*/2, Coord.X, Coord.Y, Coord.Z,
+		const int32 TargetCore = (Net->ActiveCoreId != 0) ? Net->ActiveCoreId : Net->OwnEntityId;
+		Net->SendBuild(TargetCore, /*Paint=*/2, Coord.X, Coord.Y, Coord.Z,
 			FMath::RoundToInt(Col.R * 255.f),
 			FMath::RoundToInt(Col.G * 255.f),
 			FMath::RoundToInt(Col.B * 255.f));
-		UE_LOG(LogOUChar, Log, TEXT("Строительство: покрасить (%d,%d,%d)"), Coord.X, Coord.Y, Coord.Z);
+		UE_LOG(LogOUChar, Log, TEXT("Строительство: покрасить (%d,%d,%d) ядро %d"),
+			Coord.X, Coord.Y, Coord.Z, TargetCore);
 	}
 }
 
@@ -1238,34 +1254,43 @@ bool AOUCharacterPawn::ComputeBuildTarget(FIntVector& OutTarget) const
 		}
 	}
 
-	// 2. Под прицелом земли. Если постройки ещё нет — ставим на землю впервые
-	//    (этот блок основывает конструкцию: ядро переезжает на него).
+	// 2. Под прицелом земли. Если в АКТИВНОМ ядре ещё нет блоков — ставим первым
+	//    (постройку уже основало ядро, оно стоит в центре области).
 	FVector GroundDir;
 	const bool bAim = AimTerrainDir(GroundDir);
 	const FIntVector Ground = bAim
 		? WorldToVoxel(GroundDir * (SurfaceRadius(GroundDir) + 75.f))
 		: FIntVector(BuiltCount + 1, 0, 0);
 
-	if (ServerBlocks.Num() == 0 && BuiltCoords.Num() == 0)
+	// Блоки только активного ядра (в новой модели постройка — это ядро).
+	TArray<FIntVector> Known;
+	if (const TSet<FIntVector>* Set = CoreBlocks.Find(Net ? Net->ActiveCoreId : 0))
+	{
+		Known.Reserve(Set->Num());
+		for (const FIntVector& C : *Set) { Known.Add(C); }
+	}
+	if (Known.Num() == 0 && ServerBlocks.Num() == 0 && BuiltCoords.Num() == 0)
 	{
 		OutTarget = Ground;
 		return true;
 	}
 
-	// 3. Постройка есть. Опираемся на ПРИНЯТЫЕ сервером блоки (ServerBlocks) —
-	//    это истина; пока правка не дошла, допускаем и только что отправленные
-	//    (BuiltCoords), чтобы серия быстрых кликов строилась связно. Но если
-	//    принятый блок уже есть, ориентируемся только на него: снап к отклонённой
-	//    ячейке снова дал бы «нет связи с ядром».
-	TArray<FIntVector> Known;
-	if (ServerBlocks.Num() > 0)
+	// 3. Постройка есть. Опираемся на ПРИНЯТЫЕ сервером блоки — это истина; пока
+	//    правка не дошла, допускаем и только что отправленные (BuiltCoords), чтобы
+	//    серия быстрых кликов строилась связно. Если принятый блок ядра уже есть,
+	//    ориентируемся только на него: снап к отклонённой ячейке снова дал бы
+	//    «нет связи с ядром».
+	if (Known.Num() == 0)
 	{
-		Known.Reserve(ServerBlocks.Num());
-		for (const TPair<FIntVector, TObjectPtr<AOUBuildBlock>>& P : ServerBlocks) { Known.Add(P.Key); }
-	}
-	else
-	{
-		Known = BuiltCoords;
+		if (ServerBlocks.Num() > 0 && BuiltCoords.Num() == 0)
+		{
+			Known.Reserve(ServerBlocks.Num());
+			for (const TPair<FIntVector, TObjectPtr<AOUBuildBlock>>& P : ServerBlocks) { Known.Add(P.Key); }
+		}
+		else
+		{
+			Known = BuiltCoords;
+		}
 	}
 	if (Known.Num() == 0)
 	{
@@ -1310,20 +1335,15 @@ void AOUCharacterPawn::ApplyServerBuildEdits()
 	{
 		return;
 	}
-	// Сервер поставил новое ядро — он очистил сетку постройки. Убираем старые
-	// кубы и у себя: иначе установка ядра «не видна» (её закрывают старые блоки).
+	// В модели «несколько ядер» постройки не пересоздаются: сервер выдаёт новому
+	// ядру новый id, а прежние ядра со своими блоками остаются. Флаг сброса лишь
+	// закрываем (совместимость), но глобально блоки не снимаем.
 	if (Net->bCoreResetPending)
 	{
 		Net->bCoreResetPending = false;
-		for (const TPair<FIntVector, TObjectPtr<AOUBuildBlock>>& P : ServerBlocks)
-		{
-			if (P.Value) { P.Value->Destroy(); }
-		}
-		ServerBlocks.Reset();
-		BlockCoords.Reset();
+		// Сбрасываем только «отправленные, но не подтверждённые» координаты:
+		// при смене активного ядра планировщик больше не должен на них опираться.
 		BuiltCoords.Reset();
-		BuiltCount = 0;
-		UE_LOG(LogOUChar, Log, TEXT("Ядро: сброшены локальные блоки (новое ядро)"));
 	}
 	if (Net->PendingBuildEdits.Num() == 0)
 	{
@@ -1334,11 +1354,15 @@ void AOUCharacterPawn::ApplyServerBuildEdits()
 	{
 		return;
 	}
-	// Забираем очередь правок (сервер уже авторитетно их применил).
-	int64 MaxRev = LastAppliedRevision;
+	const int32 ActiveCore = Net->ActiveCoreId;
+	// Забираем очередь правок (сервер уже авторитетно их применил). Каждая правка
+	// привязана к своему ядру (`E.Entity` = id ядра).
+	TSet<int32> TouchedCores;
 	for (const FOUBuildEdit& E : Net->PendingBuildEdits)
 	{
 		const FIntVector Key(E.X, E.Y, E.Z);
+		const int32 CoreId = E.Entity;
+		TouchedCores.Add(CoreId);
 		if (E.Action == 0) // Place
 		{
 			TObjectPtr<AOUBuildBlock>* Found = ServerBlocks.Find(Key);
@@ -1356,21 +1380,22 @@ void AOUCharacterPawn::ApplyServerBuildEdits()
 				{
 					Block->BlockSize = 150.f * static_cast<float>(VSize);
 					// Цвет берём с сервера: у ядра он свой по назначению (корабль/
-					// орбитальная/статичная), у обычных блоков — по материалу.
+					// динамическое/статичная), у обычных блоков — по материалу.
 					Block->BlockColor = FLinearColor(E.R / 255.f, E.G / 255.f, E.B / 255.f);
 					Block->ApplyLook();
 					ServerBlocks.Add(Key, Block);
 					BlockCoords.Add(Block, Key);
+					CoreBlocks.FindOrAdd(CoreId).Add(Key);
 					// Ядро определяем по координате из сервера (для лога).
-					const bool bIsCore = (E.Entity == Net->OwnEntityId && Key == Net->CoreCoord);
-					// Счётчик — только по ПРИНЯТЫМ сервером блокам своей конструкции
+					const bool bIsCore = (CoreId == ActiveCore && Key == Net->CoreCoord);
+					// Счётчик — только по ПРИНЯТЫМ сервером блокам АКТИВНОГО ядра
 					// (не по кликам): так он честно показывает, что реально стоит.
-					if (E.Entity == Net->OwnEntityId)
+					if (CoreId == ActiveCore)
 					{
 						++BuiltCount;
 					}
-					UE_LOG(LogOUChar, Log, TEXT("Авторитетный блок (%d,%d,%d) размера %d%s от сервера"),
-						E.X, E.Y, E.Z, VSize, bIsCore ? TEXT(" [ЯДРО]") : TEXT(""));
+					UE_LOG(LogOUChar, Log, TEXT("Авторитетный блок (%d,%d,%d) размера %d ядра %d%s от сервера"),
+						E.X, E.Y, E.Z, VSize, CoreId, bIsCore ? TEXT(" [ЯДРО]") : TEXT(""));
 					if (bIsCore)
 					{
 						const FVector CamPos = Camera ? Camera->GetComponentLocation() : GetActorLocation();
@@ -1391,7 +1416,8 @@ void AOUCharacterPawn::ApplyServerBuildEdits()
 					(*Found)->Destroy();
 				}
 				ServerBlocks.Remove(Key);
-				if (E.Entity == Net->OwnEntityId && BuiltCount > 0)
+				if (TSet<FIntVector>* Set = CoreBlocks.Find(CoreId)) { Set->Remove(Key); }
+				if (CoreId == ActiveCore && BuiltCount > 0)
 				{
 					--BuiltCount;
 				}
@@ -1408,12 +1434,14 @@ void AOUCharacterPawn::ApplyServerBuildEdits()
 				}
 			}
 		}
-		MaxRev = FMath::Max(MaxRev, E.Revision);
+		LastRevisionByCore.FindOrAdd(CoreId) = E.Revision;
 	}
-	LastAppliedRevision = MaxRev;
-	// Подтверждаем приём — сервер не будет слать эти правки снова.
-	const int32 Entity = (Net->OwnEntityId != 0) ? Net->OwnEntityId : 1;
-	Net->SendBuildAck(Entity, MaxRev);
+	// Подтверждаем приём по каждому ядру — сервер не будет слать эти правки снова.
+	for (int32 CoreId : TouchedCores)
+	{
+		const int64 Rev = LastRevisionByCore.FindRef(CoreId);
+		Net->SendBuildAck(CoreId, Rev);
+	}
 	Net->PendingBuildEdits.Reset();
 }
 
@@ -2375,15 +2403,16 @@ void AOUCharacterPawn::Tick(float DeltaSeconds)
 				Net = Net ? Net : FindComponentByClass<UOUClientNet>();
 				if (Net && Net->IsConnected() && Net->CoreSize > 0)
 				{
+					const int32 Core = (Net->ActiveCoreId != 0) ? Net->ActiveCoreId : Net->OwnEntityId;
 					const FIntVector C = Net->CoreCoord;
 					// Ядро занимает N ячеек от C. Приставляем к грани +X:
 					// малый блок — за дальней гранью ядра.
 					const int32 N = (Net->CoreSize == 64) ? 3 : (Net->CoreSize == 32 ? 2 : 1);
-					Net->SendBuild(Net->OwnEntityId, 0, C.X + N, C.Y, C.Z, 80, 200, 120, 1);
+					Net->SendBuild(Core, 0, C.X + N, C.Y, C.Z, 80, 200, 120, 1);
 					// Средний — вплотную по +Y.
-					Net->SendBuild(Net->OwnEntityId, 0, C.X, C.Y + N, C.Z, 200, 160, 80, 2);
+					Net->SendBuild(Core, 0, C.X, C.Y + N, C.Z, 200, 160, 80, 2);
 					// Большой — вплотную по +Z.
-					Net->SendBuild(Net->OwnEntityId, 0, C.X, C.Y, C.Z + N, 140, 140, 220, 3);
+					Net->SendBuild(Core, 0, C.X, C.Y, C.Z + N, 140, 140, 220, 3);
 				}
 			}
 		}
@@ -2447,7 +2476,8 @@ void AOUCharacterPawn::Tick(float DeltaSeconds)
 				const FIntVector C = BuiltCoords.Last();
 				if (Net && Net->IsConnected() && Net->OwnEntityId != 0)
 				{
-					Net->SendBuild(Net->OwnEntityId, /*Paint=*/2, C.X, C.Y, C.Z, 255, 220, 80);
+					const int32 Core = (Net->ActiveCoreId != 0) ? Net->ActiveCoreId : Net->OwnEntityId;
+					Net->SendBuild(Core, /*Paint=*/2, C.X, C.Y, C.Z, 255, 220, 80);
 					UE_LOG(LogOUChar, Log, TEXT("Автотест: покрасить (%d,%d,%d)"), C.X, C.Y, C.Z);
 				}
 			}
@@ -2457,7 +2487,8 @@ void AOUCharacterPawn::Tick(float DeltaSeconds)
 				const FIntVector C = BuiltCoords.Last();
 				if (Net && Net->IsConnected() && Net->OwnEntityId != 0)
 				{
-					Net->SendBuild(Net->OwnEntityId, /*Remove=*/1, C.X, C.Y, C.Z, 0, 0, 0);
+					const int32 Core = (Net->ActiveCoreId != 0) ? Net->ActiveCoreId : Net->OwnEntityId;
+					Net->SendBuild(Core, /*Remove=*/1, C.X, C.Y, C.Z, 0, 0, 0);
 					UE_LOG(LogOUChar, Log, TEXT("Автотест: удалить (%d,%d,%d)"), C.X, C.Y, C.Z);
 				}
 			}

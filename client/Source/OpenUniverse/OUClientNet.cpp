@@ -1141,21 +1141,48 @@ void UOUClientNet::Poll()
 				const FIntVector NewCoord(S.X, S.Y, S.Z);
 				const int32 NewSize = static_cast<int32>(S.Size);
 				const int32 NewKind = static_cast<int32>(S.Kind);
-				// Сброс локальных блоков нужен ТОЛЬКО когда ядро реально сменилось
-				// (сервер шлёт ServerCore и при каждой полной выгрузке — иначе
-				// постройка мигала бы, удаляясь и создаваясь заново).
-				const bool bCoreChanged =
-					(CoreSize != NewSize) || (CoreKind != NewKind) || (CoreCoord != NewCoord);
-				CoreSize = NewSize;
-				CoreKind = NewKind;
-				CoreCoord = NewCoord;
-				if (bCoreChanged)
+				const int32 CoreId = static_cast<int32>(S.Entity);
+				const int32 Owner = static_cast<int32>(S.Owner);
+				// Запоминаем ядро в списке (обновляем, если оно уже было).
+				FOUCoreInfo* Found = Cores.FindByPredicate(
+					[CoreId](const FOUCoreInfo& C) { return C.Entity == CoreId; });
+				if (Found)
 				{
-					bCoreResetPending = true;
+					Found->Owner = Owner;
+					Found->Size = NewSize;
+					Found->Kind = NewKind;
+					Found->Coord = NewCoord;
 				}
-				UE_LOG(LogOUClient, Log, TEXT("Ядро: %dx%d, тип %d, ячейка (%d,%d,%d)%s"),
-					CoreSize, CoreSize, CoreKind, S.X, S.Y, S.Z,
-					bCoreChanged ? TEXT(" (новое)") : TEXT(""));
+				else
+				{
+					FOUCoreInfo C;
+					C.Entity = CoreId;
+					C.Owner = Owner;
+					C.Size = NewSize;
+					C.Kind = NewKind;
+					C.Coord = NewCoord;
+					Cores.Add(C);
+				}
+				// Свои ядра: активным делаем новое (последнее пришедшее), чтобы
+				// клиент сразу строил в нём; при этом сбрасываем локальные блоки
+				// только когда реально сменилось активное ядро.
+				if (Owner == OwnEntityId)
+				{
+					const bool bSwitched = (ActiveCoreId != CoreId);
+					const bool bMoved =
+						(CoreSize != NewSize) || (CoreKind != NewKind) || (CoreCoord != NewCoord);
+					ActiveCoreId = CoreId;
+					CoreSize = NewSize;
+					CoreKind = NewKind;
+					CoreCoord = NewCoord;
+					if (bSwitched || bMoved)
+					{
+						bCoreResetPending = true;
+					}
+					UE_LOG(LogOUClient, Log, TEXT("Ядро %d: %dx%d, тип %d, ячейка (%d,%d,%d)%s"),
+						CoreId, CoreSize, CoreSize, CoreKind, S.X, S.Y, S.Z,
+						(bSwitched || bMoved) ? TEXT(" (активное)") : TEXT(""));
+				}
 			}
 		}
 		else if (Body[0] == OUWire::TagCoreResult) // результат установки ядра

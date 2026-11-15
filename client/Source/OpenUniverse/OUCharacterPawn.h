@@ -145,7 +145,7 @@ public:
 	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Build")
 	int32 CoreSizeSel = 0;
 
-	/** Назначение ядра: 0 статичная база, 1 корабль, 2 орбитальная база. */
+	/** Назначение ядра: 0 статичная база, 1 корабль, 2 динамическое. */
 	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Build")
 	int32 CoreKindSel = 0;
 
@@ -548,6 +548,13 @@ private:
 	/** Воксели, уже применённые с сервера: ключ «(x,y,z)» → актор блока. */
 	TMap<FIntVector, TObjectPtr<AOUBuildBlock>> ServerBlocks;
 
+	/** Ячейки вокселей по ядрам: id ядра → набор координат блоков.
+	 *  Нужно, чтобы строить только в АКТИВНОМ ядре и считать его блоки. */
+	TMap<int32, TSet<FIntVector>> CoreBlocks;
+
+	/** Крайняя применённая ревизия правок по каждому ядру (для подтверждения). */
+	TMap<int32, int64> LastRevisionByCore;
+
 	/** Призрачная сетка постройки (каркас куба ядра). Создаётся по необходимости. */
 	UPROPERTY()
 	TObjectPtr<class AOUBuildGrid> BuildGrid = nullptr;
@@ -559,9 +566,6 @@ private:
 
 	/** Начало отсчёта сетки конструкции (в серверных единицах). */
 	FVector BuildOriginServer = FVector::ZeroVector;
-
-	/** Крайняя применённая ревизия правок (для подтверждения серверу). */
-	int64 LastAppliedRevision = 0;
 
 	/** Размер вокселя, на который попал прицел (1/2/3) — для сдвига на грань.
 	 *  Изменяется в TraceBuildTarget (не const-поля через mutable нет). */

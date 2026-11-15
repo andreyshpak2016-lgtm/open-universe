@@ -1130,7 +1130,7 @@ void AOUPlayerMenuController::DrawBuildMenu(UCanvas* InCanvas)
 	}
 
 	// Ядро: если выбран слот «ЯДРО» — показываем выбор размера (16/32/64) и
-	// назначения (статичная база / корабль / орбитальная). Клик переключает.
+	// назначения (статичная база / корабль / динамическое). Клик переключает.
 	const bool bCoreSel = ((EOUBuildPart)Char->BuildSelection == EOUBuildPart::Core);
 	if (bCoreSel)
 	{
@@ -1145,6 +1145,14 @@ void AOUPlayerMenuController::DrawBuildMenu(UCanvas* InCanvas)
 			CP + FVector2D(0, 20), ColMuted);
 		Buttons.Add({ CP + FVector2D(-8, -4), FVector2D(320, 26), 3000 });
 		Buttons.Add({ CP + FVector2D(-8, 18), FVector2D(320, 22), 3001 });
+		// Лимиты ядер на игрока: 2 базы / 3 корабля / 2 динамических.
+		if (Net && Net->IsConnected())
+		{
+			DrawText(InCanvas, Tiny,
+				FString::Printf(TEXT("Лимит ядер — базы %d/2 · корабли %d/3 · динамич. %d/2"),
+					Net->OwnCoreCount(0), Net->OwnCoreCount(1), Net->OwnCoreCount(2)),
+				CP + FVector2D(0, 42), ColMuted);
+		}
 	}
 
 	// Права: если сервер запретил строить — показываем явно.

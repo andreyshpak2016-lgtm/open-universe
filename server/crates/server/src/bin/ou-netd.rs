@@ -466,12 +466,19 @@ fn main() {
                     Message::ClientPlaceCore { size, kind, coord } => {
                         if let Some(pid) = clients.get(&from) {
                             match server.place_core_as(*pid, size, kind, coord) {
-                                Ok(spec) => {
-                                    let entity = server.entity_of_public(*pid);
+                                Ok((core_id, spec)) => {
+                                    // Сообщаем клиенту id его нового ядра, чтобы
+                                    // он выбрал его активным и строил уже в нём.
                                     net.send_to(
                                         token,
                                         from,
-                                        &Message::ServerCore { entity, size, kind, coord },
+                                        &Message::ServerCore {
+                                            entity: core_id,
+                                            owner: *pid,
+                                            size: spec.size as u8,
+                                            kind: spec.kind,
+                                            coord,
+                                        },
                                     )
                                     .ok();
                                     net.send_to(
@@ -487,7 +494,7 @@ fn main() {
                                     )
                                     .ok();
                                     println!(
-                                        "игрок {pid}: ядро {}×{} тип {} в {:?}",
+                                        "игрок {pid}: ядро {core_id} {}×{} тип {} в {:?}",
                                         spec.size, spec.size, kind, coord
                                     );
                                 }

@@ -1641,6 +1641,8 @@ namespace OUWire
     struct CoreInfo
     {
         uint32_t Entity = 0;
+        /// Игрок-владелец ядра (по нему клиент считает свои ядра и лимиты).
+        uint32_t Owner = 0;
         uint8_t Size = 0;
         uint8_t Kind = 0;
         int32_t X = 0, Y = 0, Z = 0;
@@ -1651,9 +1653,10 @@ namespace OUWire
         Reader r{body, len, 0};
         uint8_t tag = 0;
         if (!r.U8(tag) || tag != TagCore) return false;
-        uint64_t entity = 0;
-        if (!r.Varint(entity)) return false;
+        uint64_t entity = 0, owner = 0;
+        if (!r.Varint(entity) || !r.Varint(owner)) return false;
         Out.Entity = static_cast<uint32_t>(entity);
+        Out.Owner = static_cast<uint32_t>(owner);
         if (!r.U8(Out.Size) || !r.U8(Out.Kind)) return false;
         if (!r.I32(Out.X) || !r.I32(Out.Y) || !r.I32(Out.Z)) return false;
         return true;

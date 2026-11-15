@@ -80,6 +80,33 @@ struct FOUBuildEdit
 	int64 Revision = 0;
 };
 
+/** Ядро конструкции, известное клиенту (у игрока их может быть несколько). */
+USTRUCT(BlueprintType)
+struct FOUCoreInfo
+{
+	GENERATED_BODY()
+
+	/** Id ядра — ключ постройки (не сущность игрока). */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Build")
+	int32 Entity = 0;
+
+	/** Игрок-владелец ядра. */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Build")
+	int32 Owner = 0;
+
+	/** Сторона куба ядра в вокселях (16/32/64). */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Build")
+	int32 Size = 0;
+
+	/** Назначение: 0 статичная база, 1 корабль, 2 динамическое. */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Build")
+	int32 Kind = 0;
+
+	/** Ячейка (мин. угол куба) ядра в общей сетке вокселей. */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Build")
+	FIntVector Coord = FIntVector::ZeroValue;
+};
+
 /** Событие выстрела, полученное от сервера (для трассера и эффектов). */
 USTRUCT(BlueprintType)
 struct FOUShotEvent{
@@ -942,11 +969,27 @@ public:
 
 	// --- Ядро конструкции ---
 
+	/** Все известные ядра (клиент может видеть ядра других игроков рядом). */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Build")
+	TArray<FOUCoreInfo> Cores;
+
+	/** Сколько ядер каждого назначения поставил сам игрок (для лимитов). */
+	UFUNCTION(BlueprintPure, Category = "Open Universe|Build")
+	int32 OwnCoreCount(int32 Kind) const
+	{
+		int32 N = 0;
+		for (const FOUCoreInfo& C : Cores)
+		{
+			if (C.Owner == OwnEntityId && C.Kind == Kind) { ++N; }
+		}
+		return N;
+	}
+
 	/** Сторона куба ядра в вокселях (0 — ядро ещё не поставлено). */
 	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Build")
 	int32 CoreSize = 0;
 
-	/** Назначение ядра: 0 статичная база, 1 корабль, 2 орбитальная. */
+	/** Назначение выбранного/текущего ядра: 0 база, 1 корабль, 2 динамическое. */
 	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Build")
 	int32 CoreKind = 0;
 
@@ -954,7 +997,11 @@ public:
 	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Build")
 	FIntVector CoreCoord = FIntVector::ZeroValue;
 
-	/** Нужно сбросить локальные блоки (сервер поставил новое ядро). */
+	/** Id активного ядра, в которое идут команды строительства. */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Build")
+	int32 ActiveCoreId = 0;
+
+	/** Сбросить локальные блоки (сервер поставил новое активное ядро). */
 	bool bCoreResetPending = false;
 
 	/** Последнее сообщение по ядру (для подсказки в HUD). */

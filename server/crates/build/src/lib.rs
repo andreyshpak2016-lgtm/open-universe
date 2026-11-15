@@ -117,7 +117,7 @@ impl Default for BuildLimits {
 pub struct CoreSpec {
     /// Сторона куба постройки в вокселях (16/32/64).
     pub size: i32,
-    /// Назначение: 0 — статичная база (на планете), 1 — корабль, 2 — орбитальная.
+    /// Назначение: 0 — статичная база (на планете), 1 — корабль, 2 — динамическое.
     pub kind: u8,
 }
 
@@ -142,17 +142,17 @@ impl CoreSpec {
     pub fn kind_name(&self) -> &'static str {
         match self.kind {
             1 => "корабль",
-            2 => "орбитальная база",
+            2 => "динамическое ядро",
             _ => "статичная база",
         }
     }
 
     /// Цвет ядра — разный по назначению, чтобы ядра отличались с одного взгляда:
-    /// корабль — синий, орбитальная база — фиолетовый, статичная база — зелёный.
+    /// корабль — синий, динамическое ядро — фиолетовый, статичная база — зелёный.
     pub fn color(&self) -> Color {
         match self.kind {
             1 => Color(80, 140, 255),   // корабль — синий
-            2 => Color(170, 100, 240),  // орбитальная — фиолетовый
+            2 => Color(170, 100, 240),  // динамическое — фиолетовый
             _ => Color(70, 200, 110),   // статичная — зелёный
         }
     }
@@ -183,7 +183,7 @@ impl VoxelGrid {
         let mut g = VoxelGrid {
             voxels: BTreeMap::new(),
             core: (0, 0, 0),
-            founded: false,
+            founded: true,
             spec: CoreSpec::default(),
             core_voxel_size: 1,
             limits: BuildLimits::default(),
@@ -191,6 +191,19 @@ impl VoxelGrid {
         // Ядро — первый воксель (малый размер по умолчанию).
         g.voxels.insert((0, 0, 0), Voxel::new(Color::ACCENT, 1));
         g
+    }
+
+    /// Пустая заготовка постройки (ядра ещё нет). Пока ядро не поставлено,
+    /// она не реплицируется клиентам — в мире у игрока нет видимой постройки.
+    pub fn unfounded() -> Self {
+        VoxelGrid {
+            voxels: BTreeMap::new(),
+            core: (0, 0, 0),
+            founded: false,
+            spec: CoreSpec::default(),
+            core_voxel_size: 1,
+            limits: BuildLimits::default(),
+        }
     }
 
     /// Размер и назначение ядра.
@@ -226,6 +239,12 @@ impl VoxelGrid {
 
     pub fn core(&self) -> Coord {
         self.core
+    }
+
+    /// Основана ли постройка (поставлено ли ядро). Пока ядро не поставлено,
+    /// сетка лишь содержит «заготовку» — её не нужно реплицировать клиентам.
+    pub fn founded(&self) -> bool {
+        self.founded
     }
 
     pub fn len(&self) -> usize {
@@ -707,6 +726,15 @@ mod tests {
         let g = VoxelGrid::new();
         assert_eq!(g.len(), 1);
         assert_eq!(g.get((0, 0, 0)), Some(Color::ACCENT));
+        assert!(g.founded(), "стартовая сетка основана (ядро есть)");
+    }
+
+    #[test]
+    fn unfounded_grid_is_empty_and_not_replicated() {
+        // Заготовка постройки: ядра ещё нет — ни вокселей, ни «основания».
+        let g = VoxelGrid::unfounded();
+        assert!(g.is_empty(), "нет вокселей до постановки ядра");
+        assert!(!g.founded(), "постройка ещё не основана");
     }
 
     #[test]
@@ -719,8 +747,9 @@ mod tests {
 
     #[test]
     fn cannot_place_in_empty_space() {
-        let mut g = VoxelGrid::new();
-        // Первый блок (в пределах куба ядра) основывает постройку: ядро переезжает.
+        // Незаisenная постройка (ядра нет): первый блок основывает её и ядро
+        // переезжает на него (как первая команда игрока в новом ядре).
+        let mut g = VoxelGrid::unfounded();
         assert!(g.place((5, 0, 0), Color::HULL).is_ok());
         assert_eq!(g.core(), (5, 0, 0), "ядро переехало на первый блок");
         assert_eq!(g.len(), 1);

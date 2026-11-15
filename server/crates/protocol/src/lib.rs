@@ -282,14 +282,19 @@ pub enum Message {
     ClientSetEngine { engine: u8 },
     /// Сервер: у корабля теперь такой двигатель (эхо для HUD).
     ServerEngine { entity: NetId, engine: u8 },
-    /// Клиент: поставить ЯДРО конструкции (создаёт/переносит постройку).
+    /// Клиент: поставить ЯДРО конструкции (создаёт НОВУЮ постройку игрока).
     ///
     /// `size` — размер ядра в вокселях по стороне (16/32/64), `kind` — назначение
-    /// (0 статичная база на планете, 1 корабль, 2 орбитальная база). Сервер
-    /// проверяет допустимость места по `kind` и привязывает сетку к ячейке.
+    /// (0 статичная база на планете, 1 корабль, 2 динамическое ядро — ставится
+    /// где угодно). Сервер проверяет допустимость места и **лимиты** ядер по
+    /// назначению и выделяет новое ядро отдельной постройке.
     ClientPlaceCore { size: u8, kind: u8, coord: (i32, i32, i32) },
-    /// Сервер: ядро конструкции установлено (размер, назначение, ячейка).
-    ServerCore { entity: NetId, size: u8, kind: u8, coord: (i32, i32, i32) },
+    /// Сервер: ядро конструкции установлено.
+    ///
+    /// `entity` — id ядра (ключ постройки, ≥ 100000), `owner` — игрок-владелец
+    /// (по нему клиент считает свои ядра и лимиты), `size`/`kind` — параметры,
+    /// `coord` — ячейка ядра в сетке.
+    ServerCore { entity: NetId, owner: NetId, size: u8, kind: u8, coord: (i32, i32, i32) },
     /// Сервер: отказ в установке ядра (не подходит место и т. п.).
     ServerCoreResult { ok: bool, message: String },
     /// Сервер: список территорий системы (владение, статус, налог) для HUD.
@@ -1306,9 +1311,10 @@ mod wire {
                 w.i32(coord.1);
                 w.i32(coord.2);
             }
-            Message::ServerCore { entity, size, kind, coord } => {
+            Message::ServerCore { entity, owner, size, kind, coord } => {
                 w.u8(TAG_CORE);
                 w.varint(*entity as u64);
+                w.varint(*owner as u64);
                 w.u8(*size);
                 w.u8(*kind);
                 w.i32(coord.0);
@@ -1780,6 +1786,7 @@ mod wire {
             }),
             TAG_CORE => Ok(Message::ServerCore {
                 entity: r.varint()? as u32,
+                owner: r.varint()? as u32,
                 size: r.u8()?,
                 kind: r.u8()?,
                 coord: (r.i32()?, r.i32()?, r.i32()?),

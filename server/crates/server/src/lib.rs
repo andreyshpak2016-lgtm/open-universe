@@ -71,6 +71,12 @@ pub const SHOP_PACK_QTY: u64 = 10;
 /// Стартовый баланс премиум-валюты у нового игрока (кристаллы).
 pub const START_PREMIUM: u64 = 20;
 
+/// Лимиты ядер на игрока по назначению.
+/// Статичных баз — 2, корабельных ядер — 3, динамических — 2.
+pub const START_CORE_BASE: usize = 2;
+pub const START_CORE_SHIP: usize = 3;
+pub const START_CORE_DYNAMIC: usize = 2;
+
 /// Опыт, необходимый для достижения уровня `level` (уровни с 1).
 ///
 /// Квадратичная кривая: 100, 300, 600, 1000… — растёт всё медленнее.
@@ -187,6 +193,17 @@ impl Construction {
         }
     }
 
+    /// Конструкция-заготовка: ядра ещё нет (игрок его поставит).
+    pub fn unfounded(owner: NetId) -> Self {
+        Construction {
+            grid: VoxelGrid::unfounded(),
+            owner,
+            builders: BTreeSet::new(),
+            revision: 0,
+            pending: BTreeMap::new(),
+        }
+    }
+
     /// Может ли игрок редактировать эту конструкцию.
     pub fn can_edit(&self, player: NetId) -> bool {
         player == self.owner || self.builders.contains(&player)
@@ -277,8 +294,15 @@ pub struct Server {
     pub shard: Option<ShardRouter>,
     /// Id этого узла в карте шарда (0 — шардирование выключено).
     pub shard_node: NodeId,
-    /// Конструкции сущностей: что игроки построили (права + ревизии).
+    /// Конструкции: ключ — id ядра (синтетический, ≥ 100000). У игрока может быть
+    /// несколько ядер (лимиты по назначению).
     pub constructions: BTreeMap<NetId, Construction>,
+    /// Владелец каждого ядра: id ядра → игрок.
+    pub core_owner: BTreeMap<NetId, NetId>,
+    /// Ядра игрока: игрок → список id ядер (в порядке постановки).
+    pub player_cores: BTreeMap<NetId, Vec<NetId>>,
+    /// Следующий свободный id ядра.
+    next_core_id: NetId,
     /// Корпус каждой сущности: щит, броня, критические повреждения.
     pub hulls: BTreeMap<NetId, ShipHull>,
     /// Оружие каждой сущности (по умолчанию — автопушка).
@@ -434,6 +458,9 @@ impl Server {
             shard: None,
             shard_node: 0,
             constructions: BTreeMap::new(),
+            core_owner: BTreeMap::new(),
+            player_cores: BTreeMap::new(),
+            next_core_id: 100_000,
             hulls: BTreeMap::new(),
             weapons: BTreeMap::new(),
             last_fire_tick: BTreeMap::new(),
@@ -820,7 +847,7 @@ impl Server {
         }
     }
 
-    /// Создать пустую конструкцию для сущности.
+    /// Создать пустую конструкцию (заготовку) для сущности — без ядра.
     pub fn new_construction(&mut self, entity: NetId) {
         self.constructions.insert(entity, Construction::new(entity));
     }
@@ -833,16 +860,16 @@ impl Server {
     /// Проверяет **права**: редактировать может владелец или тот, кому он
     /// разрешил. Первая команда от игрока создаёт его конструкцию.
     pub fn apply_build_as(&mut self, author: NetId, cmd: &BuildCommand) -> BuildReason {
-        // Права проверяем до создания конструкции.
-        if let Some(c) = self.constructions.get(&cmd.entity) {
-            if !c.can_edit(author) {
-                return BuildReason::Invalid;
-            }
+        // `cmd.entity` — это **id ядра** (постройки), а не сущность игрока:
+        // у игрока может быть несколько ядер, каждое строится отдельно.
+        // Правку принимаем только в существующее ядро, к которому есть доступ.
+        let Some(c) = self.constructions.get_mut(&cmd.entity) else {
+            return BuildReason::Invalid;
+        };
+        // Строить можно только в существующем ядре и только с правами.
+        if !c.can_edit(author) || !c.grid.founded() {
+            return BuildReason::Invalid;
         }
-        let c = self
-            .constructions
-            .entry(cmd.entity)
-            .or_insert_with(|| Construction::new(author));
         let color = BuildColor(cmd.color.0, cmd.color.1, cmd.color.2);
         let res: Result<(), BuildError> = match cmd.action {
             BuildAction::Place => c.grid.place_sized(cmd.coord, color, cmd.size.max(1)),
@@ -875,23 +902,45 @@ impl Server {
         }
     }
 
-    /// Выдать игроку состояние правок для всех конструкций, которые он видит.
+    /// Выдать игроку состояние правок для конструкций (ядер), которые он видит.
     ///
     /// Новому участнику сразу шлём **полный снимок** конструкции (все воксели),
-    /// чтобы он увидел уже построенное, а не только будущие правки.
-    fn sync_build_access(&mut self, player: NetId, visible: &BTreeSet<NetId>) {
-        for entity in visible {
-            let Some(c) = self.constructions.get_mut(entity) else {
+    /// чтобы он увидел уже построенное, а не только будущие правки. Учитываем:
+    ///  * **свои** ядра — всегда (даже если игрок ушёл в космос от постройки);
+    ///  * ядра **других** игроков, чьи сущности видны рядом (совместная стройка).
+    fn sync_build_access(
+        &mut self,
+        player: NetId,
+        visible: &BTreeSet<NetId>,
+        entity_to_player: &BTreeMap<NetId, NetId>,
+    ) {
+        let mut cores: BTreeSet<NetId> = BTreeSet::new();
+        if let Some(own) = self.player_cores.get(&player) {
+            cores.extend(own.iter().copied());
+        }
+        for e in visible {
+            if let Some(owner) = entity_to_player.get(e) {
+                if let Some(ids) = self.player_cores.get(owner) {
+                    cores.extend(ids.iter().copied());
+                }
+            }
+        }
+        for entity in cores {
+            let Some(c) = self.constructions.get_mut(&entity) else {
                 continue;
             };
-            let can_edit = c.can_edit(player);
+            // Заготовка без ядра (стартовая постройка до установки ядра) не
+            // реплицируется: у неё ещё нет ни размера, ни назначения.
+            if !c.grid.founded() {
+                continue;
+            }
             let full = !c.pending.contains_key(&player);
             if full {
                 // Полная выгрузка: каждая занятая ячейка — отдельная правка.
                 let mut edits: Vec<BuildEdit> = Vec::with_capacity(c.grid.len());
                 for (coord, bcolor, vsize) in c.grid.iter() {
                     edits.push(BuildEdit {
-                        entity: *entity,
+                        entity,
                         author: c.owner,
                         action: BuildAction::Place,
                         coord,
@@ -903,25 +952,28 @@ impl Server {
                 let slot = c.pending.entry(player).or_insert((c.revision, Vec::new()));
                 slot.1.extend(edits);
             }
-            // Напоминаем права (клиент может их и не знать).
-            let _ = can_edit;
         }
     }
 
     /// Поставить ЯДРО конструкции игроком (авторитетно).
     ///
     /// `kind`: 0 — статичная база (только на поверхности планеты), 1 — корабль
-    /// (где угодно), 2 — орбитальная база (только в космосе, вдали от планеты).
-    /// `size` — сторона куба постройки (16/32/64). Ядро создаёт/переносит
-    /// постройку игрока и привязывает к себе сетку — строить можно только в
-    /// пределах куба ядра. Возвращает созданное ядро или строку-ошибку.
+    /// (где угодно), 2 — ДИНАМИЧЕСКОЕ ядро (ставится где угодно, как корабль).
+    /// `size` — сторона куба постройки (16/32/64). Ядро создаёт НОВУЮ постройку
+    /// (у игрока может быть несколько ядер) и привязывает сетку к себе.
+    ///
+    /// Лимиты на игрока: 2 статичных базы, 3 корабельных, 2 динамических.
+    ///
+    /// Возвращает `(id ядра, параметры ядра)`. Первое ядро игрока занимает его
+    /// стартовую (пустую) постройку — её id равен сущности игрока; последующие
+    /// ядра получают собственные id (≥ 100000) и строятся независимо.
     pub fn place_core_as(
         &mut self,
         player: NetId,
         size: u8,
         kind: u8,
         coord: (i32, i32, i32),
-    ) -> Result<CoreSpec, String> {
+    ) -> Result<(NetId, CoreSpec), String> {
         let size_i = size as i32;
         if !CoreSpec::is_valid_size(size_i) {
             return Err(format!("недопустимый размер ядра: {size} (нужно 16/32/64)"));
@@ -940,33 +992,39 @@ impl Server {
         // Высота над ФАКТИЧЕСКИМ рельефом под игроком (не над базовым радиусом):
         // рельеф поднимается выше радиуса планеты, поэтому иначе поверхность
         // «улетала» бы на километры вверх и статичная база всегда отклонялась.
-        // `height` берём от направления (нормали), а не от `height_at_point`:
-        // позиция игрока задана в мировых осях (центр планеты — в начале).
         let dir = ou_sim::normalize(pos.sub(self.planet.center));
         let surface = self.planet.params.radius + self.planet.height(dir);
         let altitude = pos.sub(self.planet.center).length() - surface;
-        // Атмосфера — 20 км (совпадает с множителем двигателей на клиенте).
-        const ORBIT_MIN_ALT: f64 = 40_000.0; // выше атмосферы — уже орбита
-        match kind {
-            0 => {
-                // Статичная база: только у поверхности (в пределах ~1 км над ней).
-                if altitude > 1_000.0 {
-                    return Err(format!(
-                        "статичную базу ставят на поверхности (высота {:.0} м)",
-                        altitude
-                    ));
-                }
-            }
-            2 => {
-                // Орбитальная база: только в космосе (выше атмосферы).
-                if altitude < ORBIT_MIN_ALT {
-                    return Err(format!(
-                        "орбитальную базу ставят в космосе (нужно выше {:.0} км)",
-                        ORBIT_MIN_ALT / 1000.0
-                    ));
-                }
-            }
-            _ => {} // корабль — ставится где угодно
+        if kind == 0 && altitude > 1_000.0 {
+            // Статичная база — только у поверхности (в пределах ~1 км над ней).
+            return Err(format!(
+                "статичную базу ставят на поверхности (высота {:.0} м)",
+                altitude
+            ));
+        }
+
+        // Лимиты ядер по назначению: базы — 2, корабли — 3, динамические — 2.
+        let (limit, kind_name) = match kind {
+            0 => (START_CORE_BASE, "статичная база"),
+            1 => (START_CORE_SHIP, "корабль"),
+            _ => (START_CORE_DYNAMIC, "динамическое ядро"),
+        };
+        let used = self
+            .player_cores
+            .get(&player)
+            .map(|ids| {
+                ids.iter()
+                    .filter(|id| {
+                        self.constructions
+                            .get(id)
+                            .map(|c| c.grid.spec().kind == kind)
+                            .unwrap_or(false)
+                    })
+                    .count()
+            })
+            .unwrap_or(0);
+        if used >= limit {
+            return Err(format!("лимит ядер «{kind_name}»: {limit} (уже {used})"));
         }
 
         let spec = CoreSpec { size: size_i, kind };
@@ -977,14 +1035,49 @@ impl Server {
             64 => 3,
             _ => 1,
         };
-        let entity = self.entity_of(player);
-        let c = self.constructions.entry(entity).or_insert_with(|| Construction::new(player));
+        // Первое ядро занимает стартовую постройку игрока (её id — сущность
+        // игрока): клиент уже подключается к ней. Последующие ядра — новые
+        // постройки со своими id (≥ 100000).
+        if self.player_cores.get(&player).map(|v| v.is_empty()).unwrap_or(true) {
+            let entity = self.entity_of(player);
+            let c = self
+                .constructions
+                .entry(entity)
+                .or_insert_with(|| Construction::new(player));
+            c.grid.set_core(coord, spec, core_voxel_size);
+            c.revision += 1;
+            c.pending.clear();
+            self.core_owner.insert(entity, player);
+            self.player_cores.entry(player).or_default().push(entity);
+            return Ok((entity, spec));
+        }
+        let id = self.next_core_id;
+        self.next_core_id += 1;
+        let mut c = Construction::new(player);
         c.grid.set_core(coord, spec, core_voxel_size);
         c.revision += 1;
-        // Сбрасываем очереди правок: при следующем синке все клиенты получат
-        // полную выгрузку (новое ядро + пустая сетка) и увидят сетку ядра.
-        c.pending.clear();
-        Ok(spec)
+        // Ядро сразу занимает свою ячейку — полная выгрузка при первом синке.
+        self.constructions.insert(id, c);
+        self.core_owner.insert(id, player);
+        self.player_cores.entry(player).or_default().push(id);
+        Ok((id, spec))
+    }
+
+    /// Список ядер игрока (id, размер, назначение, ячейка, владелец).
+    pub fn player_cores_of(&self, player: NetId) -> Vec<(NetId, u8, u8, (i32, i32, i32))> {
+        self.player_cores
+            .get(&player)
+            .map(|ids| {
+                ids.iter()
+                    .filter_map(|id| {
+                        self.constructions.get(id).map(|c| {
+                            let s = c.grid.spec();
+                            (*id, s.size as u8, s.kind, c.grid.core())
+                        })
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
     }
 
     /// Владелец разрешает другому игроку строить в конструкции.
@@ -1335,16 +1428,14 @@ impl Server {
         origin: (i32, i32, i32),
     ) -> Result<u32, String> {
         let voxels = ou_build::blueprint_voxels(id).ok_or_else(|| format!("шаблон {id} не найден"))?;
-        // Права проверяем до создания конструкции (как в apply_build_as).
-        if let Some(c) = self.constructions.get(&entity) {
-            if !c.can_edit(author) {
-                return Err("нет прав на эту конструкцию".to_string());
-            }
+        // Права проверяем до правки: шаблон ставится только в существующее ядро,
+        // к которому есть доступ (id ядра приходит в `entity`).
+        let Some(c) = self.constructions.get_mut(&entity) else {
+            return Err("ядро не найдено".to_string());
+        };
+        if !c.can_edit(author) {
+            return Err("нет прав на эту конструкцию".to_string());
         }
-        let c = self
-            .constructions
-            .entry(entity)
-            .or_insert_with(|| Construction::new(author));
         // Смещение шаблона: ставим относительно якоря.
         let mut placed = 0u32;
         let mut edits: Vec<BuildEdit> = Vec::new();
@@ -1380,11 +1471,13 @@ impl Server {
     /// Сервер снимает воксели конструкции игрока (относительно её ядра) и
     /// выставляет в мастерскую с ценой. Автор сразу получает копию у себя.
     pub fn publish_blueprint(&mut self, player: NetId, name: String, price: u64) -> Result<u32, String> {
+        // Публикуем **первое** (стартовое) ядро игрока: мастерская работает по
+        // одной активной постройке (как «текущий проект» игрока).
         let entity = self
-            .connections
+            .player_cores
             .get(&player)
-            .map(|c| c.entity_id)
-            .ok_or_else(|| "игрок не в мире".to_string())?;
+            .and_then(|v| v.first().copied())
+            .ok_or_else(|| "у вас ещё нет ядра для публикации".to_string())?;
         let voxels: Vec<((i32, i32, i32), BuildColor)> = self
             .constructions
             .get(&entity)
@@ -1462,15 +1555,12 @@ impl Server {
             .and_then(|m| m.get(&id))
             .map(|(_, v)| v.clone())
             .ok_or_else(|| "шаблон не куплен".to_string())?;
-        if let Some(c) = self.constructions.get(&entity) {
-            if !c.can_edit(player) {
-                return Err("нет прав на эту конструкцию".to_string());
-            }
+        let Some(c) = self.constructions.get_mut(&entity) else {
+            return Err("ядро не найдено".to_string());
+        };
+        if !c.can_edit(player) {
+            return Err("нет прав на эту конструкцию".to_string());
         }
-        let c = self
-            .constructions
-            .entry(entity)
-            .or_insert_with(|| Construction::new(player));
         let mut placed = 0u32;
         let mut edits: Vec<BuildEdit> = Vec::new();
         for ((dx, dy, dz), col) in voxels {
@@ -1983,8 +2073,11 @@ impl Server {
         if let Some(w) = weapon("автопушка") {
             self.weapons.insert(entity_id, w);
         }
-        // У каждого игрока есть своя конструкция (её же он и редактирует).
-        self.constructions.entry(entity_id).or_insert_with(|| Construction::new(player_id));
+        // У каждого игрока есть своя стартовая постройка-заготовка: ядра пока
+        // нет, первое поставленное игроком ядро займёт её (её id = сущность).
+        self.constructions
+            .entry(entity_id)
+            .or_insert_with(|| Construction::unfounded(player_id));
         // Стартовый капитал и право торговать.
         self.economy.grant_start(player_id);
         // Стартовые кристаллы (премиум-валюта) — новичок может купить в магазине.
@@ -2149,6 +2242,11 @@ impl Server {
         self.last_fire_tick.remove(&entity);
         self.shot_seq.remove(&entity);
         self.constructions.remove(&entity);
+        self.core_owner.remove(&entity);
+        // Убираем ядро из списков владельцев (у игрока их могло быть несколько).
+        for ids in self.player_cores.values_mut() {
+            ids.retain(|id| *id != entity);
+        }
         self.scripted.remove(&entity);
         self.grid.remove(entity);
     }
@@ -2473,8 +2571,11 @@ impl Server {
 
         // Фаза B: репликация правок конструкций (совместное строительство).
         let mut build_msgs: BTreeMap<NetId, Vec<Message>> = BTreeMap::new();
+        // Сущность → игрок (чтобы увидеть ядра игроков, чьи сущности рядом).
+        let entity_to_player: BTreeMap<NetId, NetId> =
+            self.connections.values().map(|c| (c.entity_id, c.player_id)).collect();
         for (player_id, visible) in &visible_by_player {
-            self.sync_build_access(*player_id, visible);
+            self.sync_build_access(*player_id, visible, &entity_to_player);
         }
         for entity in self.constructions.keys().copied().collect::<Vec<_>>() {
             let c = self.constructions.get_mut(&entity).unwrap();
@@ -2490,11 +2591,13 @@ impl Server {
                 let entry = build_msgs.entry(player).or_default();
                 entry.push(Message::ServerBuildAccess { entity, can_edit });
                 // Ядро конструкции (размер/назначение/ячейка) — чтобы клиент
-                // нарисовал призрачную сетку и понял границы постройки.
+                // нарисовал призрачную сетку и понял границы постройки. Владелец
+                // передаётся, чтобы клиент считал свои ядра и лимиты.
                 let spec = c.grid.spec();
-                if spec.size > 0 {
+                if spec.size > 0 && c.grid.founded() {
                     entry.push(Message::ServerCore {
                         entity,
+                        owner: c.owner,
                         size: spec.size as u8,
                         kind: spec.kind,
                         coord: c.grid.core(),
@@ -2837,96 +2940,115 @@ mod tests {
 
     // --- редактор конструкций ---
 
-    fn cmd(action: BuildAction, coord: (i32, i32, i32)) -> BuildCommand {
-        BuildCommand { entity: 1, action, coord, color: ou_protocol::Color(200, 200, 200), size: 1 }
+    /// Тестовая команда строительства в ядро `core` (по умолчанию — стартовое
+    /// ядро игрока 1, появляющееся после первого `place_core_as`).
+    fn cmd_in(core: NetId, action: BuildAction, coord: (i32, i32, i32)) -> BuildCommand {
+        BuildCommand { entity: core, action, coord, color: ou_protocol::Color(200, 200, 200), size: 1 }
+    }
+
+    /// Игрок 1 на планете со стартовым (первым) ядром; возвращает id ядра.
+    fn planet_with_core(s: &mut Server) -> NetId {
+        s.connect_on_planet(1);
+        s.place_core_as(1, 32, 0, (0, 0, 0)).unwrap().0
     }
 
     #[test]
     fn build_places_adjacent_voxel() {
         let mut s = Server::new();
-        s.connect(1, Vec3::ZERO);
-        let r = s.apply_build(&cmd(BuildAction::Place, (1, 0, 0)));
+        let core = planet_with_core(&mut s);
+        // Ядро 32 → воксель 2: его грань по X — ячейка (2,0,0).
+        let r = s.apply_build_as(1, &cmd_in(core, BuildAction::Place, (2, 0, 0)));
         assert_eq!(r, BuildReason::Ok);
-        let g = s.constructions.get(&1).unwrap();
+        let g = s.constructions.get(&core).unwrap();
         assert_eq!(g.grid.len(), 2, "ядро + новый воксель");
     }
 
     #[test]
     fn build_rejects_floating_voxel() {
         let mut s = Server::new();
-        s.connect(1, Vec3::ZERO);
-        // Первый блок основывает постройку (ядро переезжает) — принимается.
-        assert_eq!(s.apply_build(&cmd(BuildAction::Place, (5, 0, 0))), BuildReason::Ok);
-        // Дальше постановка в пустоте (не примыкает к конструкции) отклоняется.
-        let r = s.apply_build(&cmd(BuildAction::Place, (5, 5, 0)));
+        let core = planet_with_core(&mut s);
+        // Блок рядом с ядром — принимается.
+        assert_eq!(
+            s.apply_build_as(1, &cmd_in(core, BuildAction::Place, (2, 0, 0))),
+            BuildReason::Ok
+        );
+        // Постановка в пустоте (не примыкает к конструкции) отклоняется.
+        let r = s.apply_build_as(1, &cmd_in(core, BuildAction::Place, (10, 10, 0)));
         assert_eq!(r, BuildReason::Disconnected);
     }
 
     #[test]
-    fn build_brush_cube_is_fully_accepted() {        // Кисть 3×3×3: если клиент ставит куб «слоями от центра», сервер
+    fn build_brush_cube_is_fully_accepted() {
+        // Кисть 3×3×3/N³: если клиент ставит куб «слоями от центра», сервер
         // принимает ВСЕ воксели (ни одного отказа) — это ключ к тому, что
         // постройка реально отображается, а счётчик не врёт.
         let mut s = Server::new();
-        s.connect(1, Vec3::ZERO);
-        let half = 1;
-        // Якорь (первый блок) основывает постройку.
-        assert_eq!(s.apply_build(&cmd(BuildAction::Place, (5, 0, 0))), BuildReason::Ok);
+        let core = planet_with_core(&mut s);
+        // Ядро 32 → воксель среднего размера (2), значит его грань по X — 2.
+        // Ставим куб 3×3×3 вплотную к грани ядра: угол (2,0,0).
+        let base = (2i32, 0i32, 0i32);
         let mut offsets: Vec<(i32, i32, i32)> = Vec::new();
-        for dx in -half..=half {
-            for dy in -half..=half {
-                for dz in -half..=half {
-                    if dx == 0 && dy == 0 && dz == 0 { continue; }
+        for dx in 0..3 {
+            for dy in 0..3 {
+                for dz in 0..3 {
                     offsets.push((dx, dy, dz));
                 }
             }
         }
-        // Сортируем по манхэттенскому расстоянию от центра (как клиент).
+        // Сортируем по манхэттенскому расстоянию от ближнего угла (как клиент).
         offsets.sort_by_key(|o| o.0.abs() + o.1.abs() + o.2.abs());
         let mut ok = 0;
         for (dx, dy, dz) in offsets {
-            let r = s.apply_build(&cmd(BuildAction::Place, (5 + dx, dy, dz)));
+            let r = s.apply_build_as(
+                1,
+                &cmd_in(core, BuildAction::Place, (base.0 + dx, base.1 + dy, base.2 + dz)),
+            );
             if r == BuildReason::Ok { ok += 1; }
         }
-        assert_eq!(ok, 26, "приняты все 26 вокселей куба (без отказов)");
-        let g = s.constructions.get(&1).unwrap();
-        assert_eq!(g.grid.len(), 27, "куб 3×3×3 целиком в конструкции");
+        assert_eq!(ok, 27, "приняты все 27 вокселей куба (без отказов)");
+        let g = s.constructions.get(&core).unwrap();
+        assert_eq!(g.grid.len(), 28, "ядро + куб 3×3×3 целиком");
     }
 
     #[test]
     fn build_paint_and_remove_work() {
         let mut s = Server::new();
-        s.connect(1, Vec3::ZERO);
-        s.apply_build(&cmd(BuildAction::Place, (1, 0, 0)));
-        assert_eq!(s.apply_build(&cmd(BuildAction::Paint, (1, 0, 0))), BuildReason::Ok);
-        assert_eq!(s.apply_build(&cmd(BuildAction::Remove, (1, 0, 0))), BuildReason::Ok);
+        let core = planet_with_core(&mut s);
+        s.apply_build_as(1, &cmd_in(core, BuildAction::Place, (2, 0, 0)));
+        assert_eq!(
+            s.apply_build_as(1, &cmd_in(core, BuildAction::Paint, (2, 0, 0))),
+            BuildReason::Ok
+        );
+        assert_eq!(
+            s.apply_build_as(1, &cmd_in(core, BuildAction::Remove, (2, 0, 0))),
+            BuildReason::Ok
+        );
         // Повторное удаление — ошибка.
-        assert_eq!(s.apply_build(&cmd(BuildAction::Remove, (1, 0, 0))), BuildReason::Invalid);
+        assert_eq!(
+            s.apply_build_as(1, &cmd_in(core, BuildAction::Remove, (2, 0, 0))),
+            BuildReason::Invalid
+        );
     }
 
     #[test]
     fn build_cannot_remove_core() {
         let mut s = Server::new();
-        s.connect(1, Vec3::ZERO);
-        assert_eq!(s.apply_build(&cmd(BuildAction::Remove, (0, 0, 0))), BuildReason::Invalid);
+        let core = planet_with_core(&mut s);
+        // Ячейка ядра — (0,0,0): снести нельзя.
+        assert_eq!(
+            s.apply_build_as(1, &cmd_in(core, BuildAction::Remove, (0, 0, 0))),
+            BuildReason::Invalid
+        );
     }
 
     #[test]
-    fn constructions_are_independent() {
+    fn editing_unknown_core_is_rejected() {
+        // Правка в несуществующее ядро (id, которого нет) — отказ: строить можно
+        // только в поставленное ядро со своими правами.
         let mut s = Server::new();
-        s.connect(1, Vec3::ZERO);
-        s.connect(2, Vec3::new(100.0, 0.0, 0.0));
-        // Игрок 1 ставит воксель.
-        s.apply_build(&cmd(BuildAction::Place, (1, 0, 0)));
-        // У игрока 2 конструкция своя.
-        let r2 = s.apply_build(&BuildCommand {
-            entity: 2,
-            action: BuildAction::Remove,
-            coord: (1, 0, 0),
-            color: ou_protocol::Color(0, 0, 0),
-                    size: 1
-                });
-        assert_eq!(r2, BuildReason::Invalid, "у второго игрока этой ячейки нет");
-        assert_eq!(s.constructions.get(&1).unwrap().grid.len(), 2);
+        planet_with_core(&mut s);
+        let r = s.apply_build_as(1, &cmd_in(999_999, BuildAction::Place, (1, 0, 0)));
+        assert_eq!(r, BuildReason::Invalid, "чужого/несуществующего ядра нет");
     }
 
     // --- совместное строительство (multiplayer edit) ---
@@ -2941,28 +3063,33 @@ mod tests {
             .collect()
     }
 
+    fn add_funded_core(s: &mut Server, player: NetId, coord: (i32, i32, i32)) -> NetId {
+        // Ядро (малое, воксель 1) + один блок вплотную по +X — тесты репликации.
+        // Игрок обязан быть уже подключён.
+        let (core, _) = s.place_core_as(player, 16, 0, coord).unwrap();
+        let at = (coord.0 + 1, coord.1, coord.2);
+        assert_eq!(s.apply_build_as(player, &cmd_in(core, BuildAction::Place, at)), BuildReason::Ok);
+        core
+    }
+
     #[test]
     fn build_edit_is_replicated_to_other_players() {
         let mut s = Server::new();
         s.connect(1, Vec3::ZERO);
+        let c1 = add_funded_core(&mut s, 1, (0, 0, 0)); // ядро игрока 1
         s.connect(2, Vec3::new(10.0, 0.0, 0.0));
+        let _c2 = add_funded_core(&mut s, 2, (10, 0, 0));
         s.tick(); // оба узнали мир
 
-        // Игрок 1 строит в своей конструкции.
-        let reason = s.apply_build_as(1, &BuildCommand {
-            entity: 1,
-            action: BuildAction::Place,
-            coord: (1, 0, 0),
-            color: ou_protocol::Color(10, 20, 30),
-                    size: 1
-                });
+        // Игрок 1 строит в своём ядре (ядро 16 → воксель 1, свободна ячейка (2,0,0)).
+        let reason = s.apply_build_as(1, &cmd_in(c1, BuildAction::Place, (2, 0, 0)));
         assert_eq!(reason, BuildReason::Ok);
 
         // Следующий тик: правка должна быть отправлена НЕ только автору.
         let plan = s.tick();
         let edits = build_edits(&plan.messages[&2]);
         assert!(
-            edits.iter().any(|e| e.entity == 1 && e.coord == (1, 0, 0) && e.author == 1),
+            edits.iter().any(|e| e.entity == c1 && e.coord == (2, 0, 0) && e.author == 1),
             "правка игрока 1 должна прийти игроку 2"
         );
     }
@@ -2971,69 +3098,47 @@ mod tests {
     fn only_owner_or_granted_can_edit() {
         let mut s = Server::new();
         s.connect(1, Vec3::ZERO);
+        let c1 = add_funded_core(&mut s, 1, (0, 0, 0)); // ядро игрока 1
         s.connect(2, Vec3::new(10.0, 0.0, 0.0));
 
-        // Игрок 2 пытается строить в конструкции игрока 1 — отказано.
-        let bad = s.apply_build_as(2, &BuildCommand {
-            entity: 1,
-            action: BuildAction::Place,
-            coord: (1, 0, 0),
-            color: ou_protocol::Color(1, 1, 1),
-                    size: 1
-                });
+        // Игрок 2 пытается строить в ядре игрока 1 — отказано.
+        let bad = s.apply_build_as(2, &cmd_in(c1, BuildAction::Place, (2, 0, 0)));
         assert_eq!(bad, BuildReason::Invalid, "чужой строить не может");
 
         // Владелец (игрок 1) разрешает игроку 2.
-        assert!(s.grant_build(1, 1, 2));
-        let ok = s.apply_build_as(2, &BuildCommand {
-            entity: 1,
-            action: BuildAction::Place,
-            coord: (1, 0, 0),
-            color: ou_protocol::Color(1, 1, 1),
-                    size: 1
-                });
+        assert!(s.grant_build(1, c1, 2));
+        let ok = s.apply_build_as(2, &cmd_in(c1, BuildAction::Place, (2, 0, 0)));
         assert_eq!(ok, BuildReason::Ok, "после разрешения строить можно");
     }
 
     #[test]
     fn new_player_receives_existing_construction() {
         let mut s = Server::new();
-        let e1 = s.connect(1, Vec3::ZERO);
-        // Игрок 1 уже что-то построил.
-        s.apply_build_as(1, &BuildCommand {
-            entity: e1,
-            action: BuildAction::Place,
-            coord: (1, 0, 0),
-            color: ou_protocol::Color(5, 5, 5),
-                    size: 1
-                });
-        // Подключается игрок 2 рядом.
+        s.connect(1, Vec3::ZERO);
+        let c1 = add_funded_core(&mut s, 1, (0, 0, 0));
+        // Подключается игрок 2 рядом с ядром игрока 1.
         s.connect(2, Vec3::new(10.0, 0.0, 0.0));
         let plan = s.tick();
-        // Второй игрок должен получить полный снимок конструкции 1 (все воксели).
+        // Второй игрок должен получить полный снимок постройки (ядро + блок).
         let edits = build_edits(&plan.messages[&2]);
-        let has_core = edits.iter().any(|e| e.coord == (0, 0, 0));
-        let has_built = edits.iter().any(|e| e.coord == (1, 0, 0));
+        let has_core = edits.iter().any(|e| e.entity == c1 && e.coord == (0, 0, 0));
+        let has_built = edits.iter().any(|e| e.entity == c1 && e.coord == (1, 0, 0));
         assert!(has_core && has_built, "новый игрок видит уже построенное");
     }
-
     #[test]
     fn ack_stops_resending_edits() {
         let mut s = Server::new();
         s.connect(1, Vec3::ZERO);
+        let c1 = add_funded_core(&mut s, 1, (0, 0, 0));
         s.connect(2, Vec3::new(10.0, 0.0, 0.0));
+        let c2 = add_funded_core(&mut s, 2, (10, 0, 0));
         s.tick();
-        s.apply_build_as(1, &BuildCommand {
-            entity: 1,
-            action: BuildAction::Place,
-            coord: (1, 0, 0),
-            color: ou_protocol::Color(1, 1, 1),
-                    size: 1
-                });
+        s.apply_build_as(1, &cmd_in(c1, BuildAction::Place, (2, 0, 0)));
         let plan = s.tick();
         let rev = build_edits(&plan.messages[&2]).iter().map(|e| e.revision).max().unwrap();
-        // Игрок 2 подтверждает: повторно слать не нужно.
-        s.ack_build(2, 1, rev);
+        // Игрок 2 подтверждает по всем видимым ядрам: повторно слать не нужно.
+        s.ack_build(2, c1, rev);
+        s.ack_build(2, c2, rev);
         let plan2 = s.tick();
         assert!(build_edits(&plan2.messages[&2]).is_empty(), "после ack повторной рассылки нет");
     }
@@ -3042,17 +3147,11 @@ mod tests {
     fn remote_edit_is_authoritative_for_other_players() {
         // Правка приходит с номером ревизии, который растёт монотонно.
         let mut s = Server::new();
-        let e1 = s.connect(1, Vec3::ZERO);
-        for i in 1..=3 {
-            s.apply_build_as(1, &BuildCommand {
-                entity: e1,
-                action: BuildAction::Place,
-                coord: (i, 0, 0),
-                color: ou_protocol::Color(1, 1, 1),
-                    size: 1
-                });
+        let c1 = planet_with_core(&mut s); // +1 ревизия (постановка ядра)
+        for c in [(2, 0, 0), (0, 2, 0), (0, 0, 2)] {
+            s.apply_build_as(1, &cmd_in(c1, BuildAction::Place, c));
         }
-        assert_eq!(s.constructions[&e1].revision, 3, "ревизия растёт по числу правок");
+        assert_eq!(s.constructions[&c1].revision, 4, "ядро + 3 правки = 4");
     }
 
     // --- бой (авторитетная стрельба) ---
@@ -3605,37 +3704,38 @@ mod tests {
     #[test]
     fn blueprint_is_stamped_into_construction() {
         let mut s = Server::new();
-        let e = s.connect_on_planet(1);
-        // Ядро конструкции — в (0,0,0). Ставим куб 5×5×5 рядом с ядром.
-        let placed = s.place_blueprint_as(1, e, 2, (1, 0, 0)).unwrap();
+        let core = planet_with_core(&mut s);
+        // Ядро конструкции — в (0,0,0) размера 32 (воксель 2). Ставим куб 5×5×5
+        // рядом с ядром (грань по X — 2).
+        let placed = s.place_blueprint_as(1, core, 2, (2, 0, 0)).unwrap();
         assert!(placed > 0, "шаблон поставлен");
         // Число вокселей конструкции выросло (минимум ядро + поставленные).
-        assert!(s.constructions[&e].grid.len() > 1);
+        assert!(s.constructions[&core].grid.len() > 1);
         // Неизвестный шаблон — ошибка.
-        assert!(s.place_blueprint_as(1, e, 999, (0, 0, 0)).is_err());
+        assert!(s.place_blueprint_as(1, core, 999, (0, 0, 0)).is_err());
     }
 
     #[test]
     fn blueprint_respects_build_rights() {
         let mut s = Server::new();
-        let e1 = s.connect_on_planet(1);
+        let core = planet_with_core(&mut s);
         s.connect_on_planet(2);
-        // Игрок 2 пытается строить в конструкции игрока 1 — нет прав.
-        assert!(s.place_blueprint_as(2, e1, 2, (1, 0, 0)).is_err());
+        // Игрок 2 пытается строить в ядре игрока 1 — нет прав.
+        assert!(s.place_blueprint_as(2, core, 2, (2, 0, 0)).is_err());
         // Игрок 1 — может.
-        assert!(s.place_blueprint_as(1, e1, 2, (1, 0, 0)).is_ok());
+        assert!(s.place_blueprint_as(1, core, 2, (2, 0, 0)).is_ok());
     }
 
     #[test]
     fn blueprint_edits_are_queued_for_owner() {
         let mut s = Server::new();
-        let e = s.connect_on_planet(1);
+        let core = planet_with_core(&mut s);
         // Тик создаёт «слот ожидания» правок для игрока (как в живой игре).
         s.tick();
         // Ставим шаблон: правки должны попасть в очередь владельца, чтобы
         // клиент нарисовал блоки.
-        s.place_blueprint_as(1, e, 2, (1, 0, 0)).unwrap();
-        let pending = &s.constructions[&e].pending;
+        s.place_blueprint_as(1, core, 2, (2, 0, 0)).unwrap();
+        let pending = &s.constructions[&core].pending;
         assert!(pending.contains_key(&1), "правки для игрока 1 в очереди");
         let edits = &pending[&1].1;
         assert!(!edits.is_empty(), "есть правки шаблона");
@@ -3706,16 +3806,10 @@ mod tests {
     #[test]
     fn publish_and_buy_blueprint_transfers_credits() {
         let mut s = Server::new();
-        let e1 = s.connect_on_planet(1);
+        let core = planet_with_core(&mut s); // ядро игрока 1
         s.connect_on_planet(2);
-        // Игрок 1 строит что-то и публикует.
-        s.apply_build_as(1, &BuildCommand {
-            entity: e1,
-            action: BuildAction::Place,
-            coord: (1, 0, 0),
-            color: ou_protocol::Color(1, 2, 3),
-                    size: 1
-                });
+        // Игрок 1 строит что-то и публикует (блок у грани ядра 32 → (2,0,0)).
+        s.apply_build_as(1, &cmd_in(core, BuildAction::Place, (2, 0, 0)));
         let id = s.publish_blueprint(1, "Дом".to_string(), 500).unwrap();
         // Витрина содержит объявление.
         match s.workshop_state(2) {
@@ -3737,50 +3831,39 @@ mod tests {
     }
 
     #[test]
-    fn cannot_publish_empty_or_buy_own() {
+    fn cannot_publish_without_core_or_buy_own() {
         let mut s = Server::new();
-        let e1 = s.connect_on_planet(1);
+        s.connect_on_planet(1);
         s.connect_on_planet(2);
-        // Пустая конструкция публикуется? У игрока есть ядро — значит не пуста.
-        // (Ядро всегда есть, поэтому публикация проходит.)
+        // Без ядра публиковать нечего: у игрока нет постройки.
+        assert!(s.publish_blueprint(1, String::new(), 100).is_err(), "нет ядра — нечего публиковать");
+        // С ядром публикация проходит.
+        s.place_core_as(1, 32, 0, (0, 0, 0)).unwrap();
         let id = s.publish_blueprint(1, String::new(), 100).unwrap();
         // Свой шаблон купить нельзя.
         assert!(s.buy_blueprint(1, id).is_err(), "свой шаблон не покупается");
         // Несуществующий — тоже.
         assert!(s.buy_blueprint(2, 999).is_err());
-        let _ = e1;
     }
 
     #[test]
     fn place_own_blueprint_adds_blocks() {
         let mut s = Server::new();
-        let e1 = s.connect_on_planet(1);
-        s.apply_build_as(1, &BuildCommand {
-            entity: e1,
-            action: BuildAction::Place,
-            coord: (1, 0, 0),
-            color: ou_protocol::Color(10, 20, 30),
-                    size: 1
-                });
+        s.connect(1, Vec3::ZERO);
+        let core = add_funded_core(&mut s, 1, (0, 0, 0));
         let id = s.publish_blueprint(1, "База".to_string(), 0).unwrap();
-        // Ставим свой шаблон ВПЛОТНУЮ к ядру — появляются блоки.
-        let before = s.constructions[&e1].grid.len();
-        let placed = s.place_own_blueprint(1, e1, id, (2, 0, 0)).unwrap();
+        // Ставим свой шаблон вплотную к ядру (следующий слой по X) — появятся блоки.
+        let before = s.constructions[&core].grid.len();
+        let placed = s.place_own_blueprint(1, core, id, (2, 0, 0)).unwrap();
         assert!(placed > 0, "шаблон поставлен");
-        assert!(s.constructions[&e1].grid.len() > before);
+        assert!(s.constructions[&core].grid.len() > before);
     }
 
     #[test]
     fn workshop_state_is_broadcast() {
         let mut s = Server::new();
-        let e1 = s.connect_on_planet(1);
-        s.apply_build_as(1, &BuildCommand {
-            entity: e1,
-            action: BuildAction::Place,
-            coord: (1, 0, 0),
-            color: ou_protocol::Color(1, 1, 1),
-                    size: 1
-                });
+        let core = planet_with_core(&mut s);
+        s.apply_build_as(1, &cmd_in(core, BuildAction::Place, (2, 0, 0)));
         s.publish_blueprint(1, "Т".to_string(), 10).unwrap();
         let plan = s.tick();
         let seen = plan.messages[&1]
@@ -4273,11 +4356,13 @@ mod tests {
     fn placing_core_sets_size_kind_and_binds_grid() {
         let mut s = Server::new();
         s.connect_on_planet(1);
-        // Статичная база 32 у поверхности — можно.
-        let spec = s.place_core_as(1, 32, 0, (10, 0, 0)).unwrap();
+        // Статичная база 32 у поверхности — можно. Первое ядро занимает
+        // стартовую постройку игрока: её id = сущность игрока.
+        let (core, spec) = s.place_core_as(1, 32, 0, (10, 0, 0)).unwrap();
+        assert_eq!(core, 1, "первое ядро — стартовая постройка игрока");
         assert_eq!(spec.size, 32);
         assert_eq!(spec.kind, 0);
-        let g = &s.constructions[&1].grid;
+        let g = &s.constructions[&core].grid;
         assert_eq!(g.spec().size, 32);
         assert_eq!(g.core(), (10, 0, 0));
         // Границы куба ядра: ±16 вокруг центра.
@@ -4297,11 +4382,57 @@ mod tests {
     }
 
     #[test]
-    fn orbital_core_rejected_on_surface() {
+    fn dynamic_core_allowed_anywhere() {
+        // Динамическое ядро (бывшее «орбитальное») ставится и на поверхности,
+        // и в космосе — как корабль.
         let mut s = Server::new();
         s.connect_on_planet(1);
-        // На поверхности орбитальную базу не поставить.
-        assert!(s.place_core_as(1, 16, 2, (0, 0, 0)).is_err(), "орбитальная база только в космосе");
+        assert!(s.place_core_as(1, 16, 2, (0, 0, 0)).is_ok(), "на поверхности можно");
+        let mut s2 = Server::new();
+        s2.connect(1, Vec3::ZERO);
+        s2.world.entities.get_mut(&1).unwrap().state.pos = Vec3::new(0.0, 0.0, 900_000.0);
+        assert!(s2.place_core_as(1, 16, 2, (0, 0, 0)).is_ok(), "в космосе тоже можно");
+    }
+
+    #[test]
+    fn core_limits_are_enforced_per_kind() {
+        // Лимиты ядер на игрока: 2 статичных базы, 3 корабельных, 2 динамических.
+        let mut s = Server::new();
+        s.connect_on_planet(1);
+        // Статичные базы: 2 проходят, третья — нет.
+        assert!(s.place_core_as(1, 16, 0, (0, 0, 0)).is_ok());
+        assert!(s.place_core_as(1, 16, 0, (20, 0, 0)).is_ok());
+        assert!(s.place_core_as(1, 16, 0, (40, 0, 0)).is_err(), "3-я база сверх лимита");
+        // Динамические: тоже 2.
+        assert!(s.place_core_as(1, 16, 2, (0, 20, 0)).is_ok());
+        assert!(s.place_core_as(1, 16, 2, (20, 20, 0)).is_ok());
+        assert!(s.place_core_as(1, 16, 2, (40, 20, 0)).is_err(), "3-е динамическое сверх лимита");
+        // Корабли: 3.
+        assert!(s.place_core_as(1, 16, 1, (0, 40, 0)).is_ok());
+        assert!(s.place_core_as(1, 16, 1, (20, 40, 0)).is_ok());
+        assert!(s.place_core_as(1, 16, 1, (40, 40, 0)).is_ok());
+        assert!(s.place_core_as(1, 16, 1, (60, 40, 0)).is_err(), "4-й корабль сверх лимита");
+        // Всего ядер — 7 (2+2+3), каждое со своим id.
+        assert_eq!(s.player_cores_of(1).len(), 7);
+        assert_eq!(s.player_cores[&1].len(), 7);
+    }
+
+    #[test]
+    fn each_core_is_a_separate_construction() {
+        // Второе ядро — отдельная постройка со своим id и своей сеткой: правки
+        // в него не попадают в первое ядро.
+        let mut s = Server::new();
+        s.connect_on_planet(1);
+        let (c1, _) = s.place_core_as(1, 32, 0, (0, 0, 0)).unwrap();
+        let (c2, _) = s.place_core_as(1, 32, 0, (100, 0, 0)).unwrap();
+        assert_ne!(c1, c2, "у каждого ядра свой id");
+        // Блок у второго ядра.
+        assert_eq!(
+            s.apply_build_as(1, &cmd_in(c2, BuildAction::Place, (102, 0, 0))),
+            BuildReason::Ok
+        );
+        assert_eq!(s.constructions[&c2].grid.len(), 2, "ядро + блок во втором ядре");
+        assert_eq!(s.constructions[&c1].grid.len(), 1, "первое ядро не изменилось");
     }
 
     #[test]
@@ -4323,7 +4454,7 @@ mod tests {
     fn core_message_roundtrips_on_wire() {
         let c = Message::ClientPlaceCore { size: 32, kind: 2, coord: (1, -2, 3) };
         assert_eq!(ou_protocol::decode(&ou_protocol::encode(&c)).unwrap(), c);
-        let s = Message::ServerCore { entity: 7, size: 16, kind: 0, coord: (0, 0, 0) };
+        let s = Message::ServerCore { entity: 7, owner: 3, size: 16, kind: 0, coord: (0, 0, 0) };
         assert_eq!(ou_protocol::decode(&ou_protocol::encode(&s)).unwrap(), s);
         let r = Message::ServerCoreResult { ok: false, message: "нет".to_string() };
         assert_eq!(ou_protocol::decode(&ou_protocol::encode(&r)).unwrap(), r);
@@ -4335,42 +4466,42 @@ mod tests {
         // воксели разного размера (малый/большой) — стыковка по граням.
         let mut s = Server::new();
         s.connect_on_planet(1);
-        let spec = s.place_core_as(1, 32, 0, (0, 0, 0)).unwrap();
+        let (core, spec) = s.place_core_as(1, 32, 0, (0, 0, 0)).unwrap();
         assert_eq!(spec.size, 32);
-        let g = s.constructions.get(&1).unwrap();
+        let g = s.constructions.get(&core).unwrap();
         assert_eq!(g.grid.core_voxel_size(), 2, "ядро 32 → воксель среднего размера");
         assert_eq!(g.grid.len(), 1, "ядро — один воксель");
         // Малый воксель к грани ядра (2×2×2): угол (2,0,0) — вплотную.
         let small = s.apply_build_as(1, &BuildCommand {
-            entity: 1, action: BuildAction::Place, coord: (2, 0, 0),
+            entity: core, action: BuildAction::Place, coord: (2, 0, 0),
             color: ou_protocol::Color(200, 200, 200), size: 1,
         });
         assert_eq!(small, BuildReason::Ok, "малый воксель стыкуется к ядру");
         // Большой воксель — тоже (грань сверху ядра).
         let big = s.apply_build_as(1, &BuildCommand {
-            entity: 1, action: BuildAction::Place, coord: (0, 2, 0),
+            entity: core, action: BuildAction::Place, coord: (0, 2, 0),
             color: ou_protocol::Color(150, 150, 150), size: 3,
         });
         assert_eq!(big, BuildReason::Ok, "большой воксель стыкуется к ядру");
-        let g = s.constructions.get(&1).unwrap();
+        let g = s.constructions.get(&core).unwrap();
         assert_eq!(g.grid.len(), 3, "ядро + малый + большой воксели");
         assert!(g.grid.validate().is_ok(), "цепочка связна");
     }
 
     #[test]
     fn core_colors_differ_by_kind() {
-        // Ядра разного назначения — разных цветов (корабль/орбитальная/статичная).
+        // Ядра разного назначения — разных цветов (корабль/динамическое/статичная).
         let ship = CoreSpec { size: 16, kind: 1 }.color();
-        let orbital = CoreSpec { size: 16, kind: 2 }.color();
+        let dynamic = CoreSpec { size: 16, kind: 2 }.color();
         let stat = CoreSpec { size: 16, kind: 0 }.color();
-        assert_ne!(ship, orbital, "корабль и орбитальная — разные цвета");
+        assert_ne!(ship, dynamic, "корабль и динамическое — разные цвета");
         assert_ne!(ship, stat, "корабль и статичная — разные цвета");
-        assert_ne!(orbital, stat, "орбитальная и статичная — разные цвета");
+        assert_ne!(dynamic, stat, "динамическое и статичная — разные цвета");
         // После установки ядро получает цвет своего назначения.
         let mut s = Server::new();
         s.connect_on_planet(1);
-        s.place_core_as(1, 16, 0, (0, 0, 0)).unwrap();
-        let g = s.constructions.get(&1).unwrap();
+        let (core, _) = s.place_core_as(1, 16, 0, (0, 0, 0)).unwrap();
+        let g = s.constructions.get(&core).unwrap();
         assert_eq!(g.grid.get((0, 0, 0)), Some(stat));
     }
 }

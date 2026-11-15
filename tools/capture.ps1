@@ -70,6 +70,7 @@ $Presets = @(
   [pscustomobject]@{ Name='voxels';    Flags=@('-OUAutoConnect','-OUVoxels');                          Cats=@('LogOUChar'); Expect=@(); Wait=38; Desc='Окно вокселей (V): квадраты размера кисти' }
   [pscustomobject]@{ Name='collide';   Flags=@('-OUAutoConnect','-OUAutoBuild','-OUWalkInto','-OUGhostLog'); Cats=@('LogOUChar'); Expect=@('Столкновение'); Wait=55; Desc='Коллизия: персонаж упирается в постройку и не проходит сквозь' }
   [pscustomobject]@{ Name='menus';     Flags=@('-OUAutoConnect','-OUAutoMenus');                       Cats=@('LogOUMenu','LogOUChar'); Expect=@('Скрипты: открыто','Воксели: окно открыто'); Wait=50; Desc='Все окна по очереди: рынок, скрипты, мастерская, организация, персонаж, воксели' }
+  [pscustomobject]@{ Name='cores';     Flags=@('-OUAutoConnect','-OUCore','-OUCoreKinds');             Cats=@('LogOUClient','LogOUChar'); Expect=@('16x16'); Wait=48; Desc='Ядра: несколько ядер с лимитами (2 базы / 3 корабля / 2 динамич.), активное ядро' }
 )
 
 if ($List) {
