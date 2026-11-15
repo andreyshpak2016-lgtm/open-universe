@@ -893,11 +893,10 @@ void AOUCharacterPawn::UpdateBuildGhost()
 	{
 		return;
 	}
-	// Призрак виден только когда открыто меню строительства и мы в сети.
+	// Призрак блока виден только когда открыто меню строительства и мы в сети.
 	if (!bBuildMenuOpen)
 	{
 		BuildGhost->SetVisibility(false);
-		if (BuildGrid) { BuildGrid->SetGridVisible(false); }
 		return;
 	}
 
@@ -927,41 +926,6 @@ void AOUCharacterPawn::UpdateBuildGhost()
 	BuildGhost->SetVectorParameterValueOnMaterials(TEXT("Color"),
 		FVector(Col.R * 0.8f + 0.2f, Col.G * 0.8f + 0.2f, Col.B * 0.8f + 0.2f));
 	BuildGhost->SetVisibility(true);
-
-	// Сетка области ядра. Когда выбран слот «ЯДРО» — сетка показывается в месте
-	// под прицелом (куда встанет). Когда ядро уже стоит и слот не выбран —
-	// показываем сетку вокруг ПОСТАВЛЕННОГО ядра: так установка ядра видна.
-	if (bCoreSel)
-	{
-		UWorld* World = GetWorld();
-		if (!BuildGrid && World)
-		{
-			BuildGrid = World->SpawnActor<AOUBuildGrid>(AOUBuildGrid::StaticClass(), FTransform::Identity);
-		}
-		if (BuildGrid)
-		{
-			const FVector CoreCenter = VoxelWorld(FVector(Target.X, Target.Y, Target.Z), CoreSizeVoxels());
-			BuildGrid->Setup(CoreCenter, 150.0 * static_cast<double>(CoreSizeVoxels()), BuildGridRotation());
-		}
-	}
-	else if (Net && Net->CoreSize > 0)
-	{
-		// Ядро уже поставлено — держим его сетку видимой (еле заметную).
-		UWorld* World = GetWorld();
-		if (!BuildGrid && World)
-		{
-			BuildGrid = World->SpawnActor<AOUBuildGrid>(AOUBuildGrid::StaticClass(), FTransform::Identity);
-		}
-		if (BuildGrid)
-		{
-			const FVector CoreCenter = VoxelWorld(FVector(Net->CoreCoord.X, Net->CoreCoord.Y, Net->CoreCoord.Z), Net->CoreSize);
-			BuildGrid->Setup(CoreCenter, 150.0 * static_cast<double>(Net->CoreSize), BuildGridRotation());
-		}
-	}
-	else if (BuildGrid)
-	{
-		BuildGrid->SetGridVisible(false);
-	}
 	// Диагностика `-OUGhostLog`: печатаем позицию призрака раз в ~секунду.
 	if (FParse::Param(FCommandLine::Get(), TEXT("OUGhostLog")))
 	{
@@ -974,6 +938,59 @@ void AOUCharacterPawn::UpdateBuildGhost()
 				Target.X, Target.Y, Target.Z, *Pos.ToCompactString(), *GetActorLocation().ToCompactString(),
 				FVector::Dist(Pos, GetActorLocation()), BuildGhost->IsVisible() ? 1 : 0);
 		}
+	}
+}
+
+void AOUCharacterPawn::UpdateCoreGrid()
+{
+	// Сетка-радиус постройки (каркас области ядра). Показывается:
+	//  * при выборе слота «ЯДРО» в палитре — превью в месте постановки;
+	//  * когда прицел НАВЕДЁН на поставленное ядро — видно радиус постройки.
+	// В остальное время скрыта (не мешает обзору).
+	bool bShowGrid = false;
+	FVector GridCenter = FVector::ZeroVector;
+	double GridSideCm = 0.0;
+
+	const bool bCoreSel = ((EOUBuildPart)BuildSelection == EOUBuildPart::Core);
+	if (bBuildMenuOpen && bCoreSel)
+	{
+		FIntVector Target;
+		if (ComputeBuildTarget(Target))
+		{
+			bShowGrid = true;
+			GridCenter = VoxelWorld(FVector(Target.X, Target.Y, Target.Z), CoreSizeVoxels());
+			GridSideCm = 150.0 * static_cast<double>(CoreSizeVoxels());
+		}
+	}
+	else if (Net && Net->CoreSize > 0)
+	{
+		// Наведён ли прицел на ядро (координата под прицелом == ячейка ядра)?
+		FIntVector AimCoord;
+		FVector AimHit, AimNormal;
+		if (TraceBuildTarget(AimCoord, AimHit, AimNormal) && AimCoord == Net->CoreCoord)
+		{
+			bShowGrid = true;
+			GridCenter = VoxelWorld(
+				FVector(Net->CoreCoord.X, Net->CoreCoord.Y, Net->CoreCoord.Z), Net->CoreSize);
+			GridSideCm = 150.0 * static_cast<double>(Net->CoreSize);
+		}
+	}
+
+	if (bShowGrid)
+	{
+		UWorld* World = GetWorld();
+		if (!BuildGrid && World)
+		{
+			BuildGrid = World->SpawnActor<AOUBuildGrid>(AOUBuildGrid::StaticClass(), FTransform::Identity);
+		}
+		if (BuildGrid)
+		{
+			BuildGrid->Setup(GridCenter, GridSideCm, BuildGridRotation());
+		}
+	}
+	else if (BuildGrid)
+	{
+		BuildGrid->SetGridVisible(false);
 	}
 }
 
@@ -2067,6 +2084,8 @@ void AOUCharacterPawn::Tick(float DeltaSeconds)
 	ApplyServerBuildEdits();
 	// Призрак блока под прицелом (меню строительства, как в Dual Universe).
 	UpdateBuildGhost();
+	// Радиус постройки (каркас области ядра) — виден при наведении на ядро.
+	UpdateCoreGrid();
 	// Авторитетное копание: применяем воронки, пришедшие от сервера.
 	ApplyServerDigs();
 
