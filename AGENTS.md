@@ -90,7 +90,8 @@
   тяжёлых UE-шагов. Отдельно: `tools/test-rust.ps1` (ядро),
   `tools/test-client.ps1` (провод), `tools/test-terrain.ps1` (рельеф),
   `tools/test-ue.ps1` (редактор), `tools/test-shipping.ps1` (упаковка).
-  **Проверка на другом ПК** — `docs/testing-on-another-pc.md`.
+  **Проверка на другом ПК** — `docs/testing-on-another-pc.md` (в т. ч. удалённый
+  прогон по SSH без мыши второго ПК: `tools/test-remote.ps1`).
 - **Проверка клиента (работоспособность + графика):** `tools/capture.ps1`.
   Один инструмент на всё: `-Preset <фича>` проверяет сценарий и снимает кадр,
   `-Preset all` даёт таблицу «фича → статус», `-Window`/`-Shipping` меняют

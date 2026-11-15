@@ -5,6 +5,11 @@
 запускает доступные тесты и печатает сводку — что прошло, что упало, что
 пропущено и почему.
 
+> **Удалённый прогон без мыши:** `tools/test-remote.ps1` — передаёт свежий код
+> на второй ПК по SSH (git bundle) и запускает там `test-all.ps1`, а сводку
+> печатает у вас. Мышью второго компьютера пользоваться не нужно. Подробно — в
+> разделе 6.
+
 ---
 
 ## Пошагово с нуля (чек-лист)
@@ -223,3 +228,72 @@ powershell -File tools/build-client.ps1 -EngineRoot "C:\Program Files\Epic Games
 | UE-тесты «ПРОПУЩЕНО» | Движок не найден — укажите `-EngineRoot` |
 | `test-shipping` пропущен | Нет упакованной сборки — сначала `package-game.ps1` |
 | `Unable to delete …UnrealEditor-OpenUniverse.dll` | Открыт редактор UE — закройте его и пересоберите |
+
+---
+
+## 6. Удалённый прогон без мыши второго ПК (по SSH)
+
+Скрипт **`tools/test-remote.ps1`** передаёт свежий код на второй ПК по локальной
+сети и запускает там `tools/test-all.ps1`. Мышью второго компьютера пользоваться
+не нужно — всё делается у вас, а на экран печатается его сводка.
+
+```powershell
+# Сначала — быстрые тесты без UE (Rust + MSVC):
+powershell -ExecutionPolicy Bypass -File tools/test-remote.ps1 -Host 192.168.0.12 -SkipUE
+
+# Полный прогон (если на втором ПК есть UE 5.5):
+powershell -ExecutionPolicy Bypass -File tools/test-remote.ps1 -Host 192.168.0.12
+
+# Свой каталог/путь движка:
+powershell -File tools/test-remote.ps1 -Host 192.168.0.12 -RemoteDir C:\ou -EngineRoot "C:\Program Files\Epic Games\UE_5.5"
+```
+
+Что делает скрипт:
+
+1. Проверяет SSH-доступ и печатает инструкцию, если войти не удалось.
+2. Собирает инвентарь удалённого ПК (Rust / MSVC / UE / git).
+3. Пакует свежий код в `git bundle` и копирует по `scp` (GitHub не нужен,
+   работает даже когда коммиты ещё не опубликованы).
+4. Разворачивает репозиторий в `-RemoteDir` (по умолчанию `C:\ou-remote`).
+5. Запускает `test-all.ps1` на удалённом ПК и печатает его сводку.
+
+### Что настроить один раз на втором ПК
+
+Откройте на нём PowerShell **от администратора** и выполните:
+
+```powershell
+# 1. Включить SSH-сервер.
+Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0
+Start-Service sshd
+Set-Service -Name sshd -StartupType Automatic
+New-NetFirewallRule -Name sshd -DisplayName 'OpenSSH' -Enabled True -Direction Inbound -Protocol TCP -Action Allow -LocalPort 22
+
+# 2. Разрешить вход по ключу этого ПК (без пароля).
+mkdir "$env:USERPROFILE\.ssh" -Force
+Add-Content -Path "$env:USERPROFILE\.ssh\authorized_keys" -Value "<публичный ключ этого ПК>"
+```
+
+Свой публичный ключ смотрите так:
+
+```powershell
+Get-Content "$env:USERPROFILE\.ssh\id_ed25519.pub"
+```
+
+Если ключа нет — создайте:
+
+```powershell
+ssh-keygen -t ed25519 -N '""' -f "$env:USERPROFILE\.ssh\id_ed25519"
+```
+
+> По умолчанию SSH заходит под именем пользователя этого ПК. Если на втором ПК
+> другое имя — укажите `-User Имя`.
+
+---
+
+## 7. Частые проблемы
+
+| Симптом | Причина / решение |
+|---|---|
+| `Permission denied (publickey)` в `test-remote` | Ключ не добавлен в `authorized_keys` на втором ПК (см. раздел 6) |
+| `Connection refused` / таймаут | На втором ПК не запущен `sshd` или закрыт порт 22 (см. раздел 6) |
+| `test-remote`: «Развёрнут HEAD: (пусто)» | На втором ПК не установлен `git` — `winget install Git.Git` |
