@@ -143,7 +143,7 @@ management и генерация мира.
 
 ```bash
 cd server
-cargo test --workspace                  # 316 тестов
+cargo test --workspace                  # 343 теста
 cargo run -p ou-server                  # демо interest management и дельт
 cargo run -p ou-client                  # демо предсказания и реконсиляции
 cargo run -p ou-sim --bin ou-worldgen   # генерация звёздных систем
@@ -156,6 +156,24 @@ cargo run -p ou-client --bin ou-netclient -- 127.0.0.1:7777 8
 ```
 
 Подробности — в `server/README.md`.
+
+## Тесты и проверки
+
+Один прогон всех доступных проверок (сам определит, что установлено):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools/test-all.ps1
+```
+
+Отдельные проверки: `tools/test-rust.ps1` (ядро), `tools/test-client.ps1`
+(провод C++), `tools/test-terrain.ps1` (рельеф), `tools/test-ue.ps1` (редактор
+UE), `tools/test-shipping.ps1` (упакованная сборка).
+
+**Тесты на другом компьютере** — пошаговая инструкция с установкой программ:
+`docs/testing-on-another-pc.md`.
+
+Кроме локальных проверок всё, что не требует Unreal Engine, гоняется в облаке
+(`.github/workflows/ci.yml`, `health.yml`).
 
 ## Как менять план и прогресс
 
