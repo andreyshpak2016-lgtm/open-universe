@@ -146,6 +146,16 @@ impl CoreSpec {
             _ => "статичная база",
         }
     }
+
+    /// Цвет ядра — разный по назначению, чтобы ядра отличались с одного взгляда:
+    /// корабль — синий, орбитальная база — фиолетовый, статичная база — зелёный.
+    pub fn color(&self) -> Color {
+        match self.kind {
+            1 => Color(80, 140, 255),   // корабль — синий
+            2 => Color(170, 100, 240),  // орбитальная — фиолетовый
+            _ => Color(70, 200, 110),   // статичная — зелёный
+        }
+    }
 }
 
 /// Воксельная конструкция.
@@ -202,9 +212,10 @@ impl VoxelGrid {
         self.spec = spec;
         self.core_voxel_size = voxel_size.clamp(1, 3);
         self.founded = true;
-        // Ядро само занимает свой куб (центр постройки).
+        // Ядро само занимает свой куб (центр постройки). Цвет — по назначению,
+        // чтобы ядра разного типа различались.
         self.voxels.clear();
-        self.voxels.insert(coord, Voxel::new(Color::ACCENT, self.core_voxel_size));
+        self.voxels.insert(coord, Voxel::new(spec.color(), self.core_voxel_size));
     }
 
     pub fn with_limits(limits: BuildLimits) -> Self {
@@ -786,9 +797,11 @@ mod tests {
     fn different_voxel_sizes_connect_face_to_face() {
         let mut g = VoxelGrid::new();
         // Ядро — большой воксель (3) в начале координат.
-        g.set_core((0, 0, 0), CoreSpec { size: 16, kind: 0 }, 3);
+        let spec = CoreSpec { size: 16, kind: 0 };
+        g.set_core((0, 0, 0), spec, 3);
         assert_eq!(g.len(), 1);
-        assert_eq!(g.get((0, 0, 0)), Some(Color::ACCENT));
+        // Цвет ядра — по назначению (статичная база = зелёный).
+        assert_eq!(g.get((0, 0, 0)), Some(spec.color()));
         // Малый воксель к грани большого: угол (3,0,0) — вплотную по X.
         assert!(g.place_sized((3, 0, 0), Color::HULL, 1).is_ok(), "малый встаёт к большому по грани");
         // Средний — тоже стыкуется (грань с ядром 3×3×3 сверху: угол (0,3,0)).

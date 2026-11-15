@@ -4356,4 +4356,21 @@ mod tests {
         assert_eq!(g.grid.len(), 3, "ядро + малый + большой воксели");
         assert!(g.grid.validate().is_ok(), "цепочка связна");
     }
+
+    #[test]
+    fn core_colors_differ_by_kind() {
+        // Ядра разного назначения — разных цветов (корабль/орбитальная/статичная).
+        let ship = CoreSpec { size: 16, kind: 1 }.color();
+        let orbital = CoreSpec { size: 16, kind: 2 }.color();
+        let stat = CoreSpec { size: 16, kind: 0 }.color();
+        assert_ne!(ship, orbital, "корабль и орбитальная — разные цвета");
+        assert_ne!(ship, stat, "корабль и статичная — разные цвета");
+        assert_ne!(orbital, stat, "орбитальная и статичная — разные цвета");
+        // После установки ядро получает цвет своего назначения.
+        let mut s = Server::new();
+        s.connect_on_planet(1);
+        s.place_core_as(1, 16, 0, (0, 0, 0)).unwrap();
+        let g = s.constructions.get(&1).unwrap();
+        assert_eq!(g.grid.get((0, 0, 0)), Some(stat));
+    }
 }

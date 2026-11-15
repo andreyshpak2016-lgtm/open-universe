@@ -1307,15 +1307,14 @@ void AOUCharacterPawn::ApplyServerBuildEdits()
 					// разного размера видны как кубы разной величины.
 					const int32 VSize = FMath::Clamp(static_cast<int32>(E.Size), 1, 3);
 					Block->BlockSize = 150.f * static_cast<float>(VSize);
-					// Ядро — особым акцентным цветом, чтобы его было видно среди
-					// обычных блоков (по координате ядра из сервера).
-					const bool bIsCore = (E.Entity == Net->OwnEntityId && Key == Net->CoreCoord);
-					Block->BlockColor = bIsCore
-						? FLinearColor(0.16f, 0.62f, 0.72f)   // акцентный (ядро)
-						: FLinearColor(E.R / 255.f, E.G / 255.f, E.B / 255.f);
+					// Цвет берём с сервера: у ядра он свой по назначению (корабль/
+					// орбитальная/статичная), у обычных блоков — по материалу.
+					Block->BlockColor = FLinearColor(E.R / 255.f, E.G / 255.f, E.B / 255.f);
 					Block->ApplyLook();
 					ServerBlocks.Add(Key, Block);
 					BlockCoords.Add(Block, Key);
+					// Ядро определяем по координате из сервера (для лога).
+					const bool bIsCore = (E.Entity == Net->OwnEntityId && Key == Net->CoreCoord);
 					// Счётчик — только по ПРИНЯТЫМ сервером блокам своей конструкции
 					// (не по кликам): так он честно показывает, что реально стоит.
 					if (E.Entity == Net->OwnEntityId)
@@ -2292,7 +2291,32 @@ void AOUCharacterPawn::Tick(float DeltaSeconds)
 			}
 			else if (CoreCount == 2)
 			{
-				PlaceCoreBlock();
+				// Три ядра разного назначения — для снимка цветов. Ставим рядом,
+				// вручную задавая ячейки (ядро при установке заменяет прежнее).
+				Net = Net ? Net : FindComponentByClass<UOUClientNet>();
+				FVector GroundDir;
+				FIntVector Base;
+				if (AimTerrainDir(GroundDir))
+				{
+					Base = WorldToVoxel(GroundDir * (SurfaceRadius(GroundDir) + 75.f));
+				}
+				else
+				{
+					Base = WorldToVoxel(GetActorLocation() + GetActorForwardVector() * 600.f);
+				}
+				if (Net && Net->IsConnected())
+				{
+					if (FParse::Param(FCommandLine::Get(), TEXT("OUCoreKinds")))
+					{
+						Net->SendPlaceCore(16, 0, Base.X, Base.Y, Base.Z);
+						Net->SendPlaceCore(16, 1, Base.X + 4, Base.Y, Base.Z);
+						Net->SendPlaceCore(16, 2, Base.X + 8, Base.Y, Base.Z);
+					}
+					else
+					{
+						PlaceCoreBlock();
+					}
+				}
 			}
 		}
 	}
