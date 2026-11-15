@@ -25,7 +25,7 @@ fn run_case(title: &str, config: SimConfig, miners: usize, refiners: usize, cons
         "  агенты: {} добытчиков, {} промышленников, {} потребителей",
         miners, refiners, consumers
     );
-    println!("  сделок всего: объём {}", result.total_volume);
+    println!("  сделок: {} (объём {} единиц)", result.trades, result.total_volume);
     println!(
         "  цена: min {}, max {}, VWAP {}",
         result.min_price, result.max_price, result.vwap

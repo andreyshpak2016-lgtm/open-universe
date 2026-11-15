@@ -113,7 +113,7 @@ pub struct SimResult {
     /// Минимальная и максимальная цена сделки.
     pub min_price: u64,
     pub max_price: u64,
-    /// Всего сделок и объём.
+    /// Всего СДЕЛОК (не единиц товара) и суммарный объём.
     pub trades: usize,
     pub total_volume: u64,
     /// Кредиты, «созданные» и «сожжённые» (должно быть 0 — деньги не печатаются).
@@ -133,6 +133,8 @@ pub struct Simulator {
     gross_value: u64,
     /// Суммарные кредиты на старте.
     start_total_credits: u64,
+    /// Число совершённых сделок за прогон.
+    trade_count: usize,
 }
 
 impl Simulator {
@@ -140,7 +142,7 @@ impl Simulator {
     pub fn new(config: SimConfig, miners: usize, refiners: usize, consumers: usize) -> Self {
         let market = Market::new();
         let inventory = Inventory::new();
-        let mut engine = MatchingEngine::new(market, inventory);
+        let engine = MatchingEngine::new(market, inventory);
 
         let mut agents = Vec::new();
         let mut id = 1u32;
@@ -167,6 +169,7 @@ impl Simulator {
             gross_volume: 0,
             gross_value: 0,
             start_total_credits,
+            trade_count: 0,
         }
     }
 
@@ -330,35 +333,31 @@ impl Simulator {
     /// Перевести кредиты по сделкам (покупатель платит, продавец получает)
     /// и обучить агентов «справедливой» цене.
     fn settle_trades(&mut self) {
-        // Журнал сделок пополняется движком; берём только новые.
-        let all = self.engine.trades.clone();
-        // Отсчитываем уже обработанные через сумму объёмов.
-        let processed: usize = self
-            .agents
-            .iter()
-            .map(|a| (a.sold + a.bought) as usize)
-            .sum::<usize>()
-            / 2;
-        let _ = processed;
+        // Движок пополняет журнал сделок; берём только новые (журнал чистим ниже).
+        let all = std::mem::take(&mut self.engine.trades);
+        self.trade_count += all.len();
         for t in &all {
             let total = t.price.saturating_mul(t.qty);
             // Найти покупателя и продавца.
             let buyer = self.agents.iter().position(|a| a.id == t.buyer);
             let seller = self.agents.iter().position(|a| a.id == t.seller);
+            // ВАЖНО: перевод — «согласованной парой». Покупатель платит ровно
+            // столько, сколько получает продавец (даже если у покупателя не
+            // хватило из-за висящего в стакане ордера). Иначе деньги «создаются»
+            // (покупатель недоплачивает, а продавец получает сполна).
+            let have = buyer.map(|bi| self.agents[bi].credits).unwrap_or(0);
+            let pay = total.min(have);
             if let Some(bi) = buyer {
-                self.agents[bi].credits = self.agents[bi].credits.saturating_sub(total);
+                self.agents[bi].credits -= pay;
                 self.agents[bi].bought += t.qty;
                 self.agents[bi].learn(t.price, 0.05);
             }
             if let Some(si) = seller {
-                self.agents[si].credits = self.agents[si].credits.saturating_add(total);
+                self.agents[si].credits = self.agents[si].credits.saturating_add(pay);
                 self.agents[si].sold += t.qty;
                 self.agents[si].learn(t.price, 0.05);
             }
         }
-        // Чтобы не считать сделки дважды: очищаем накопленный журнал, но
-        // помним объёмы (нужны для итогов).
-        self.engine.trades.clear();
     }
 
     /// Прогнать `ticks` тиков и вернуть итоги.
@@ -384,7 +383,7 @@ impl Simulator {
             vwap,
             min_price,
             max_price,
-            trades: 0,
+            trades: self.trade_count,
             total_volume: self.gross_volume,
             credits_delta,
         }
@@ -431,6 +430,20 @@ mod tests {
         let result = s.run(100);
         assert!(result.total_volume > 0, "рынок должен торговать");
         assert!(result.vwap > 0, "должна быть средняя цена");
+        // Счётчик СДЕЛОК (не единиц) должен быть ненулевым — раньше он был
+        // захардкожен нулём и потому «молчал».
+        assert!(result.trades > 0, "должны быть сделки: {}", result.trades);
+    }
+
+    #[test]
+    fn trade_count_and_volume_are_consistent() {
+        let mut s = sim();
+        let r = s.run(120);
+        // Объём не меньше числа сделок (каждая сделка — минимум единица).
+        assert!(r.total_volume >= r.trades as u64, "объём {} < сделок {}", r.total_volume, r.trades);
+        // VWAP — средневзвешенное: между min и max ценой.
+        assert!(r.vwap >= r.min_price && r.vwap <= r.max_price,
+            "VWAP {0} вне [{1}, {2}]", r.vwap, r.min_price, r.max_price);
     }
 
     #[test]
@@ -463,6 +476,27 @@ mod tests {
         let mut s = sim();
         let r = s.run(120);
         assert_eq!(r.credits_delta, 0, "кредиты не должны создаваться или исчезать");
+    }
+
+    #[test]
+    fn credits_conserved_in_extreme_configs() {
+        // Деньги сохраняются и в дефиците, и в избытке: перевод идёт
+        // согласованной парой «сколько заплатил покупатель = сколько получил
+        // продавец», даже если у покупателя кредитов в обрез.
+        let cases = [
+            (SimConfig { mining_output: 1, ..Default::default() }, 1, 1, 12),
+            (SimConfig { mining_output: 20, ..Default::default() }, 10, 2, 2),
+            (SimConfig { refine_input: 8, ..Default::default() }, 6, 2, 6),
+        ];
+        for (cfg, m, r, c) in cases {
+            let mut s = Simulator::new(cfg, m, r, c);
+            let res = s.run(150);
+            assert_eq!(
+                res.credits_delta, 0,
+                "кредиты должны сохраняться (m={m}, r={r}, c={c}): {}",
+                res.credits_delta
+            );
+        }
     }
 
     #[test]
