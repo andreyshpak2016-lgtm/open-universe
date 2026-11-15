@@ -212,7 +212,9 @@ public:
 	void ApplyServerBuildEdits();
 
 	/** Мировая позиция центра вокселя по его координате в сетке конструкции. */
-	FVector VoxelWorld(const FVector& ServerCoord) const;
+	/** Мировая точка ЦЕНТРА куба вокселя с минимальным углом `ServerCoord` и
+	 *  размером `Size` (1/2/3). */
+	FVector VoxelWorld(const FVector& ServerCoord, int32 Size = 1) const;
 
 	/** Сетевой клиент (для отправки команд строительства). */
 	UPROPERTY(BlueprintReadWrite, Category = "Open Universe|Build")
@@ -557,4 +559,8 @@ private:
 
 	/** Крайняя применённая ревизия правок (для подтверждения серверу). */
 	int64 LastAppliedRevision = 0;
+
+	/** Размер вокселя, на который попал прицел (1/2/3) — для сдвига на грань.
+	 *  Изменяется в TraceBuildTarget (не const-поля через mutable нет). */
+	mutable int32 LastHitBlockSize = 1;
 };

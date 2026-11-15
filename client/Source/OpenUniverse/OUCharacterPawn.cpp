@@ -909,11 +909,11 @@ void AOUCharacterPawn::UpdateBuildGhost()
 		return;
 	}
 
-	const FVector Pos = VoxelWorld(FVector(Target.X, Target.Y, Target.Z));
-	// Размер призрака: у блока — размер кисти (1/2/3 → 1.5/3/4.5 м), у ядра —
-	// размер вокселя-ядра. Призрак — ОДИН куб (клик ставит один воксель).
 	const bool bCoreSel = ((EOUBuildPart)BuildSelection == EOUBuildPart::Core);
 	const int32 VoxSide = bCoreSel ? CoreVoxelSize() : BuildBrushSide();
+	const FVector Pos = VoxelWorld(FVector(Target.X, Target.Y, Target.Z), VoxSide);
+	// Размер призрака: у блока — размер кисти (1/2/3 → 1.5/3/4.5 м), у ядра —
+	// размер вокселя-ядра. Призрак — ОДИН куб (клик ставит один воксель).
 	BuildGhost->SetWorldLocation(Pos);
 	// Ориентация призрака — как у реального блока (по осям сетки).
 	BuildGhost->SetWorldRotation(BuildGridRotation());
@@ -940,7 +940,7 @@ void AOUCharacterPawn::UpdateBuildGhost()
 		}
 		if (BuildGrid)
 		{
-			const FVector CoreCenter = VoxelWorld(FVector(Target.X, Target.Y, Target.Z));
+			const FVector CoreCenter = VoxelWorld(FVector(Target.X, Target.Y, Target.Z), CoreSizeVoxels());
 			BuildGrid->Setup(CoreCenter, 150.0 * static_cast<double>(CoreSizeVoxels()), BuildGridRotation());
 		}
 	}
@@ -954,7 +954,7 @@ void AOUCharacterPawn::UpdateBuildGhost()
 		}
 		if (BuildGrid)
 		{
-			const FVector CoreCenter = VoxelWorld(FVector(Net->CoreCoord.X, Net->CoreCoord.Y, Net->CoreCoord.Z));
+			const FVector CoreCenter = VoxelWorld(FVector(Net->CoreCoord.X, Net->CoreCoord.Y, Net->CoreCoord.Z), Net->CoreSize);
 			BuildGrid->Setup(CoreCenter, 150.0 * static_cast<double>(Net->CoreSize), BuildGridRotation());
 		}
 	}
@@ -1068,11 +1068,23 @@ bool AOUCharacterPawn::TraceBuildTarget(FIntVector& OutCoord, FVector& OutHit, F
 	if (const FIntVector* Found = BlockCoords.Find(HitActor))
 	{
 		OutCoord = *Found;
+		// Размер найденного блока (1/2/3) — нужен для сдвига на соседнюю грань:
+		// у крупного блока соседняя ячейка на N, а не на 1.
+		if (const AOUBuildBlock* BB = Cast<AOUBuildBlock>(HitActor))
+		{
+			LastHitBlockSize = FMath::Clamp(
+				FMath::RoundToInt(BB->BlockSize / 150.f), 1, 3);
+		}
+		else
+		{
+			LastHitBlockSize = 1;
+		}
 		return true;
 	}
 	// Запасной путь: пересчёт по точке чуть внутри блока.
 	const FVector Inside = Hit.ImpactPoint - Hit.ImpactNormal * 10.f;
 	OutCoord = WorldToVoxel(Inside);
+	LastHitBlockSize = 1;
 	return true;
 }
 
@@ -1090,8 +1102,9 @@ FIntVector AOUCharacterPawn::WorldToVoxel(const FVector& WorldPos) const
 	const FVector RightUE = FVector::CrossProduct(UpUE, FwdUE).GetSafeNormal();
 
 	const FVector Rel = WorldPos - AnchorUE;
+	// Округляем до целой ячейки (мин. угол куба со стороной 1).
 	const double FX = FVector::DotProduct(Rel, FwdUE) / VoxelCm;
-	const double FY = (FVector::DotProduct(Rel, UpUE) - VoxelCm * 0.5) / VoxelCm;
+	const double FY = FVector::DotProduct(Rel, UpUE) / VoxelCm;
 	const double FZ = FVector::DotProduct(Rel, RightUE) / VoxelCm;
 	return FIntVector(
 		FMath::RoundToInt(FX),
@@ -1142,11 +1155,13 @@ void AOUCharacterPawn::PaintBuildBlock()
 void AOUCharacterPawn::OnBuildRemove() { RemoveBuildBlock(); }
 void AOUCharacterPawn::OnBuildPaint() { PaintBuildBlock(); }
 
-FVector AOUCharacterPawn::VoxelWorld(const FVector& ServerCoord) const
+FVector AOUCharacterPawn::VoxelWorld(const FVector& ServerCoord, int32 Size) const
 {
-	// Мировая точка вокселя сетки: общий (детерминированный) якорь + координаты.
-	// Оси — в мировых осях UE (z — вверх). Базис якоря — от направления «вверх».
+	// Мировая точка ЦЕНТРА куба вокселя: якорь + координаты (мин. угол) + половина
+	// куба. Размер учитывается: у вокселя N центру надо +N/2 ячейки, иначе крупный
+	// куб «уходит» под землю / в текстуру.
 	const double VoxelCm = 150.0;   // 1.5 м на воксель в см UE
+	const int32 N = FMath::Clamp(Size, 1, 3);
 	const FVector AnchorUE = BuildAnchorUE;
 	const FVector UpUE = AnchorUE.GetSafeNormal();
 	FVector FwdUE = FVector::VectorPlaneProject(FVector(1.f, 0.f, 0.f), UpUE).GetSafeNormal();
@@ -1155,10 +1170,11 @@ FVector AOUCharacterPawn::VoxelWorld(const FVector& ServerCoord) const
 		FwdUE = FVector::VectorPlaneProject(FVector::ForwardVector, UpUE).GetSafeNormal();
 	}
 	const FVector RightUE = FVector::CrossProduct(UpUE, FwdUE).GetSafeNormal();
+	const double Half = 0.5 * static_cast<double>(N);
 	return AnchorUE
-		+ FwdUE * (ServerCoord.X * VoxelCm)
-		+ UpUE * (ServerCoord.Y * VoxelCm + VoxelCm * 0.5)
-		+ RightUE * (ServerCoord.Z * VoxelCm);
+		+ FwdUE * ((ServerCoord.X + Half) * VoxelCm)
+		+ UpUE * ((ServerCoord.Y + Half) * VoxelCm)
+		+ RightUE * ((ServerCoord.Z + Half) * VoxelCm);
 }
 
 FRotator AOUCharacterPawn::BuildGridRotation() const
@@ -1178,14 +1194,29 @@ FRotator AOUCharacterPawn::BuildGridRotation() const
 
 bool AOUCharacterPawn::ComputeBuildTarget(FIntVector& OutTarget) const
 {
-	// 1. Если под прицелом уже есть блок — ставим в соседнюю с ним грань
-	//    (по нормали грани). Такой блок гарантированно примыкает — сервер примет.
+	// 1. Если под прицелом уже есть блок — ставим в соседнюю с ним грань по
+	//    нормали. Сдвиг — на размер найденного блока (у крупного ядра соседняя
+	//    ячейка на N, а не на 1), иначе блок оказался бы ВНУТРИ ядра.
+	const int32 NewSide = ((EOUBuildPart)BuildSelection == EOUBuildPart::Core)
+		? CoreVoxelSize() : BuildBrushSide();
 	{
 		FIntVector Coord;
 		FVector Hit, Normal;
 		if (TraceBuildTarget(Coord, Hit, Normal))
 		{
-			OutTarget = Coord + WorldDirToVoxelShift(Normal);
+			const FIntVector Shift = WorldDirToVoxelShift(Normal);
+			const int32 HitSide = FMath::Clamp(LastHitBlockSize, 1, 3);
+			// Приставляем новый куб к ГРАНИ найденного, с учётом обоих размеров:
+			// по положительной оси — за дальней гранью (+HitSide), по
+			// отрицательной — перед ближней (−NewSide). Так кубы разного размера
+			// стыкуются, а не влезают друг в друга.
+			OutTarget = Coord;
+			if (Shift.X > 0)      { OutTarget.X += HitSide; }
+			else if (Shift.X < 0) { OutTarget.X -= NewSide; }
+			if (Shift.Y > 0)      { OutTarget.Y += HitSide; }
+			else if (Shift.Y < 0) { OutTarget.Y -= NewSide; }
+			if (Shift.Z > 0)      { OutTarget.Z += HitSide; }
+			else if (Shift.Z < 0) { OutTarget.Z -= NewSide; }
 			return true;
 		}
 	}
@@ -1296,16 +1327,16 @@ void AOUCharacterPawn::ApplyServerBuildEdits()
 			TObjectPtr<AOUBuildBlock>* Found = ServerBlocks.Find(Key);
 			if (!Found)
 			{
-				const FVector Pos = VoxelWorld(FVector(E.X, E.Y, E.Z));
+				// Размер блока — из правки (1/2/3 → 1.5/3/4.5 м). Позицию считаем
+				// по размеру: центр куба смещён на N/2 от минимального угла.
+				const int32 VSize = FMath::Clamp(static_cast<int32>(E.Size), 1, 3);
+				const FVector Pos = VoxelWorld(FVector(E.X, E.Y, E.Z), VSize);
 				// Блоки ориентируем по осям сетки (BuildGridRotation) — тогда на
 				// сферической планете постройка ровная, а не «криво».
 				AOUBuildBlock* Block = World->SpawnActor<AOUBuildBlock>(
 					AOUBuildBlock::StaticClass(), FTransform(BuildGridRotation(), Pos));
 				if (Block)
 				{
-					// Размер блока — из правки (1/2/3 → 1.5/3/4.5 м). Воксели
-					// разного размера видны как кубы разной величины.
-					const int32 VSize = FMath::Clamp(static_cast<int32>(E.Size), 1, 3);
 					Block->BlockSize = 150.f * static_cast<float>(VSize);
 					// Цвет берём с сервера: у ядра он свой по назначению (корабль/
 					// орбитальная/статичная), у обычных блоков — по материалу.
@@ -2316,6 +2347,24 @@ void AOUCharacterPawn::Tick(float DeltaSeconds)
 					{
 						PlaceCoreBlock();
 					}
+				}
+			}
+			else if (CoreCount == 3 && FParse::Param(FCommandLine::Get(), TEXT("OUCoreKinds")))
+			{
+				// Проверка стыковки: к ядру приставляем воксели разного размера
+				// (малый/средний/большой) — все должны пристыковаться по граням.
+				Net = Net ? Net : FindComponentByClass<UOUClientNet>();
+				if (Net && Net->IsConnected() && Net->CoreSize > 0)
+				{
+					const FIntVector C = Net->CoreCoord;
+					// Ядро занимает N ячеек от C. Приставляем к грани +X:
+					// малый блок — за дальней гранью ядра.
+					const int32 N = (Net->CoreSize == 64) ? 3 : (Net->CoreSize == 32 ? 2 : 1);
+					Net->SendBuild(Net->OwnEntityId, 0, C.X + N, C.Y, C.Z, 80, 200, 120, 1);
+					// Средний — вплотную по +Y.
+					Net->SendBuild(Net->OwnEntityId, 0, C.X, C.Y + N, C.Z, 200, 160, 80, 2);
+					// Большой — вплотную по +Z.
+					Net->SendBuild(Net->OwnEntityId, 0, C.X, C.Y, C.Z + N, 140, 140, 220, 3);
 				}
 			}
 		}
