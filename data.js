@@ -211,15 +211,15 @@ window.PLAN = {
       "goal": "Свести HUD и окна к единому стилю и навигации Dual Universe.",
       "goal_en": "Unify the HUD and windows into a single Dual Universe style and navigation.",
       "tasks": [
-        { "title": "Единая панель-док окон: открытие всех окон из одного ряда и переключение между ними", "title_en": "Single window dock bar: open all windows from one row and switch between them", "status": "todo" },
-        { "title": "Окно инвентаря/контейнера: сетка предметов, объём и масса, перенос между трюмом и базой", "title_en": "Inventory/container window: item grid, volume and mass, transfer between cargo and base", "status": "todo" },
-        { "title": "Окно производства (crafting): рецепты, схема, очередь производства", "title_en": "Crafting window: recipes, schematic, production queue", "status": "todo" },
-        { "title": "Окно карты: территории и тела системы, метки, зум", "title_en": "Map window: territories and system bodies, markers, zoom", "status": "todo" },
-        { "title": "Дерево талантов: визуальные ветки и узлы вместо списка", "title_en": "Talent tree: visual branches and nodes instead of a list", "status": "todo" },
-        { "title": "Список контактов и онлайн-игроков: присутствие, приглашения", "title_en": "Contacts and online players: presence, invitations", "status": "todo" },
-        { "title": "Лог событий и уведомления: всплывающие тосты и прокручиваемый лог", "title_en": "Event log and notifications: toast popups and a scrollable log", "status": "todo" },
-        { "title": "Настройки: графика, звук, управление, переназначение клавиш", "title_en": "Settings: graphics, sound, controls, key rebinding", "status": "todo" },
-        { "title": "Единый визуальный стиль окон: иконки, скругления, анимации, отступы", "title_en": "Unified window visual style: icons, rounded corners, animations, spacing", "status": "todo" }
+        { "title": "Единая панель-док окон: открытие всех окон из одного ряда и переключение между ними", "title_en": "Single window dock bar: open all windows from one row and switch between them", "status": "done" },
+        { "title": "Окно инвентаря/контейнера: сетка предметов, объём; масса и перенос между трюмом и базой", "title_en": "Inventory/container window: item grid, volume; mass and transfer between cargo and base", "status": "in_progress" },
+        { "title": "Окно производства (crafting): рецепты и заказ изготовления", "title_en": "Crafting window: recipes and production orders", "status": "done" },
+        { "title": "Окно карты: территории и тела системы, метки, зум", "title_en": "Map window: territories and system bodies, markers, zoom", "status": "done" },
+        { "title": "Дерево талантов: визуальные ветки и узлы вместо списка", "title_en": "Talent tree: visual branches and nodes instead of a list", "status": "done" },
+        { "title": "Список контактов и онлайн-игроков: присутствие, расстояние", "title_en": "Contacts and online players: presence, distance", "status": "done" },
+        { "title": "Лог событий и уведомления: всплывающие тосты и прокручиваемый лог", "title_en": "Event log and notifications: toast popups and a scrollable log", "status": "done" },
+        { "title": "Настройки: чувствительность и FOV, справка по управлению (графика/звук/переназначение — далее)", "title_en": "Settings: sensitivity and FOV, controls reference (graphics/sound/rebinding later)", "status": "in_progress" },
+        { "title": "Единый визуальный стиль окон: док, панели, акценты (иконки и анимации — далее)", "title_en": "Unified window visual style: dock, panels, accents (icons and animations later)", "status": "in_progress" }
       ]
     }
   ]
