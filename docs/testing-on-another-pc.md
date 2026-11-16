@@ -309,25 +309,55 @@ winget install --id Microsoft.VisualStudio.2022.BuildTools -e `
 `tools/test-remote.ps1` сам добавляет их пути (`%USERPROFILE%\.cargo\bin`,
 `C:\Program Files\Git\cmd`) в PATH удалённых команд.
 
+### Графические (UE) проверки на втором ПК
+
+Полный прогон с UE требует на втором ПК ещё:
+
+1. **Unreal Engine 5.5** (~72 ГБ). Быстрее всего скопировать уже установленный
+   движок с этого ПК по локальной сети (robocopy + SMB-шара), чем ставить через
+   Epic Games Launcher (нужен вход в аккаунт Epic):
+   ```powershell
+   # на удалённом ПК: шара на целевой каталог
+   New-SmbShare -Name UE55 -Path D:\UE_5.5 -FullAccess <пользователь>
+   # на этом ПК:
+   net use \\<ip>\UE55 /user:<пользователь> <пароль>
+   robocopy D:\UE_5.5 \\<ip>\UE55 /E /MT:32 /R:2 /W:2
+   ```
+2. **.NET Framework SDK** (нужен UnrealBuildTool):
+   `winget install Microsoft.DotNet.Framework.DeveloperPack_4 -e`
+3. Собрать **UE-модуль клиента** и **сервер** на втором ПК:
+   ```powershell
+   powershell -File tools/build-client.ps1 -Build -EngineRoot D:\UE_5.5
+   cd server; cargo build --workspace     # нужен ou-netd.exe для теста
+   ```
+
+> **Headless (важно для SSH):** в сессии SSH нет интерактивного рабочего стола и
+> D3D12 там не инициализируется — поэтому прогон идёт с `-Headless`
+> (`-RenderOffscreen -dx11`), кадр отдаёт сам движок (`-OULateShot`), мышь и
+> рабочий стол не нужны. `test-remote.ps1` включает это автоматически.
+
 ### Пример рабочего запуска
 
 ```powershell
 # Быстрые тесты (ядро + провод + рельеф) на втором ПК:
 powershell -ExecutionPolicy Bypass -File tools/test-remote.ps1 -Target 192.168.0.12 -User андрей -SkipUE
+
+# Полный прогон с UE и графическими кадрами:
+powershell -ExecutionPolicy Bypass -File tools/test-remote.ps1 -Target 192.168.0.12 -User андрей
 ```
 
-Ожидаемый итог:
+Ожидаемый итог (полный):
 
 ```
   cargo test --workspace     OK    код 0
   test-client (провод)       OK    код 0
   test-terrain (рельеф)      OK    код 0
-  test-ue (редактор)         -     пропущено: нет Unreal Engine 5.5
+  test-ue (редактор)         OK    код 0
   test-shipping (упакованная) -    пропущено: нет упакованной сборки
 Удалённый прогон: ВСЁ ЗЕЛЁНОЕ
 ```
 
-Кадры с удалённого ПК (если там есть UE) складываются в `shots\remote\`.
+Кадры с удалённого ПК складываются в `shots\remote\shots\` (`capture-*.png`).
 
 ---
 
@@ -339,5 +369,8 @@ powershell -ExecutionPolicy Bypass -File tools/test-remote.ps1 -Target 192.168.0
 | Вход под именем ПК не работает | Логин — это **пользователь** из `whoami` (после `\`), не имя ПК; укажите `-User пользователь` |
 | `Connection refused` / таймаут | На втором ПК не запущен `sshd` или закрыт порт 22 (см. раздел 6) |
 | `linker link.exe not found` | Нет C++ Build Tools: `winget install Microsoft.VisualStudio.2022.BuildTools --override "--add Microsoft.VisualStudio.Workload.VCTools --includeRecommended"` |
+| `Could not find NetFxSDK install dir` (UBT) | Нет .NET Framework SDK: `winget install Microsoft.DotNet.Framework.DeveloperPack_4 -e` |
+| UE-кадр — меню создания персонажа, «сервер не ответил» | На втором ПК не собран сервер: `cd server; cargo build --workspace` (нужен `ou-netd.exe`) |
+| UE падает на D3D12 в SSH-сессии | Сессия 0 без рабочего стола — прогон должен идти с `-Headless` (DX11); `test-remote.ps1` делает это сам |
 | `test-remote`: «Развёрнут HEAD: (пусто)» | На втором ПК не установлен `git` — `winget install Git.Git` |
 | `scp: invalid user name` при вытягивании кадров | Кириллица в имени пользователя; скрипт уже использует tar-поток вместо `scp -r` |
