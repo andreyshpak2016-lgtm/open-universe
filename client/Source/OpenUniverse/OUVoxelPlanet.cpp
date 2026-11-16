@@ -1066,25 +1066,62 @@ void AOUVoxelPlanet::BuildFineMesh(const FVector& AroundUE)
 	};
 	auto CornerDir = NodeDir;
 
-	// Верхние плитки ячеек (ровные квадраты на высоте ячейки).
+	// Высота ГЛАДКОГО рельефа в узле (без «плитки»): берём ту же формулу, что
+	// грубый меш — по вершинам, поэтому склоны гладкие.
+	auto SmoothAt = [&](int32 I, int32 J) -> float
+	{
+		const float A = FineV0 + I * SV;
+		const float B = FineW0 + J * SW;
+		const FVector Dir = (Up * Radius + T1 * A + T2 * B).GetSafeNormal();
+		return BaseAt(Dir, A, B);
+	};
+
+	// Верхние грани ячеек.
+	//  * обычная земля (ячейка и все её углы ВНЕ ямы) — гладкий четырёхугольник
+	//    по вершинам: рельеф ровный, без воксельной «плитки»;
+	//  * ячейка у ямы копания — плоский «воксельный» квадрат (дно ступенями),
+	//    как в voxel-игре, со стенками к соседям.
 	for (int32 J = 0; J < NW; ++J)
 	{
 		for (int32 I = 0; I < NV; ++I)
 		{
-			const float Hc = CellTop(I, J);
-			const FVector P00 = CornerDir(I, J) * (Radius + Hc);
-			const FVector P10 = CornerDir(I + 1, J) * (Radius + Hc);
-			const FVector P11 = CornerDir(I + 1, J + 1) * (Radius + Hc);
-			const FVector P01 = CornerDir(I, J + 1) * (Radius + Hc);
+			const bool bDug =
+				CellDug(I, J)
+				|| (I + 1 < NV && CellDug(I + 1, J))
+				|| (J + 1 < NW && CellDug(I, J + 1))
+				|| (I + 1 < NV && J + 1 < NW && CellDug(I + 1, J + 1));
 			const FVector Nrm = (CornerDir(I, J) + CornerDir(I + 1, J + 1)).GetSafeNormal();
-			FLinearColor Col = ShadedVertexColor(Hc, Nrm);
-			// Внутри ямы дно показываем цветом слоя (руда/лёд/кристалл/металл).
-			if (CellDug(I, J))
+			FVector P00, P10, P11, P01;
+			FLinearColor Col;
+			if (bDug)
 			{
-				const float A = FineV0 + (I + 0.5f) * SV;
-				const float B = FineW0 + (J + 0.5f) * SW;
-				const FVector DirC2 = (Up * Radius + T1 * A + T2 * B).GetSafeNormal();
-				Col = DugColor(static_cast<float>(DugCm(DirC2)), Col);
+				// Плоское воксельное дно ямы на высоте ячейки.
+				const float Hc = CellTop(I, J);
+				P00 = CornerDir(I, J) * (Radius + Hc);
+				P10 = CornerDir(I + 1, J) * (Radius + Hc);
+				P11 = CornerDir(I + 1, J + 1) * (Radius + Hc);
+				P01 = CornerDir(I, J + 1) * (Radius + Hc);
+				Col = ShadedVertexColor(Hc, Nrm);
+				if (CellDug(I, J))
+				{
+					const float A = FineV0 + (I + 0.5f) * SV;
+					const float B = FineW0 + (J + 0.5f) * SW;
+					const FVector DirC2 = (Up * Radius + T1 * A + T2 * B).GetSafeNormal();
+					Col = DugColor(static_cast<float>(DugCm(DirC2)), Col);
+				}
+			}
+			else
+			{
+				// Гладкий рельеф: высота считается в каждом углу отдельно.
+				const float H00 = SmoothAt(I, J);
+				const float H10 = SmoothAt(I + 1, J);
+				const float H11 = SmoothAt(I + 1, J + 1);
+				const float H01 = SmoothAt(I, J + 1);
+				P00 = CornerDir(I, J) * (Radius + H00);
+				P10 = CornerDir(I + 1, J) * (Radius + H10);
+				P11 = CornerDir(I + 1, J + 1) * (Radius + H11);
+				P01 = CornerDir(I, J + 1) * (Radius + H01);
+				Col = ShadedVertexColor((H00 + H10 + H11 + H01) * 0.25f, Nrm);
 			}
 			const int32 IA = PushVert(P00, Nrm, Col);
 			const int32 IB = PushVert(P10, Nrm, Col);
