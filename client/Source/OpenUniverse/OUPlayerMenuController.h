@@ -296,6 +296,30 @@ public:
 	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Map")
 	int32 MapZoom = 0;
 
+	/** Одна запись лога событий (для окна лога и всплывающих тостов). */
+	struct FOUEvent
+	{
+		FString Text;
+		FLinearColor Color = FLinearColor::White;
+		float Time = 0.f;
+	};
+
+	/** Лог событий (новые в конце). Обновляется из сети в Tick. */
+	TArray<FOUEvent> EventLog;
+
+	/** Добавить событие в лог и показать всплывающий тост. */
+	void PushEvent(const FString& Text, const FLinearColor& Color);
+
+	/** Окно лога событий (клавиша `, док): прокручиваемый список. */
+	void DrawEventLog(class UCanvas* InCanvas);
+
+	/** Открыто ли окно лога событий. */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Log")
+	bool bEventLogOpen = false;
+
+	/** Всплывающие тосты (правый верх) — рисуются в HUD. */
+	void DrawToasts(class UCanvas* InCanvas);
+
 	/**
 	 * Единая панель-док окон (как в Dual Universe): ряд кнопок внизу экрана,
 	 * открывающих все окна и переключающих между ними. Рисуется в игровом HUD.

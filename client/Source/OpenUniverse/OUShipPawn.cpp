@@ -900,6 +900,18 @@ void AOUShipPawn::ApplyStateToActor()
 	const FVector UpRadial = PosUE.GetSafeNormal();          // от центра планеты
 	const FVector NearSurface = UpRadial.SizeSquared() > 0.5f ? UpRadial : FVector::UpVector;
 
+	// Диагностика облёта (`-OUOrbitBody`): направляем камеру ПРЯМО на центр тела,
+	// иначе плането-центричный «верх» уводит взгляд в пустоту (тела далеко).
+	if (bDiagOrbitApplied && !DiagLookAtUE.IsNearlyZero())
+	{
+		const FVector Dir = (DiagLookAtUE - PosUE).GetSafeNormal();
+		if (!Dir.IsNearlyZero())
+		{
+			SetActorRotation(FRotationMatrix::MakeFromX(Dir).Rotator());
+			return;
+		}
+	}
+
 	// Вычитаем радиальную составляющую из «вперёд»: остаётся касательная.
 	FVector Tangent = FwdUE - NearSurface * FVector::DotProduct(FwdUE, NearSurface);
 	if (Tangent.SizeSquared() < 0.01f)
@@ -962,18 +974,29 @@ void AOUShipPawn::Tick(float DeltaSeconds)
 				{
 					const FVector CenterUE = OUInterop::ServerToUE(B.Center);
 					const float RadiusCm = B.Radius * OUInterop::ServerUnitToCm;
-					const FVector SpawnUE = CenterUE + FVector(RadiusCm * 0.4f, 0.f, RadiusCm * 1.6f);
+					// Точка обзора: сбоку-сверху от тела, чтобы был виден весь диск.
+					const FVector SpawnUE = CenterUE + FVector(RadiusCm * 1.6f, 0.f, RadiusCm * 1.2f);
 					State.Position = OUInterop::UEToServer(SpawnUE);
-					State.Pitch = -0.35f;
 					SetActorLocation(SpawnUE);
+					// Смотрим прямо на центр тела (высота/курс камеры задаются ниже).
+					DiagShipUE = SpawnUE;
+					DiagLookAtUE = CenterUE;
 					bDiagOrbitApplied = true;
 					UE_LOG(LogTemp, Log,
-						TEXT("Облёт: тело %d, радиус %.0f м, центр %s — телепорт выполнен"),
+						TEXT("Облёт: тело %d, радиус %.0f м, центр %s — вид на тело"),
 						DiagOrbitBody, B.Radius, *B.Center.ToCompactString());
 					break;
 				}
 			}
 		}
+	}
+
+	// Диагностика облёта: каждый тик удерживаем корабль в точке обзора (не даём
+	// улететь по инерции) — направление камеры задаёт ApplyStateToActor.
+	if (bDiagOrbitApplied && !DiagLookAtUE.IsNearlyZero())
+	{
+		State.Position = OUInterop::UEToServer(DiagShipUE);
+		State.Velocity = FVector::ZeroVector;
 	}
 
 	// Пока открыто стартовое меню (персонаж/сервер) — корабль стоит на месте и

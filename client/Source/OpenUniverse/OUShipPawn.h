@@ -159,6 +159,12 @@ protected:
 	/** Выполнен ли разовый диагностический телепорт к телу. */
 	bool bDiagOrbitApplied = false;
 
+	/** Диагностика облёта: точка (UE), на которую смотрит камера. Ноль — выкл. */
+	FVector DiagLookAtUE = FVector::ZeroVector;
+
+	/** Диагностика облёта: позиция корабля (UE), удерживаемая каждый тик. */
+	FVector DiagShipUE = FVector::ZeroVector;
+
 	/** Маска зажатия F: сколько секунд держат (для «зажми, чтобы выйти»). */
 	float ExitHoldTime = 0.f;
 
