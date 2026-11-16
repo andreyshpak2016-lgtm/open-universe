@@ -7,7 +7,7 @@ window.PLAN = {
   "project": "Open Universe",
   "tagline": "Один общий космос. Построен игроками.",
   "tagline_en": "One shared universe. Built by players.",
-  "updated": "2026-11-15",
+  "updated": "2026-11-16",
   "rule": "«Готово» ставится только тому, что игрок реально видит в игре (клиент UE5 + живой сервер). Написано и протестировано, но к игре не подключено — это «в работе».",
   "rule_en": "\"Done\" is only for what the player actually sees in the game (UE5 client + live server). Written and tested but not wired into the game counts as \"in progress\".",
   "phases": [

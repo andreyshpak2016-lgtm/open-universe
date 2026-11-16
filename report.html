@@ -6,7 +6,7 @@
   <title data-i18n="rep.title">Open Universe — development report</title>
   <meta name="description" content="Open Universe development report: what is done, engine screenshots, metrics and test results." />
   <link rel="icon" href="assets/blackhole.svg" type="image/svg+xml" />
-  <link rel="stylesheet" href="styles.css?v=0.85.0" />
+  <link rel="stylesheet" href="styles.css?v=0.85.0-s" />
   <style>
     .report { max-width: 1100px; margin: 0 auto; padding: 0 24px 80px; }
     .report h1 { font-size: clamp(2rem, 5vw, 3rem); margin: 40px 0 8px; letter-spacing: -1px;
@@ -277,7 +277,28 @@ $ cargo run -p ou-script --bin ou-script-demo
       <img src="assets/ue-game.png" alt="The latest frame captured by the UE test: character on the ground, ship nearby, planets in the sky" />
       <figcaption data-i18n="rep.fig.latest"><b>Fresh frame from the UE test</b> (<code>tools/test-ue.ps1</code>): first-person view, the player stands on the surface of a large planet, and the horizon stretches far away reading as land. This shot is refreshed on every test run.</figcaption>
     </figure>
-    <p data-i18n="rep.fig.solarsystem">A single large planet, 500 km in radius with 10 km of terrain relief. Other system bodies are removed: the world is one planet, and the view is first-person.</p>
+    <p data-i18n="rep.fig.solarsystem">A single large home planet, 500 km in radius with 10 km of terrain relief, plus neighbouring bodies: a moon, a neighbouring planet, a gas giant, a star and an asteroid belt — all reachable in supercruise (hold <code>Shift</code>).</p>
+
+    <h3 data-i18n="rep.h.bodies">Terrain on every body of the system</h3>
+    <p data-i18n="rep.bodies.lead">Each solid body builds its own procedural surface with the same bit-exact formula the server uses. Frames below are real fly-overs captured on the second PC by the automated test (<code>-OUOrbitBody=&lt;id&gt;</code>): the neighbouring planet and the moon show continents and relief; the gas giant and the star are smooth by design; the belt renders as a ring of rocks.</p>
+    <div class="two">
+      <figure class="shot">
+        <img src="assets/ue-planet.png" alt="Neighbouring planet with continents and relief" />
+        <figcaption data-i18n="rep.fig.planet">The neighbouring planet (radius 260 km): a large disc with green landmasses and visible relief, built from the shared height formula.</figcaption>
+      </figure>
+      <figure class="shot">
+        <img src="assets/ue-moon.png" alt="Moon with relief" />
+        <figcaption data-i18n="rep.fig.moon">The moon (radius 60 km): its own relief with lighter highland regions, a different terrain seed.</figcaption>
+      </figure>
+    </div>
+
+    <h3 data-i18n="rep.h.duui">Interface and menus (Dual Universe style)</h3>
+    <p data-i18n="rep.duui.lead">The HUD and windows now follow one language, like Dual Universe: a single bottom <b>window dock</b> opens and switches between all panels (market, cargo, crafting, scripts, workshop, organization, character, voxels, map, event log, contacts). The frame below is a live capture on the second PC.</p>
+    <figure class="shot">
+      <img src="assets/ue-dock.png" alt="Window dock with eleven windows, plus HUD panels" />
+      <figcaption data-i18n="rep.fig.dock"><b>Window dock</b> at the bottom of the screen: eleven windows, one active at a time, opened by click or hot key. Around it — the HUD: compass, planet panel, territory, mining counters, ship instruments and the minimap.</figcaption>
+    </figure>
+    <p data-i18n="rep.duui.list">Implemented in this pass: cargo window (<code>I</code>) with an item grid and volume bar; crafting window (<code>Q</code>) with a recipe list; map window (<code>Tab</code>) with territories, system bodies and three zoom levels; talent <b>tree</b> with nodes and branches; event log (<code>&#96;</code>) with toast notifications; contacts window (<code>,</code>) with nearby players and distance; settings screen with mouse sensitivity, FOV and a controls reference.</p>
 
     <pre class="codeblock"><code data-i18n="rep.code.testclient">$ powershell -File tools/test-client.ps1
 [OK] header read, token matched
@@ -360,7 +381,7 @@ $ cargo run -p ou-render --release --bin ou-netrender -- 127.0.0.1:7777 8 4
     </div>
   </footer>
 
-  <script src="i18n.js?v=0.85.0"></script>
+  <script src="i18n.js?v=0.85.0-s"></script>
   <script>
     (function () {
       "use strict";
