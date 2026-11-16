@@ -153,7 +153,8 @@ void AOUPlayerMenuController::SetupInputComponent()
 bool AOUPlayerMenuController::IsAnyUiOpen() const
 {
 	return bMenuOpen || bPauseOpen || bMarketOpen || bScriptsOpen || bWorkshopOpen
-		|| bOrgOpen || bTalentsOpen || bChatInputOpen || bVoxelsOpen || bInventoryOpen;
+		|| bOrgOpen || bTalentsOpen || bChatInputOpen || bVoxelsOpen || bInventoryOpen
+		|| bCraftOpen;
 }
 
 void AOUPlayerMenuController::ResolveNet()
@@ -397,6 +398,19 @@ void AOUPlayerMenuController::OnLeftClick()
 			if (B.Id >= 4000 && B.Id < 4100)
 			{
 				ToggleDockWindow(B.Id - 4000);
+				return;
+			}
+			// Производство (отдельное окно Q): 5000+ — изготовить рецепт.
+			if (bCraftOpen && B.Id >= 5000)
+			{
+				ResolveNet();
+				const int32 Index = B.Id - 5000;
+				if (Net && Net->Recipes.IsValidIndex(Index))
+				{
+					Net->SendCraft(Net->Recipes[Index].Id);
+					UE_LOG(LogOUMenu, Log, TEXT("Производство: запрошен рецепт %d"),
+						Net->Recipes[Index].Id);
+				}
 				return;
 			}
 			// Производство (крафт): строки рецептов с id 200+ в окне рынка.
@@ -1730,6 +1744,7 @@ void AOUPlayerMenuController::CloseAllWindows()
 {
 	bMarketOpen = false;
 	bInventoryOpen = false;
+	bCraftOpen = false;
 	bScriptsOpen = false;
 	bWorkshopOpen = false;
 	bOrgOpen = false;
@@ -1737,8 +1752,8 @@ void AOUPlayerMenuController::CloseAllWindows()
 	bVoxelsOpen = false;
 }
 
-/** Открыть/переключить окно по id дока: 0 рынок, 1 инвентарь, 2 скрипты,
- *  3 мастерская, 4 организация, 5 персонаж, 6 воксели. */
+/** Открыть/переключить окно по id дока: 0 рынок, 1 трюм, 2 производство,
+ *  3 скрипты, 4 мастерская, 5 организация, 6 персонаж, 7 воксели. */
 void AOUPlayerMenuController::ToggleDockWindow(int32 DockId)
 {
 	// Определяем целевое окно и состояние «открыто/закрыто».
@@ -1747,22 +1762,23 @@ void AOUPlayerMenuController::ToggleDockWindow(int32 DockId)
 	{
 	case 0: Target = &bMarketOpen; break;
 	case 1: Target = &bInventoryOpen; break;
-	case 2: Target = &bScriptsOpen; break;
-	case 3: Target = &bWorkshopOpen; break;
-	case 4: Target = &bOrgOpen; break;
-	case 5: Target = &bTalentsOpen; break;
-	case 6: Target = &bVoxelsOpen; break;
+	case 2: Target = &bCraftOpen; break;
+	case 3: Target = &bScriptsOpen; break;
+	case 4: Target = &bWorkshopOpen; break;
+	case 5: Target = &bOrgOpen; break;
+	case 6: Target = &bTalentsOpen; break;
+	case 7: Target = &bVoxelsOpen; break;
 	default: return;
 	}
 	const bool bOpenNow = *Target;
 	// Все окна взаимоисключающие (как в DU: активно одно окно).
-	const bool bAnyOpen = bMarketOpen || bInventoryOpen || bScriptsOpen || bWorkshopOpen
-		|| bOrgOpen || bTalentsOpen || bVoxelsOpen;
+	const bool bAnyOpen = bMarketOpen || bInventoryOpen || bCraftOpen || bScriptsOpen
+		|| bWorkshopOpen || bOrgOpen || bTalentsOpen || bVoxelsOpen;
 	CloseAllWindows();
 	// Повторный клик по открытому окну закрывает его; иначе открываем выбранное.
 	*Target = !(bOpenNow && bAnyOpen);
-	const bool bAny = bMarketOpen || bInventoryOpen || bScriptsOpen || bWorkshopOpen
-		|| bOrgOpen || bTalentsOpen || bVoxelsOpen;
+	const bool bAny = bMarketOpen || bInventoryOpen || bCraftOpen || bScriptsOpen
+		|| bWorkshopOpen || bOrgOpen || bTalentsOpen || bVoxelsOpen;
 	SetMenuCursor(bAny);
 	UE_LOG(LogOUMenu, Log, TEXT("Док: окно %d %s"), DockId, *Target ? TEXT("открыто") : TEXT("закрыто"));
 }
@@ -1789,18 +1805,19 @@ void AOUPlayerMenuController::DrawDock(UCanvas* InCanvas)
 
 	// Кнопки дока: подпись + состояние «открыто» + id.
 	struct FDockBtn { const TCHAR* Label; int32 Id; bool bOpen; };
-	const FDockBtn Btns[7] = {
+	const FDockBtn Btns[8] = {
 		{ TEXT("Рынок"),   0, bMarketOpen },
 		{ TEXT("Трюм"),    1, bInventoryOpen },
-		{ TEXT("Скрипты"), 2, bScriptsOpen },
-		{ TEXT("Мастер."), 3, bWorkshopOpen },
-		{ TEXT("Орг."),    4, bOrgOpen },
-		{ TEXT("Персон."), 5, bTalentsOpen },
-		{ TEXT("Воксель"), 6, bVoxelsOpen },
+		{ TEXT("Крафт"),   2, bCraftOpen },
+		{ TEXT("Скрипты"), 3, bScriptsOpen },
+		{ TEXT("Мастер."), 4, bWorkshopOpen },
+		{ TEXT("Орг."),    5, bOrgOpen },
+		{ TEXT("Персон."), 6, bTalentsOpen },
+		{ TEXT("Воксель"), 7, bVoxelsOpen },
 	};
 
-	const float BW = 78.f, BH = 30.f, Gap = 6.f;
-	const float TotalW = 7 * BW + 6 * Gap;
+	const float BW = 76.f, BH = 30.f, Gap = 6.f;
+	const float TotalW = 8 * BW + 7 * Gap;
 	const float X0 = (W - TotalW) * 0.5f;
 	const float Y0 = H - BH - 84.f;   // над хотбаром
 
@@ -1810,7 +1827,7 @@ void AOUPlayerMenuController::DrawDock(UCanvas* InCanvas)
 	StrokeBox(InCanvas, FVector2D(X0 - 10, Y0 - 6), FVector2D(TotalW + 20, BH + 12),
 		FLinearColor(0.34f, 0.44f, 0.85f, 0.9f), 1.f);
 
-	for (int32 i = 0; i < 7; ++i)
+	for (int32 i = 0; i < 8; ++i)
 	{
 		const FVector2D BP(X0 + i * (BW + Gap), Y0);
 		const FVector2D BS(BW, BH);
@@ -1896,6 +1913,77 @@ void AOUPlayerMenuController::DrawInventory(UCanvas* InCanvas)
 
 	DrawText(InCanvas, Tiny,
 		TEXT("ЛКМ — перенести стак в базу (склад)   ·   I / док — закрыть"),
+		P + FVector2D(24, PH - 30), Dim);
+}
+
+/** Окно производства (клавиша Q / док): рецепты, входы и выход, очередь. */
+void AOUPlayerMenuController::DrawCraft(UCanvas* InCanvas)
+{
+	if (!bCraftOpen || !InCanvas || bMenuOpen)
+	{
+		return;
+	}
+	ResolveNet();
+
+	const float W = InCanvas->SizeX;
+	const float H = InCanvas->SizeY;
+	UFont* Font = GEngine->GetLargeFont();
+	UFont* Small = GEngine->GetMediumFont();
+	UFont* Tiny = GEngine->GetSmallFont();
+	const FLinearColor PanelB(0.34f, 0.44f, 0.85f, 0.9f);
+	const FLinearColor Dim(0.66f, 0.72f, 0.86f, 1.f);
+
+	const float PW = FMath::Min(720.f, W - 80.f);
+	const float PH = FMath::Min(540.f, H - 120.f);
+	const FVector2D P((W - PW) * 0.5f, (H - PH) * 0.5f);
+	GlassPanel(InCanvas, P, FVector2D(PW, PH), PanelB, ColAccent);
+	DrawText(InCanvas, Font, TEXT("ПРОИЗВОДСТВО  ·  HOME"), P + FVector2D(24, 16), ColAccent);
+	DrawText(InCanvas, Small, TEXT("Q — закрыть"), P + FVector2D(PW - 130, 24), Dim);
+	DrawText(InCanvas, Small, TEXT("Выберите рецепт — заказ уходит на сервер (авторитетно)."),
+		P + FVector2D(24, 52), ColText);
+
+	const TArray<FOURecipe>& Recipes = Net ? Net->Recipes : TArray<FOURecipe>();
+	float Y = P.Y + 84.f;
+	const float RowH = 46.f;
+	if (Recipes.Num() == 0)
+	{
+		DrawText(InCanvas, Small, TEXT("(каталог ещё не получен)"), FVector2D(P.X + 24, Y), Dim);
+	}
+	for (int32 i = 0; i < Recipes.Num(); ++i)
+	{
+		const FOURecipe& R = Recipes[i];
+		const FVector2D Row(P.X + 20, Y);
+		const FVector2D RowSize(PW - 40, RowH - 6);
+		// Доступность: хватает ли всех входов (как в цепочке производства).
+		bool bCan = true;
+		FString Ins;
+		for (int32 k = 0; k < R.Inputs.Num(); ++k)
+		{
+			const FOURecipeItem& In = R.Inputs[k];
+			Ins += FString::Printf(TEXT("%s%s ×%lld"), k ? TEXT(", ") : TEXT(""), *ItemName(In.Item), In.Qty);
+			int64 Have = 0;
+			if (Net)
+			{
+				for (const FOUInventoryItem& Iv : Net->InventoryItems)
+				{
+					if (Iv.Item == In.Item) { Have = Iv.Qty; break; }
+				}
+			}
+			if (Have < In.Qty) { bCan = false; }
+		}
+		FillBox(InCanvas, Row, RowSize, bCan ? FLinearColor(0.07f, 0.12f, 0.18f, 0.95f)
+			: FLinearColor(0.06f, 0.06f, 0.11f, 0.9f));
+		StrokeBox(InCanvas, Row, RowSize, bCan ? ColOk : ColPanelBorder, 1.f);
+		DrawText(InCanvas, Small, R.Name, Row + FVector2D(12, 6), bCan ? ColOk : Dim);
+		DrawText(InCanvas, Tiny, FString::Printf(TEXT("%s → %s ×%lld"), *Ins,
+			*ItemName(R.OutItem), R.OutQty), Row + FVector2D(12, 24), Dim);
+		// Кнопка «изготовить» (id 5000+).
+		Buttons.Add({ Row, RowSize, 5000 + i });
+		Y += RowH;
+	}
+
+	DrawText(InCanvas, Tiny,
+		TEXT("ЛКМ по рецепту — изготовить. Прогресс и результат — в HUD и логе."),
 		P + FVector2D(24, PH - 30), Dim);
 }
 
@@ -2535,7 +2623,7 @@ void AOUPlayerMenuController::DrawGameHud(UCanvas* InCanvas)
 		const bool bInShip = ShipPawn != nullptr;
 		const FString Hint = bInShip
 			? TEXT("Мышь — обзор   ·   W/S — тяга   ·   A/D — стрейф   ·   Пробел/Ctrl — вверх/вниз   ·   ЛКМ — огонь   ·   Shift — сверхсвет   ·   N — заправить   ·   J — двигатель   ·   L — скрипты   ·   F — выход")
-			: TEXT("Мышь — обзор   ·   W/A/S/D — ходьба   ·   ЛКМ — копать   ·   M — рынок   ·   I — трюм   ·   B — строительство   ·   V — воксели   ·   T — захват зоны   ·   L — скрипты   ·   K — мастерская   ·   O — организация   ·   P — персонаж");
+			: TEXT("Мышь — обзор   ·   W/A/S/D — ходьба   ·   ЛКМ — копать   ·   M — рынок   ·   I — трюм   ·   Q — крафт   ·   B — строительство   ·   V — воксели   ·   T — захват зоны   ·   L — скрипты   ·   K — мастерская   ·   O — организация   ·   P — персонаж");
 		DrawText(InCanvas, Tiny, Hint, FVector2D(18, H - 22), Dim);
 	}
 

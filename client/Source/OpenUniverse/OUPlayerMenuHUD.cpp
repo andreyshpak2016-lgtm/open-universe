@@ -25,6 +25,8 @@ void AOUPlayerMenuHUD::DrawHUD()
 		Menu->DrawMarket(Canvas);
 		// Окно инвентаря/трюма (I).
 		Menu->DrawInventory(Canvas);
+		// Окно производства/крафта (Q).
+		Menu->DrawCraft(Canvas);
 		// Окно скриптов (L) — там же, поверх HUD.
 		Menu->DrawScripts(Canvas);
 		// Окно мастерской (K).

@@ -251,6 +251,9 @@ public:
 	/** Открыть/закрыть окно инвентаря/трюма (клавиша I). */
 	void ToggleInventory();
 
+	/** Открыть/закрыть окно производства (клавиша Q). */
+	void ToggleCraft();
+
 	/** Захватить территорию, в которой стоит игрок (клавиша T). */
 	UFUNCTION(BlueprintCallable, Category = "Open Universe|Territory")
 	void CaptureTerritory();

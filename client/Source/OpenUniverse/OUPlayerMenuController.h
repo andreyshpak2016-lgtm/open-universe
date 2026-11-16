@@ -273,6 +273,16 @@ public:
 	bool bInventoryOpen = false;
 
 	/**
+	 * Окно производства (клавиша G, док): рецепты, входы и выход, очередь.
+	 * Заказ уходит на сервер авторитетно (как в Dual Universe — Industry).
+	 */
+	void DrawCraft(class UCanvas* InCanvas);
+
+	/** Открыто ли окно производства. */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Economy")
+	bool bCraftOpen = false;
+
+	/**
 	 * Единая панель-док окон (как в Dual Universe): ряд кнопок внизу экрана,
 	 * открывающих все окна и переключающих между ними. Рисуется в игровом HUD.
 	 */

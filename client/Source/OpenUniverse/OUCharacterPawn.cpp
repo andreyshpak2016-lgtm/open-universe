@@ -440,6 +440,8 @@ void AOUCharacterPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputCom
 	PlayerInputComponent->BindAction(TEXT("MarketBuy"), IE_Pressed, this, &AOUCharacterPawn::OnMarketBuy);
 	// Инвентарь/трюм: I — отдельное окно (сетка предметов, объём и масса).
 	PlayerInputComponent->BindAction(TEXT("InventoryToggle"), IE_Pressed, this, &AOUCharacterPawn::ToggleInventory);
+	// Производство: Q — отдельное окно рецептов (крафт).
+	PlayerInputComponent->BindAction(TEXT("CraftMenu"), IE_Pressed, this, &AOUCharacterPawn::ToggleCraft);
 	// Строительство: B открывает/закрывает меню, ЛКМ ставит выбранный блок.
 	PlayerInputComponent->BindAction(TEXT("BuildMode"), IE_Pressed, this, &AOUCharacterPawn::ToggleBuildMenu);
 	PlayerInputComponent->BindAction(TEXT("BuildPlace"), IE_Pressed, this, &AOUCharacterPawn::PlaceBuildBlock);
@@ -1649,9 +1651,34 @@ void AOUCharacterPawn::ToggleInventory()
 	}
 	if (Menu)
 	{
-		Menu->bInventoryOpen = !Menu->bInventoryOpen;
+		const bool bWasOpen = Menu->bInventoryOpen;
+		Menu->CloseAllWindows();
+		Menu->bInventoryOpen = !bWasOpen;
 		Menu->SetMenuCursor(Menu->bInventoryOpen);
 		UE_LOG(LogOUChar, Log, TEXT("Инвентарь: %s"), Menu->bInventoryOpen ? TEXT("открыт") : TEXT("закрыт"));
+	}
+}
+
+void AOUCharacterPawn::ToggleCraft()
+{
+	// Окно производства (клавиша Q): рецепты и заказ изготовления.
+	if (bBuildMenuOpen)
+	{
+		return;
+	}
+	AOUPlayerMenuController* Menu = Cast<AOUPlayerMenuController>(
+		GetController() ? GetController() : nullptr);
+	if (!Menu)
+	{
+		Menu = Cast<AOUPlayerMenuController>(GetWorld() ? GetWorld()->GetFirstPlayerController() : nullptr);
+	}
+	if (Menu)
+	{
+		const bool bWasOpen = Menu->bCraftOpen;
+		Menu->CloseAllWindows();
+		Menu->bCraftOpen = !bWasOpen;
+		Menu->SetMenuCursor(Menu->bCraftOpen);
+		UE_LOG(LogOUChar, Log, TEXT("Производство: %s"), Menu->bCraftOpen ? TEXT("открыто") : TEXT("закрыто"));
 	}
 }
 
@@ -2559,7 +2586,7 @@ void AOUCharacterPawn::Tick(float DeltaSeconds)
 		if (AOUPlayerMenuController* MM = Cast<AOUPlayerMenuController>(GetController()))
 		{
 			AutoMenuTimer += DeltaSeconds;
-			if (AutoMenuTimer >= 2.5f && AutoMenuCount < 8)
+			if (AutoMenuTimer >= 2.5f && AutoMenuCount < 9)
 			{
 				AutoMenuTimer = 0.f;
 				++AutoMenuCount;
@@ -2569,12 +2596,13 @@ void AOUCharacterPawn::Tick(float DeltaSeconds)
 				{
 				case 1: ToggleMarket();          break;
 				case 2: ToggleInventory();       break;
-				case 3: ToggleScripts();         break;
-				case 4: ToggleWorkshop();        break;
-				case 5: ToggleOrg();             break;
-				case 6: ToggleTalents();         break;
-				case 7: ToggleVoxelMenu();       break;
-				case 8: MM->SetMenuCursor(false); break;   // закрыть всё
+				case 3: ToggleCraft();           break;
+				case 4: ToggleScripts();         break;
+				case 5: ToggleWorkshop();        break;
+				case 6: ToggleOrg();             break;
+				case 7: ToggleTalents();         break;
+				case 8: ToggleVoxelMenu();       break;
+				case 9: MM->SetMenuCursor(false); break;   // закрыть всё
 				}
 			}
 		}
