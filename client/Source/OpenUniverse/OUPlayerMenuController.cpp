@@ -2073,7 +2073,7 @@ void AOUPlayerMenuController::DrawInventory(UCanvas* InCanvas)
 	}
 
 	DrawText(InCanvas, Tiny,
-		TEXT("ЛКМ — перенести стак в базу (склад)   ·   I / док — закрыть"),
+		TEXT("Продажа/покупка — 1/2 в трюме   ·   I / док — закрыть"),
 		P + FVector2D(24, PH - 30), Dim);
 }
 
