@@ -283,6 +283,20 @@ public:
 	bool bCraftOpen = false;
 
 	/**
+	 * Окно карты (клавиша Tab): территории и тела системы, метки игрока и
+	 * базы, зум. Даёт обзор зон и соседних тел (как карта в Dual Universe).
+	 */
+	void DrawMap(class UCanvas* InCanvas);
+
+	/** Открыто ли окно карты. */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Map")
+	bool bMapOpen = false;
+
+	/** Масштаб карты: 0 — близко (зоны), 1 — средне, 2 — вся система. */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Map")
+	int32 MapZoom = 0;
+
+	/**
 	 * Единая панель-док окон (как в Dual Universe): ряд кнопок внизу экрана,
 	 * открывающих все окна и переключающих между ними. Рисуется в игровом HUD.
 	 */

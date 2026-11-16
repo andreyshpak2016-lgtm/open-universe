@@ -154,7 +154,7 @@ bool AOUPlayerMenuController::IsAnyUiOpen() const
 {
 	return bMenuOpen || bPauseOpen || bMarketOpen || bScriptsOpen || bWorkshopOpen
 		|| bOrgOpen || bTalentsOpen || bChatInputOpen || bVoxelsOpen || bInventoryOpen
-		|| bCraftOpen;
+		|| bCraftOpen || bMapOpen;
 }
 
 void AOUPlayerMenuController::ResolveNet()
@@ -411,6 +411,13 @@ void AOUPlayerMenuController::OnLeftClick()
 					UE_LOG(LogOUMenu, Log, TEXT("Производство: запрошен рецепт %d"),
 						Net->Recipes[Index].Id);
 				}
+				return;
+			}
+			// Карта (окно Tab): 5100+ — масштаб.
+			if (bMapOpen && B.Id >= 5100 && B.Id < 5200)
+			{
+				MapZoom = FMath::Clamp(B.Id - 5100, 0, 2);
+				UE_LOG(LogOUMenu, Log, TEXT("Карта: масштаб %d"), MapZoom);
 				return;
 			}
 			// Производство (крафт): строки рецептов с id 200+ в окне рынка.
@@ -1750,10 +1757,11 @@ void AOUPlayerMenuController::CloseAllWindows()
 	bOrgOpen = false;
 	bTalentsOpen = false;
 	bVoxelsOpen = false;
+	bMapOpen = false;
 }
 
 /** Открыть/переключить окно по id дока: 0 рынок, 1 трюм, 2 производство,
- *  3 скрипты, 4 мастерская, 5 организация, 6 персонаж, 7 воксели. */
+ *  3 скрипты, 4 мастерская, 5 организация, 6 персонаж, 7 воксели, 8 карта. */
 void AOUPlayerMenuController::ToggleDockWindow(int32 DockId)
 {
 	// Определяем целевое окно и состояние «открыто/закрыто».
@@ -1768,17 +1776,18 @@ void AOUPlayerMenuController::ToggleDockWindow(int32 DockId)
 	case 5: Target = &bOrgOpen; break;
 	case 6: Target = &bTalentsOpen; break;
 	case 7: Target = &bVoxelsOpen; break;
+	case 8: Target = &bMapOpen; break;
 	default: return;
 	}
 	const bool bOpenNow = *Target;
 	// Все окна взаимоисключающие (как в DU: активно одно окно).
 	const bool bAnyOpen = bMarketOpen || bInventoryOpen || bCraftOpen || bScriptsOpen
-		|| bWorkshopOpen || bOrgOpen || bTalentsOpen || bVoxelsOpen;
+		|| bWorkshopOpen || bOrgOpen || bTalentsOpen || bVoxelsOpen || bMapOpen;
 	CloseAllWindows();
 	// Повторный клик по открытому окну закрывает его; иначе открываем выбранное.
 	*Target = !(bOpenNow && bAnyOpen);
 	const bool bAny = bMarketOpen || bInventoryOpen || bCraftOpen || bScriptsOpen
-		|| bWorkshopOpen || bOrgOpen || bTalentsOpen || bVoxelsOpen;
+		|| bWorkshopOpen || bOrgOpen || bTalentsOpen || bVoxelsOpen || bMapOpen;
 	SetMenuCursor(bAny);
 	UE_LOG(LogOUMenu, Log, TEXT("Док: окно %d %s"), DockId, *Target ? TEXT("открыто") : TEXT("закрыто"));
 }
@@ -1805,7 +1814,7 @@ void AOUPlayerMenuController::DrawDock(UCanvas* InCanvas)
 
 	// Кнопки дока: подпись + состояние «открыто» + id.
 	struct FDockBtn { const TCHAR* Label; int32 Id; bool bOpen; };
-	const FDockBtn Btns[8] = {
+	const FDockBtn Btns[9] = {
 		{ TEXT("Рынок"),   0, bMarketOpen },
 		{ TEXT("Трюм"),    1, bInventoryOpen },
 		{ TEXT("Крафт"),   2, bCraftOpen },
@@ -1814,10 +1823,11 @@ void AOUPlayerMenuController::DrawDock(UCanvas* InCanvas)
 		{ TEXT("Орг."),    5, bOrgOpen },
 		{ TEXT("Персон."), 6, bTalentsOpen },
 		{ TEXT("Воксель"), 7, bVoxelsOpen },
+		{ TEXT("Карта"),   8, bMapOpen },
 	};
 
-	const float BW = 76.f, BH = 30.f, Gap = 6.f;
-	const float TotalW = 8 * BW + 7 * Gap;
+	const float BW = 74.f, BH = 30.f, Gap = 6.f;
+	const float TotalW = 9 * BW + 8 * Gap;
 	const float X0 = (W - TotalW) * 0.5f;
 	const float Y0 = H - BH - 84.f;   // над хотбаром
 
@@ -1827,7 +1837,7 @@ void AOUPlayerMenuController::DrawDock(UCanvas* InCanvas)
 	StrokeBox(InCanvas, FVector2D(X0 - 10, Y0 - 6), FVector2D(TotalW + 20, BH + 12),
 		FLinearColor(0.34f, 0.44f, 0.85f, 0.9f), 1.f);
 
-	for (int32 i = 0; i < 8; ++i)
+	for (int32 i = 0; i < 9; ++i)
 	{
 		const FVector2D BP(X0 + i * (BW + Gap), Y0);
 		const FVector2D BS(BW, BH);
@@ -1985,6 +1995,121 @@ void AOUPlayerMenuController::DrawCraft(UCanvas* InCanvas)
 	DrawText(InCanvas, Tiny,
 		TEXT("ЛКМ по рецепту — изготовить. Прогресс и результат — в HUD и логе."),
 		P + FVector2D(24, PH - 30), Dim);
+}
+
+/** Окно карты (клавиша Tab): территории, тела системы, метки. */
+void AOUPlayerMenuController::DrawMap(UCanvas* InCanvas)
+{
+	if (!bMapOpen || !InCanvas || bMenuOpen)
+	{
+		return;
+	}
+	ResolveNet();
+
+	const float W = InCanvas->SizeX;
+	const float H = InCanvas->SizeY;
+	UFont* Font = GEngine->GetLargeFont();
+	UFont* Small = GEngine->GetMediumFont();
+	UFont* Tiny = GEngine->GetSmallFont();
+	const FLinearColor PanelB(0.34f, 0.44f, 0.85f, 0.9f);
+	const FLinearColor Dim(0.66f, 0.72f, 0.86f, 1.f);
+
+	const float PW = FMath::Min(760.f, W - 80.f);
+	const float PH = FMath::Min(560.f, H - 120.f);
+	const FVector2D P((W - PW) * 0.5f, (H - PH) * 0.5f);
+	GlassPanel(InCanvas, P, FVector2D(PW, PH), PanelB, ColAccent2);
+	DrawText(InCanvas, Font, TEXT("КАРТА  ·  СИСТЕМА"), P + FVector2D(24, 16), ColAccent);
+	DrawText(InCanvas, Small, TEXT("Tab — закрыть  ·  ЛКМ по кругу — зум"), P + FVector2D(PW - 300, 24), Dim);
+
+	// Круглая область карты по центру.
+	const float MR = FMath::Min(PW, PH) * 0.5f - 90.f;
+	const FVector2D MC(P.X + PW * 0.5f, P.Y + PH * 0.5f + 10.f);
+	// Диск-подложка (горизонтальные полосы, обрезанные по кругу).
+	for (int32 i = 0; i < 48; ++i)
+	{
+		const float T = -1.f + 2.f * (i + 0.5f) / 48.f;
+		const float HalfW = MR * FMath::Sqrt(FMath::Max(0.f, 1.f - T * T));
+		FillBox(InCanvas, FVector2D(MC.X - HalfW, MC.Y + T * MR), FVector2D(HalfW * 2.f, (2.f * MR) / 48.f + 1.f),
+			FLinearColor(0.02f, 0.04f, 0.09f, 0.75f));
+	}
+	// Кольцо-рамка.
+	for (int32 i = 0; i < 64; ++i)
+	{
+		const float A0 = 6.2831853f * i / 64.f;
+		FillBox(InCanvas, MC + FVector2D(FMath::Cos(A0) * MR - 1.f, FMath::Sin(A0) * MR - 1.f), FVector2D(2, 2), PanelB);
+	}
+
+	// Масштаб: 0 — зоны у поверхности, 2 — вся система.
+	const float UnitsPerR = (MapZoom == 0) ? 22000.f : ((MapZoom == 1) ? 200000.f : 20000000.f);
+
+	// Тела системы (из описания системы) — метки с подписями.
+	if (Net)
+	{
+		const FVector PlayerPos = (GetPawn() ? GetPawn()->GetActorLocation() : FVector::ZeroVector) / 100.f;
+		for (const FOUSystemBody& B : Net->SystemBodies)
+		{
+			if (B.Radius <= 0.f) { continue; }
+			const FVector2D RP(MC.X + (B.Center.X - PlayerPos.X) / UnitsPerR * (MR - 12.f),
+				MC.Y + (B.Center.Y - PlayerPos.Y) / UnitsPerR * (MR - 12.f));
+			if ((RP - MC).SizeSquared() > (MR - 8.f) * (MR - 8.f)) { continue; }
+			const float RR = FMath::Clamp(static_cast<float>(B.Radius) / UnitsPerR * (MR - 12.f), 3.f, 60.f);
+			const FLinearColor BC = (B.Kind == 0) ? FLinearColor(1.f, 0.9f, 0.5f)
+				: ((B.Kind == 4) ? FLinearColor(0.6f, 0.6f, 0.7f) : FLinearColor(0.5f, 0.7f, 1.f));
+			for (int32 k = 0; k < 24; ++k)
+			{
+				const float A0 = 6.2831853f * k / 24.f;
+				FillBox(InCanvas, RP + FVector2D(FMath::Cos(A0) * RR, FMath::Sin(A0) * RR) - FVector2D(1.5f, 1.5f),
+					FVector2D(3, 3), BC);
+			}
+			DrawText(InCanvas, Tiny, FString::Printf(TEXT("тело %d"), B.Id), RP + FVector2D(4, 4), BC);
+		}
+	}
+
+	// Территории (цвет по статусу).
+	if (Net && Net->bTerritoriesReceived)
+	{
+		const FVector PlayerPos = (GetPawn() ? GetPawn()->GetActorLocation() : FVector::ZeroVector) / 100.f;
+		for (const FOUTerritory& T : Net->Territories)
+		{
+			const FVector2D RP(MC.X + (T.Center.X - PlayerPos.X) / UnitsPerR * (MR - 12.f),
+				MC.Y + (T.Center.Y - PlayerPos.Y) / UnitsPerR * (MR - 12.f));
+			const FLinearColor TC = (T.Status == 0) ? FLinearColor(0.4f, 0.9f, 0.5f, 0.95f)
+				: ((T.Status == 1) ? FLinearColor(0.95f, 0.8f, 0.3f, 0.95f) : FLinearColor(1.f, 0.5f, 0.3f, 0.95f));
+			const float RR = FMath::Clamp(static_cast<float>(T.Radius) / UnitsPerR * (MR - 12.f), 4.f, MR);
+			for (int32 k = 0; k < 24; ++k)
+			{
+				const float A0 = 6.2831853f * k / 24.f;
+				const FVector2D Q(RP.X + FMath::Cos(A0) * RR, RP.Y + FMath::Sin(A0) * RR);
+				if ((Q - MC).SizeSquared() <= (MR - 2.f) * (MR - 2.f))
+				{
+					FillBox(InCanvas, Q - FVector2D(1.f, 1.f), FVector2D(2.f, 2.f), TC);
+				}
+			}
+		}
+	}
+
+	// Игрок — в центре (зелёная точка), база — акцент сверху.
+	FillBox(InCanvas, MC - FVector2D(3, 3), FVector2D(6, 6), ColOk);
+	FillBox(InCanvas, MC + FVector2D(-4, -46), FVector2D(8, 8), ColAccent2);
+
+	// Легенда + подпись зума.
+	const TCHAR* ZoomName[3] = { TEXT("зоны"), TEXT("регион"), TEXT("система") };
+	DrawText(InCanvas, Small, FString::Printf(TEXT("масштаб: %s"), ZoomName[FMath::Clamp(MapZoom, 0, 2)]),
+		P + FVector2D(24, PH - 56), ColText);
+	DrawText(InCanvas, Tiny, TEXT("зелёный — игрок, бирюзовый — база, кольца — территории и тела"),
+		P + FVector2D(24, PH - 32), Dim);
+	// Кнопки зума (id 5100+).
+	const FVector2D ZBtn(P.X + PW - 220.f, P.Y + PH - 56.f);
+	for (int32 i = 0; i < 3; ++i)
+	{
+		const FVector2D BP(ZBtn.X + i * 70.f, ZBtn.Y);
+		const FVector2D BS(64, 30);
+		const bool bSel = (MapZoom == i);
+		FillBox(InCanvas, BP, BS, bSel ? FLinearColor(0.16f, 0.22f, 0.44f, 1.f) : FLinearColor(0.05f, 0.07f, 0.16f, 1.f));
+		StrokeBox(InCanvas, BP, BS, bSel ? ColAccent2 : ColPanelBorder, bSel ? 2.f : 1.f);
+		DrawText(InCanvas, Tiny, ZoomName[i], BP + FVector2D(8, 9), bSel ? ColAccent2 : ColText);
+		Buttons.Add({ BP, BS, 5100 + i });
+	}
 }
 
 void AOUPlayerMenuController::DrawOrg(UCanvas* InCanvas)
@@ -2623,7 +2748,7 @@ void AOUPlayerMenuController::DrawGameHud(UCanvas* InCanvas)
 		const bool bInShip = ShipPawn != nullptr;
 		const FString Hint = bInShip
 			? TEXT("Мышь — обзор   ·   W/S — тяга   ·   A/D — стрейф   ·   Пробел/Ctrl — вверх/вниз   ·   ЛКМ — огонь   ·   Shift — сверхсвет   ·   N — заправить   ·   J — двигатель   ·   L — скрипты   ·   F — выход")
-			: TEXT("Мышь — обзор   ·   W/A/S/D — ходьба   ·   ЛКМ — копать   ·   M — рынок   ·   I — трюм   ·   Q — крафт   ·   B — строительство   ·   V — воксели   ·   T — захват зоны   ·   L — скрипты   ·   K — мастерская   ·   O — организация   ·   P — персонаж");
+			: TEXT("Мышь — обзор   ·   W/A/S/D — ходьба   ·   ЛКМ — копать   ·   M — рынок   ·   I — трюм   ·   Q — крафт   ·   Tab — карта   ·   B — строительство   ·   V — воксели   ·   T — захват зоны   ·   L — скрипты   ·   K — мастерская   ·   O — организация   ·   P — персонаж");
 		DrawText(InCanvas, Tiny, Hint, FVector2D(18, H - 22), Dim);
 	}
 

@@ -254,6 +254,9 @@ public:
 	/** Открыть/закрыть окно производства (клавиша Q). */
 	void ToggleCraft();
 
+	/** Открыть/закрыть окно карты (клавиша Tab). */
+	void ToggleMap();
+
 	/** Захватить территорию, в которой стоит игрок (клавиша T). */
 	UFUNCTION(BlueprintCallable, Category = "Open Universe|Territory")
 	void CaptureTerritory();

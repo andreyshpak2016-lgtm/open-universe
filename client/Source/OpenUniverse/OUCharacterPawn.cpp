@@ -442,6 +442,8 @@ void AOUCharacterPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputCom
 	PlayerInputComponent->BindAction(TEXT("InventoryToggle"), IE_Pressed, this, &AOUCharacterPawn::ToggleInventory);
 	// Производство: Q — отдельное окно рецептов (крафт).
 	PlayerInputComponent->BindAction(TEXT("CraftMenu"), IE_Pressed, this, &AOUCharacterPawn::ToggleCraft);
+	// Карта: Tab — окно карты (территории, тела системы, зум).
+	PlayerInputComponent->BindAction(TEXT("MapMenu"), IE_Pressed, this, &AOUCharacterPawn::ToggleMap);
 	// Строительство: B открывает/закрывает меню, ЛКМ ставит выбранный блок.
 	PlayerInputComponent->BindAction(TEXT("BuildMode"), IE_Pressed, this, &AOUCharacterPawn::ToggleBuildMenu);
 	PlayerInputComponent->BindAction(TEXT("BuildPlace"), IE_Pressed, this, &AOUCharacterPawn::PlaceBuildBlock);
@@ -1682,6 +1684,34 @@ void AOUCharacterPawn::ToggleCraft()
 	}
 }
 
+void AOUCharacterPawn::ToggleMap()
+{
+	// Окно карты (клавиша Tab): территории, тела системы, зум.
+	if (bBuildMenuOpen)
+	{
+		return;
+	}
+	AOUPlayerMenuController* Menu = Cast<AOUPlayerMenuController>(
+		GetController() ? GetController() : nullptr);
+	if (!Menu)
+	{
+		Menu = Cast<AOUPlayerMenuController>(GetWorld() ? GetWorld()->GetFirstPlayerController() : nullptr);
+	}
+	if (Menu)
+	{
+		// Пока открыт ввод чата, Tab занят сменой канала — карту не трогаем.
+		if (Menu->bChatInputOpen)
+		{
+			return;
+		}
+		const bool bWasOpen = Menu->bMapOpen;
+		Menu->CloseAllWindows();
+		Menu->bMapOpen = !bWasOpen;
+		Menu->SetMenuCursor(Menu->bMapOpen);
+		UE_LOG(LogOUChar, Log, TEXT("Карта: %s"), Menu->bMapOpen ? TEXT("открыта") : TEXT("закрыта"));
+	}
+}
+
 void AOUCharacterPawn::CaptureTerritory()
 {
 	// Захват: просим сервер объявить текущую зону нашей (клавиша T).
@@ -2586,7 +2616,7 @@ void AOUCharacterPawn::Tick(float DeltaSeconds)
 		if (AOUPlayerMenuController* MM = Cast<AOUPlayerMenuController>(GetController()))
 		{
 			AutoMenuTimer += DeltaSeconds;
-			if (AutoMenuTimer >= 2.5f && AutoMenuCount < 9)
+			if (AutoMenuTimer >= 2.5f && AutoMenuCount < 10)
 			{
 				AutoMenuTimer = 0.f;
 				++AutoMenuCount;
@@ -2602,7 +2632,8 @@ void AOUCharacterPawn::Tick(float DeltaSeconds)
 				case 6: ToggleOrg();             break;
 				case 7: ToggleTalents();         break;
 				case 8: ToggleVoxelMenu();       break;
-				case 9: MM->SetMenuCursor(false); break;   // закрыть всё
+				case 9: ToggleMap();             break;
+				case 10: MM->SetMenuCursor(false); break;   // закрыть всё
 				}
 			}
 		}
