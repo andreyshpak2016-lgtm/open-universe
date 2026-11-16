@@ -28,6 +28,7 @@ param(
   [switch]$Window,
   [switch]$Shipping,
   [switch]$NoServer,
+  [switch]$Dx11,
   [int]$WaitSec = 0,
   [string]$Pilot = "TestPilot",
   [string[]]$Expect = @(),
@@ -222,6 +223,9 @@ function Invoke-Capture {
     $base = @("`"$proj`"", '-game','-nosound', ("-OUName=" + $Pilot))
     if ($RunWindow) { $base += @('-windowed','-ResX=1280','-ResY=800') }
     else            { $base += @('-RenderOffscreen') }
+    # `-Dx11`: в сессии SSH (сессия 0, без рабочего стола) D3D12 не стартует —
+    # DX11 работает. Нужно для удалённой съёмки на втором ПК.
+    if ($Dx11)      { $base += @('-dx11') }
     if (-not ($RunFlags -contains '-OULateShot')) { $base += '-OULateShot' }
     # Кадр снимаем ближе к концу сценария, чтобы фича успела сработать.
     $base += ('-OUShotAt=' + [Math]::Max(10, $RunWait - 8))

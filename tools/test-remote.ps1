@@ -134,23 +134,26 @@ if (-not $headLine) { Write-Host ($head.Trim()) -ForegroundColor Yellow }
 Write-Host "[5/5] Запускаю tools/test-all.ps1 на удалённом ПК (может занять время)..." -ForegroundColor Cyan
 $runScript = Join-Path $env:TEMP 'ou-run.ps1'
 $skip = if ($SkipUE) { ' -SkipUE' } else { '' }
+$headless = if ($SkipUE) { '' } else { ' -Headless' }
 $eng = if ($EngineRoot) { " -EngineRoot `"$EngineRoot`"" } else { '' }
 # Скриншоты: если не SkipUE — после тестов снимем кадры ключевых сценариев через
-# tools/capture.ps1 (без мыши второго ПК).
+# tools/capture.ps1. По SSH процесс идёт в сессии 0 (без видимого рабочего стола),
+# поэтому окно недоступно — снимаем в headless-режиме (`-RenderOffscreen`), UE сам
+# пишет PNG в Saved\Screenshots (мышь и рабочий стол не нужны).
 $capNames = if ($SkipUE) { '' } else { "'menus','voxels'" }
 @"
 `$ErrorActionPreference = 'Continue'
 `$env:PATH = "`$env:USERPROFILE\.cargo\bin;C:\Program Files\Git\cmd;C:\Program Files\Git\bin;" + `$env:PATH
 Set-Location '$RemoteDir\open-universe'
-powershell -ExecutionPolicy Bypass -File tools/test-all.ps1$skip$eng
+powershell -ExecutionPolicy Bypass -File tools/test-all.ps1$skip$headless$eng
 `$rc = `$LASTEXITCODE
 `$caps = @($capNames)
 if (`$caps.Count -gt 0) {
   foreach (`$p in `$caps) {
-    powershell -ExecutionPolicy Bypass -File tools/capture.ps1 -Preset `$p -Window
+    powershell -ExecutionPolicy Bypass -File tools/capture.ps1 -Preset `$p -Dx11
   }
-  # Кадры фича-сценария (смешанные воксели, ядра, коллизия).
-  powershell -ExecutionPolicy Bypass -File tools/capture.ps1 -Flag '-OUAutoConnect -OUMix -OUCore -OUCoreKinds -OUWalkInto -OUGhostLog' -Name features -Window
+  # Кадры фича-сценария (смешанные воксели, ядра, коллизия) — headless + DX11.
+  powershell -ExecutionPolicy Bypass -File tools/capture.ps1 -Flag '-OUAutoConnect -OUMix -OUCore -OUCoreKinds -OUWalkInto -OUGhostLog' -Name features -Dx11
 }
 Write-Output ('OU_EXIT:' + `$rc)
 "@ | Set-Content $runScript -Encoding UTF8

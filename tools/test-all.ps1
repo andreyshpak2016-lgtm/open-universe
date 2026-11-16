@@ -13,6 +13,7 @@
 
 param(
   [switch]$SkipUE,
+  [switch]$Headless,
   [string]$EngineRoot = ""
 )
 
@@ -88,6 +89,7 @@ Run-Step -Name 'test-terrain (рельеф)' -Script 'test-terrain.ps1' -Enabled
 
 $ueArgs = @()
 if ($EngineRoot) { $ueArgs += @('-EngineRoot', $EngineRoot) }
+if ($Headless) { $ueArgs += @('-Headless') }
 Run-Step -Name 'test-ue (редактор)' -Script 'test-ue.ps1' -ScriptArgs $ueArgs -Enabled ($hasUE -and -not $SkipUE) -SkipReason 'нет Unreal Engine 5.5 (или -SkipUE)'
 Run-Step -Name 'test-shipping (упакованная)' -Script 'test-shipping.ps1' -Enabled ($hasPackaged -and -not $SkipUE) -SkipReason 'нет упакованной сборки (сначала package-game.ps1)'
 

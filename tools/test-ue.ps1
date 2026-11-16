@@ -14,7 +14,11 @@
 param(
   [int]$WaitSec = 45,
   [string]$Pilot = "TestPilot",
-  [switch]$KeepOpen
+  [switch]$KeepOpen,
+  [string]$EngineRoot = "",
+  # Headless: без видимого окна (сессия SSH / нет рабочего стола). Кадр даёт сам
+  # UE (`-RenderOffscreen -OULateShot`, DX11), а не GDI-снимок окна.
+  [switch]$Headless
 )
 
 $ErrorActionPreference = 'Continue'
@@ -39,6 +43,7 @@ public class OUt {
 Add-Type -AssemblyName System.Drawing
 
 function Find-Engine {
+  if ($EngineRoot -and (Test-Path $EngineRoot)) { return $EngineRoot }
   foreach ($base in @('D:\UE_5.5','C:\Program Files\Epic Games\UE_5.5','D:\Epic Games\UE_5.5')) {
     if (Test-Path (Join-Path $base 'Engine\Binaries\Win64\UnrealEditor.exe')) { return $base }
   }
@@ -87,40 +92,65 @@ if (Test-Path $serverExe) {
   Write-Host "ou-netd.exe not found - test without server" -ForegroundColor DarkYellow
 }
 
-$p = Start-Process -FilePath $editor `
-  -ArgumentList "`"$proj`"",'-game','-windowed','-ResX=1280','-ResY=800','-OUAutoConnect','-OUAutoWalk','-OUAutoFire','-OUAutoBuild',("-OUName=" + $Pilot) -PassThru
+$shotDir = Join-Path $client 'Saved\Screenshots'
+if ($Headless) {
+  # Headless: без окна и без рабочего стола. UE сам пишет кадр (-OULateShot),
+  # D3D12 в сессии SSH не стартует — берём DX11.
+  $p = Start-Process -FilePath $editor `
+    -ArgumentList "`"$proj`"",'-game','-dx11','-RenderOffscreen','-nosound','-OUAutoConnect','-OUAutoWalk','-OUAutoFire','-OUAutoBuild',("-OUName=" + $Pilot),'-OULateShot','-OUShotAt=20' -PassThru
+} else {
+  $p = Start-Process -FilePath $editor `
+    -ArgumentList "`"$proj`"",'-game','-windowed','-ResX=1280','-ResY=800','-OUAutoConnect','-OUAutoWalk','-OUAutoFire','-OUAutoBuild',("-OUName=" + $Pilot) -PassThru
+}
 Write-Host "client PID $($p.Id), waiting $WaitSec s"
 Start-Sleep -Seconds $WaitSec
 [void][OUt]::SetCursorPos(2, 2)
 
 $p.Refresh()
 if ($p.HasExited) { Write-Host "client exited early (code $($p.ExitCode))" -ForegroundColor Red }
-$h = $p.MainWindowHandle
-if ($h -ne 0) {
-  [void][OUt]::ShowWindow($h, 9)
-  [void][OUt]::SetWindowPos($h, [IntPtr](-1), 40, 40, 0, 0, 0x0001 -bor 0x0010)
-  [void][OUt]::SetForegroundWindow($h)
-  Start-Sleep -Seconds 2
-  $r = New-Object OUt+RECT
-  [void][OUt]::GetWindowRect($h, [ref]$r)
-  $w = $r.Right - $r.Left; $ht = $r.Bottom - $r.Top
-  if ($w -gt 8 -and $ht -gt 8) {
-    $bmp = New-Object System.Drawing.Bitmap($w, $ht)
-    $g = [System.Drawing.Graphics]::FromImage($bmp)
-    $g.CopyFromScreen($r.Left, $r.Top, 0, 0, (New-Object System.Drawing.Size($w, $ht)))
-    $bmp.Save((Join-Path $shots 'ue.png'), [System.Drawing.Imaging.ImageFormat]::Png)
-    $g.Dispose(); $bmp.Dispose()
-    Write-Host "screenshot: $shots\ue.png ($w x $ht)" -ForegroundColor Green
-
-    # Публикуем свежий скриншот в assets/: сайт (report.html) показывает именно
-    # этот файл, поэтому отчёт всегда с актуальным кадром из движка.
+if ($Headless) {
+  # Кадр от UE: свежий OU_late_*.png в Saved\Screenshots.
+  $late = Get-ChildItem $shotDir -Recurse -Filter 'OU_late_*.png' -ErrorAction SilentlyContinue |
+    Sort-Object LastWriteTime -Descending | Select-Object -First 1
+  if ($late) {
+    Copy-Item $late.FullName (Join-Path $shots 'ue.png') -Force
+    Write-Host "screenshot (headless): $($late.Name) -> shots\ue.png" -ForegroundColor Green
     $assets = Join-Path $root 'assets'
     if (Test-Path $assets) {
       Copy-Item (Join-Path $shots 'ue.png') (Join-Path $assets 'ue-game.png') -Force
       Write-Host "опубликовано в assets/ue-game.png" -ForegroundColor Green
     }
+  } else {
+    Write-Host "headless: кадр OU_late_*.png не появился" -ForegroundColor Red
   }
-} else { Write-Host "no game window" -ForegroundColor Red }
+} else {
+  $h = $p.MainWindowHandle
+  if ($h -ne 0) {
+    [void][OUt]::ShowWindow($h, 9)
+    [void][OUt]::SetWindowPos($h, [IntPtr](-1), 40, 40, 0, 0, 0x0001 -bor 0x0010)
+    [void][OUt]::SetForegroundWindow($h)
+    Start-Sleep -Seconds 2
+    $r = New-Object OUt+RECT
+    [void][OUt]::GetWindowRect($h, [ref]$r)
+    $w = $r.Right - $r.Left; $ht = $r.Bottom - $r.Top
+    if ($w -gt 8 -and $ht -gt 8) {
+      $bmp = New-Object System.Drawing.Bitmap($w, $ht)
+      $g = [System.Drawing.Graphics]::FromImage($bmp)
+      $g.CopyFromScreen($r.Left, $r.Top, 0, 0, (New-Object System.Drawing.Size($w, $ht)))
+      $bmp.Save((Join-Path $shots 'ue.png'), [System.Drawing.Imaging.ImageFormat]::Png)
+      $g.Dispose(); $bmp.Dispose()
+      Write-Host "screenshot: $shots\ue.png ($w x $ht)" -ForegroundColor Green
+
+      # Публикуем свежий скриншот в assets/: сайт (report.html) показывает именно
+      # этот файл, поэтому отчёт всегда с актуальным кадром из движка.
+      $assets = Join-Path $root 'assets'
+      if (Test-Path $assets) {
+        Copy-Item (Join-Path $shots 'ue.png') (Join-Path $assets 'ue-game.png') -Force
+        Write-Host "опубликовано в assets/ue-game.png" -ForegroundColor Green
+      }
+    }
+  } else { Write-Host "no game window" -ForegroundColor Red }
+}
 
 if (-not $KeepOpen) { Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue }
 if ($srv) { Stop-Process -Id $srv.Id -Force -ErrorAction SilentlyContinue }
