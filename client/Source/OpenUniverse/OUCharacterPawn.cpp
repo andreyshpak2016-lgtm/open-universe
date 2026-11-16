@@ -446,6 +446,8 @@ void AOUCharacterPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputCom
 	PlayerInputComponent->BindAction(TEXT("MapMenu"), IE_Pressed, this, &AOUCharacterPawn::ToggleMap);
 	// Лог событий: ` — окно прокручиваемого лога.
 	PlayerInputComponent->BindAction(TEXT("EventLogMenu"), IE_Pressed, this, &AOUCharacterPawn::ToggleEventLog);
+	// Контакты: , — окно онлайн-игроков.
+	PlayerInputComponent->BindAction(TEXT("ContactsMenu"), IE_Pressed, this, &AOUCharacterPawn::ToggleContacts);
 	// Строительство: B открывает/закрывает меню, ЛКМ ставит выбранный блок.
 	PlayerInputComponent->BindAction(TEXT("BuildMode"), IE_Pressed, this, &AOUCharacterPawn::ToggleBuildMenu);
 	PlayerInputComponent->BindAction(TEXT("BuildPlace"), IE_Pressed, this, &AOUCharacterPawn::PlaceBuildBlock);
@@ -1737,6 +1739,29 @@ void AOUCharacterPawn::ToggleEventLog()
 	}
 }
 
+void AOUCharacterPawn::ToggleContacts()
+{
+	// Окно контактов/онлайн-игроков (клавиша ,).
+	if (bBuildMenuOpen)
+	{
+		return;
+	}
+	AOUPlayerMenuController* Menu = Cast<AOUPlayerMenuController>(
+		GetController() ? GetController() : nullptr);
+	if (!Menu)
+	{
+		Menu = Cast<AOUPlayerMenuController>(GetWorld() ? GetWorld()->GetFirstPlayerController() : nullptr);
+	}
+	if (Menu)
+	{
+		const bool bWasOpen = Menu->bContactsOpen;
+		Menu->CloseAllWindows();
+		Menu->bContactsOpen = !bWasOpen;
+		Menu->SetMenuCursor(Menu->bContactsOpen);
+		UE_LOG(LogOUChar, Log, TEXT("Контакты: %s"), Menu->bContactsOpen ? TEXT("открыты") : TEXT("закрыты"));
+	}
+}
+
 void AOUCharacterPawn::CaptureTerritory()
 {
 	// Захват: просим сервер объявить текущую зону нашей (клавиша T).
@@ -2641,7 +2666,7 @@ void AOUCharacterPawn::Tick(float DeltaSeconds)
 		if (AOUPlayerMenuController* MM = Cast<AOUPlayerMenuController>(GetController()))
 		{
 			AutoMenuTimer += DeltaSeconds;
-			if (AutoMenuTimer >= 2.5f && AutoMenuCount < 11)
+			if (AutoMenuTimer >= 2.5f && AutoMenuCount < 12)
 			{
 				AutoMenuTimer = 0.f;
 				++AutoMenuCount;
@@ -2659,7 +2684,8 @@ void AOUCharacterPawn::Tick(float DeltaSeconds)
 				case 8: ToggleVoxelMenu();       break;
 				case 9: ToggleMap();             break;
 				case 10: ToggleEventLog();       break;
-				case 11: MM->SetMenuCursor(false); break;   // закрыть всё
+				case 11: ToggleContacts();       break;
+				case 12: MM->SetMenuCursor(false); break;   // закрыть всё
 				}
 			}
 		}

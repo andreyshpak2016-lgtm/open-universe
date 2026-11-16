@@ -33,6 +33,8 @@ void AOUPlayerMenuHUD::DrawHUD()
 		Menu->DrawEventLog(Canvas);
 		// Всплывающие тосты (правый верх) — поверх окон.
 		Menu->DrawToasts(Canvas);
+		// Окно контактов/онлайн-игроков (,).
+		Menu->DrawContacts(Canvas);
 		// Окно скриптов (L) — там же, поверх HUD.
 		Menu->DrawScripts(Canvas);
 		// Окно мастерской (K).

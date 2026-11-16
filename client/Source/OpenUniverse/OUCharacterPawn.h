@@ -260,6 +260,9 @@ public:
 	/** Открыть/закрыть окно лога событий (клавиша `). */
 	void ToggleEventLog();
 
+	/** Открыть/закрыть окно контактов (клавиша ,). */
+	void ToggleContacts();
+
 	/** Захватить территорию, в которой стоит игрок (клавиша T). */
 	UFUNCTION(BlueprintCallable, Category = "Open Universe|Territory")
 	void CaptureTerritory();

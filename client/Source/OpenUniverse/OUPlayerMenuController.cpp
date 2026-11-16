@@ -154,7 +154,7 @@ bool AOUPlayerMenuController::IsAnyUiOpen() const
 {
 	return bMenuOpen || bPauseOpen || bMarketOpen || bScriptsOpen || bWorkshopOpen
 		|| bOrgOpen || bTalentsOpen || bChatInputOpen || bVoxelsOpen || bInventoryOpen
-		|| bCraftOpen || bMapOpen || bEventLogOpen;
+		|| bCraftOpen || bMapOpen || bEventLogOpen || bContactsOpen;
 }
 
 void AOUPlayerMenuController::ResolveNet()
@@ -1865,11 +1865,12 @@ void AOUPlayerMenuController::CloseAllWindows()
 	bVoxelsOpen = false;
 	bMapOpen = false;
 	bEventLogOpen = false;
+	bContactsOpen = false;
 }
 
 /** Открыть/переключить окно по id дока: 0 рынок, 1 трюм, 2 производство,
  *  3 скрипты, 4 мастерская, 5 организация, 6 персонаж, 7 воксели, 8 карта,
- *  9 лог событий. */
+ *  9 лог событий, 10 контакты. */
 void AOUPlayerMenuController::ToggleDockWindow(int32 DockId)
 {
 	// Определяем целевое окно и состояние «открыто/закрыто».
@@ -1886,17 +1887,20 @@ void AOUPlayerMenuController::ToggleDockWindow(int32 DockId)
 	case 7: Target = &bVoxelsOpen; break;
 	case 8: Target = &bMapOpen; break;
 	case 9: Target = &bEventLogOpen; break;
+	case 10: Target = &bContactsOpen; break;
 	default: return;
 	}
 	const bool bOpenNow = *Target;
 	// Все окна взаимоисключающие (как в DU: активно одно окно).
 	const bool bAnyOpen = bMarketOpen || bInventoryOpen || bCraftOpen || bScriptsOpen
-		|| bWorkshopOpen || bOrgOpen || bTalentsOpen || bVoxelsOpen || bMapOpen || bEventLogOpen;
+		|| bWorkshopOpen || bOrgOpen || bTalentsOpen || bVoxelsOpen || bMapOpen
+		|| bEventLogOpen || bContactsOpen;
 	CloseAllWindows();
 	// Повторный клик по открытому окну закрывает его; иначе открываем выбранное.
 	*Target = !(bOpenNow && bAnyOpen);
 	const bool bAny = bMarketOpen || bInventoryOpen || bCraftOpen || bScriptsOpen
-		|| bWorkshopOpen || bOrgOpen || bTalentsOpen || bVoxelsOpen || bMapOpen || bEventLogOpen;
+		|| bWorkshopOpen || bOrgOpen || bTalentsOpen || bVoxelsOpen || bMapOpen
+		|| bEventLogOpen || bContactsOpen;
 	SetMenuCursor(bAny);
 	UE_LOG(LogOUMenu, Log, TEXT("Док: окно %d %s"), DockId, *Target ? TEXT("открыто") : TEXT("закрыто"));
 }
@@ -1923,7 +1927,7 @@ void AOUPlayerMenuController::DrawDock(UCanvas* InCanvas)
 
 	// Кнопки дока: подпись + состояние «открыто» + id.
 	struct FDockBtn { const TCHAR* Label; int32 Id; bool bOpen; };
-	const FDockBtn Btns[10] = {
+	const FDockBtn Btns[11] = {
 		{ TEXT("Рынок"),   0, bMarketOpen },
 		{ TEXT("Трюм"),    1, bInventoryOpen },
 		{ TEXT("Крафт"),   2, bCraftOpen },
@@ -1934,10 +1938,11 @@ void AOUPlayerMenuController::DrawDock(UCanvas* InCanvas)
 		{ TEXT("Воксель"), 7, bVoxelsOpen },
 		{ TEXT("Карта"),   8, bMapOpen },
 		{ TEXT("Лог"),     9, bEventLogOpen },
+		{ TEXT("Рядом"),   10, bContactsOpen },
 	};
 
-	const float BW = 70.f, BH = 30.f, Gap = 5.f;
-	const float TotalW = 10 * BW + 9 * Gap;
+	const float BW = 66.f, BH = 30.f, Gap = 5.f;
+	const float TotalW = 11 * BW + 10 * Gap;
 	const float X0 = (W - TotalW) * 0.5f;
 	const float Y0 = H - BH - 84.f;   // над хотбаром
 
@@ -1947,7 +1952,7 @@ void AOUPlayerMenuController::DrawDock(UCanvas* InCanvas)
 	StrokeBox(InCanvas, FVector2D(X0 - 10, Y0 - 6), FVector2D(TotalW + 20, BH + 12),
 		FLinearColor(0.34f, 0.44f, 0.85f, 0.9f), 1.f);
 
-	for (int32 i = 0; i < 10; ++i)
+	for (int32 i = 0; i < 11; ++i)
 	{
 		const FVector2D BP(X0 + i * (BW + Gap), Y0);
 		const FVector2D BS(BW, BH);
@@ -2316,6 +2321,69 @@ void AOUPlayerMenuController::DrawToasts(UCanvas* InCanvas)
 		Y += 30.f;
 		++Shown;
 	}
+}
+
+/** Окно контактов/онлайн-игроков (клавиша C, док). */
+void AOUPlayerMenuController::DrawContacts(UCanvas* InCanvas)
+{
+	if (!bContactsOpen || !InCanvas || bMenuOpen)
+	{
+		return;
+	}
+	ResolveNet();
+
+	const float W = InCanvas->SizeX;
+	const float H = InCanvas->SizeY;
+	UFont* Font = GEngine->GetLargeFont();
+	UFont* Small = GEngine->GetMediumFont();
+	UFont* Tiny = GEngine->GetSmallFont();
+	const FLinearColor PanelB(0.34f, 0.44f, 0.85f, 0.9f);
+	const FLinearColor Dim(0.66f, 0.72f, 0.86f, 1.f);
+
+	const float PW = FMath::Min(660.f, W - 80.f);
+	const float PH = FMath::Min(480.f, H - 120.f);
+	const FVector2D P((W - PW) * 0.5f, (H - PH) * 0.5f);
+	GlassPanel(InCanvas, P, FVector2D(PW, PH), PanelB, ColAccent2);
+	DrawText(InCanvas, Font, TEXT("КОНТАКТЫ  ·  РЯДОМ"), P + FVector2D(24, 16), ColAccent);
+	DrawText(InCanvas, Small, TEXT(", — закрыть"), P + FVector2D(PW - 120, 24), Dim);
+
+	const FVector MyPos = GetPawn() ? GetPawn()->GetActorLocation() : FVector::ZeroVector;
+	float Y = P.Y + 60.f;
+	int32 Count = 0;
+
+	if (Net)
+	{
+		// Пешие игроки (позы) — приоритетный список «кто рядом».
+		for (const FOUCharacterState& C : Net->RemoteCharacters)
+		{
+			const FVector ItemPos = OUInterop::ServerToUE(C.Position);
+			const float DistM = (ItemPos - MyPos).Size() / 100.f;
+			DrawText(InCanvas, Small,
+				FString::Printf(TEXT("игрок #%-4d   %6.0f м   (пешком)"), C.Entity, DistM),
+				FVector2D(P.X + 24, Y), ColOk);
+			Y += 22.f;
+			++Count;
+		}
+		// Корабли/прочие сущности.
+		for (const FOUEntityState& E : Net->LatestSnapshot.Entities)
+		{
+			if (E.Id == Net->OwnEntityId) { continue; }
+			const float DistM = (E.Position - MyPos).Size() / 100.f;
+			DrawText(InCanvas, Tiny,
+				FString::Printf(TEXT("корабль #%-4d  %6.0f м"), E.Id, DistM),
+				FVector2D(P.X + 24, Y), Dim);
+			Y += 20.f;
+			++Count;
+		}
+	}
+	if (Count == 0)
+	{
+		DrawText(InCanvas, Small, TEXT("(рядом никого — вы один в этом районе)"),
+			FVector2D(P.X + 24, Y), Dim);
+	}
+
+	DrawText(InCanvas, Tiny, FString::Printf(TEXT("всего рядом: %d"), Count),
+		P + FVector2D(24, PH - 30), ColAccent);
 }
 
 void AOUPlayerMenuController::DrawOrg(UCanvas* InCanvas)

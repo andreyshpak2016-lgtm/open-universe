@@ -320,6 +320,16 @@ public:
 	/** Всплывающие тосты (правый верх) — рисуются в HUD. */
 	void DrawToasts(class UCanvas* InCanvas);
 
+	/**
+	 * Окно контактов/онлайн-игроков (клавиша C, док): список видимых сущностей
+	 * и пеших игроков с расстоянием до них (присутствие, как в DU).
+	 */
+	void DrawContacts(class UCanvas* InCanvas);
+
+	/** Открыто ли окно контактов. */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Social")
+	bool bContactsOpen = false;
+
 	/** Отслеживание изменений сети для лога событий (в Tick). */
 	float EvPrevDigTime = -100.f;
 	float EvPrevCraftTime = -100.f;
