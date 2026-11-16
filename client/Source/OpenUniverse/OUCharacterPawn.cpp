@@ -444,6 +444,8 @@ void AOUCharacterPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputCom
 	PlayerInputComponent->BindAction(TEXT("CraftMenu"), IE_Pressed, this, &AOUCharacterPawn::ToggleCraft);
 	// Карта: Tab — окно карты (территории, тела системы, зум).
 	PlayerInputComponent->BindAction(TEXT("MapMenu"), IE_Pressed, this, &AOUCharacterPawn::ToggleMap);
+	// Лог событий: ` — окно прокручиваемого лога.
+	PlayerInputComponent->BindAction(TEXT("EventLogMenu"), IE_Pressed, this, &AOUCharacterPawn::ToggleEventLog);
 	// Строительство: B открывает/закрывает меню, ЛКМ ставит выбранный блок.
 	PlayerInputComponent->BindAction(TEXT("BuildMode"), IE_Pressed, this, &AOUCharacterPawn::ToggleBuildMenu);
 	PlayerInputComponent->BindAction(TEXT("BuildPlace"), IE_Pressed, this, &AOUCharacterPawn::PlaceBuildBlock);
@@ -1712,6 +1714,29 @@ void AOUCharacterPawn::ToggleMap()
 	}
 }
 
+void AOUCharacterPawn::ToggleEventLog()
+{
+	// Окно лога событий (клавиша `): прокручиваемый лог и уведомления.
+	if (bBuildMenuOpen)
+	{
+		return;
+	}
+	AOUPlayerMenuController* Menu = Cast<AOUPlayerMenuController>(
+		GetController() ? GetController() : nullptr);
+	if (!Menu)
+	{
+		Menu = Cast<AOUPlayerMenuController>(GetWorld() ? GetWorld()->GetFirstPlayerController() : nullptr);
+	}
+	if (Menu)
+	{
+		const bool bWasOpen = Menu->bEventLogOpen;
+		Menu->CloseAllWindows();
+		Menu->bEventLogOpen = !bWasOpen;
+		Menu->SetMenuCursor(Menu->bEventLogOpen);
+		UE_LOG(LogOUChar, Log, TEXT("Лог событий: %s"), Menu->bEventLogOpen ? TEXT("открыт") : TEXT("закрыт"));
+	}
+}
+
 void AOUCharacterPawn::CaptureTerritory()
 {
 	// Захват: просим сервер объявить текущую зону нашей (клавиша T).
@@ -2616,7 +2641,7 @@ void AOUCharacterPawn::Tick(float DeltaSeconds)
 		if (AOUPlayerMenuController* MM = Cast<AOUPlayerMenuController>(GetController()))
 		{
 			AutoMenuTimer += DeltaSeconds;
-			if (AutoMenuTimer >= 2.5f && AutoMenuCount < 10)
+			if (AutoMenuTimer >= 2.5f && AutoMenuCount < 11)
 			{
 				AutoMenuTimer = 0.f;
 				++AutoMenuCount;
@@ -2633,7 +2658,8 @@ void AOUCharacterPawn::Tick(float DeltaSeconds)
 				case 7: ToggleTalents();         break;
 				case 8: ToggleVoxelMenu();       break;
 				case 9: ToggleMap();             break;
-				case 10: MM->SetMenuCursor(false); break;   // закрыть всё
+				case 10: ToggleEventLog();       break;
+				case 11: MM->SetMenuCursor(false); break;   // закрыть всё
 				}
 			}
 		}

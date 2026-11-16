@@ -29,6 +29,10 @@ void AOUPlayerMenuHUD::DrawHUD()
 		Menu->DrawCraft(Canvas);
 		// Окно карты (Tab).
 		Menu->DrawMap(Canvas);
+		// Окно лога событий (`).
+		Menu->DrawEventLog(Canvas);
+		// Всплывающие тосты (правый верх) — поверх окон.
+		Menu->DrawToasts(Canvas);
 		// Окно скриптов (L) — там же, поверх HUD.
 		Menu->DrawScripts(Canvas);
 		// Окно мастерской (K).

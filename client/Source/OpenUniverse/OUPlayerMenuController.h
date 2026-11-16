@@ -320,6 +320,16 @@ public:
 	/** Всплывающие тосты (правый верх) — рисуются в HUD. */
 	void DrawToasts(class UCanvas* InCanvas);
 
+	/** Отслеживание изменений сети для лога событий (в Tick). */
+	float EvPrevDigTime = -100.f;
+	float EvPrevCraftTime = -100.f;
+	int32 EvPrevChatCount = 0;
+	FString EvPrevMarketMsg;
+	FString EvPrevOrgMsg;
+	FString EvPrevWorkshopMsg;
+	FString EvPrevCoreMsg;
+	FString EvPrevShopMsg;
+
 	/**
 	 * Единая панель-док окон (как в Dual Universe): ряд кнопок внизу экрана,
 	 * открывающих все окна и переключающих между ними. Рисуется в игровом HUD.

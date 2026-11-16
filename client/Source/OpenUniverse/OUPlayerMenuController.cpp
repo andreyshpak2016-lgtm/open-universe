@@ -154,7 +154,7 @@ bool AOUPlayerMenuController::IsAnyUiOpen() const
 {
 	return bMenuOpen || bPauseOpen || bMarketOpen || bScriptsOpen || bWorkshopOpen
 		|| bOrgOpen || bTalentsOpen || bChatInputOpen || bVoxelsOpen || bInventoryOpen
-		|| bCraftOpen || bMapOpen;
+		|| bCraftOpen || bMapOpen || bEventLogOpen;
 }
 
 void AOUPlayerMenuController::ResolveNet()
@@ -312,6 +312,62 @@ void AOUPlayerMenuController::Tick(float DeltaSeconds)
 		if (AOUGameMode* GM = GetWorld() ? GetWorld()->GetAuthGameMode<AOUGameMode>() : nullptr)
 		{
 			GM->BuildSystemBodies();
+		}
+	}
+
+	// --- Лог событий и уведомления: следим за свежими сообщениями сети ---
+	ResolveNet();
+	if (Net && !bMenuOpen)
+	{
+		// Добыча: новая воронка/улов.
+		if (Net->LastDigTime > EvPrevDigTime && Net->LastDigQty > 0)
+		{
+			EvPrevDigTime = Net->LastDigTime;
+			PushEvent(FString::Printf(TEXT("+%lld %s"), Net->LastDigQty, *ItemName(Net->LastDigItem)), ColOk);
+		}
+		// Крафт: результат производства.
+		if (Net->LastCraftTime > EvPrevCraftTime && Net->LastCraftTime > 0.f)
+		{
+			EvPrevCraftTime = Net->LastCraftTime;
+			if (Net->bLastCraftOk)
+			{
+				PushEvent(FString::Printf(TEXT("Изготовлено: %s ×%lld"),
+					*ItemName(Net->LastCraftItem), Net->LastCraftQty), ColAccent2);
+			}
+			else if (Net->LastCraftReason.Len() > 0)
+			{
+				PushEvent(FString::Printf(TEXT("Крафт не удался: %s"), *Net->LastCraftReason), ColErr);
+			}
+		}
+		// Чат: новые строки.
+		if (Net->ChatLog.Num() > EvPrevChatCount)
+		{
+			for (int32 i = EvPrevChatCount; i < Net->ChatLog.Num(); ++i)
+			{
+				PushEvent(Net->ChatLog[i], ColText);
+			}
+			EvPrevChatCount = Net->ChatLog.Num();
+		}
+		// Рынок / организация / мастерская: сообщения-подтверждения.
+		if (Net->ShopMessage.Len() > 0 && Net->ShopMessage != EvPrevShopMsg)
+		{
+			EvPrevShopMsg = Net->ShopMessage;
+			PushEvent(Net->ShopMessage, WarmDot);
+		}
+		if (Net->WorkshopMessage.Len() > 0 && Net->WorkshopMessage != EvPrevWorkshopMsg)
+		{
+			EvPrevWorkshopMsg = Net->WorkshopMessage;
+			PushEvent(Net->WorkshopMessage, ColAccent);
+		}
+		if (Net->OrgMessage.Len() > 0 && Net->OrgMessage != EvPrevOrgMsg)
+		{
+			EvPrevOrgMsg = Net->OrgMessage;
+			PushEvent(Net->OrgMessage, ColAccent);
+		}
+		if (Net->LastCoreMessage.Len() > 0 && Net->LastCoreMessage != EvPrevCoreMsg)
+		{
+			EvPrevCoreMsg = Net->LastCoreMessage;
+			PushEvent(Net->LastCoreMessage, ColAccent2);
 		}
 	}
 }
@@ -1808,10 +1864,12 @@ void AOUPlayerMenuController::CloseAllWindows()
 	bTalentsOpen = false;
 	bVoxelsOpen = false;
 	bMapOpen = false;
+	bEventLogOpen = false;
 }
 
 /** Открыть/переключить окно по id дока: 0 рынок, 1 трюм, 2 производство,
- *  3 скрипты, 4 мастерская, 5 организация, 6 персонаж, 7 воксели, 8 карта. */
+ *  3 скрипты, 4 мастерская, 5 организация, 6 персонаж, 7 воксели, 8 карта,
+ *  9 лог событий. */
 void AOUPlayerMenuController::ToggleDockWindow(int32 DockId)
 {
 	// Определяем целевое окно и состояние «открыто/закрыто».
@@ -1827,17 +1885,18 @@ void AOUPlayerMenuController::ToggleDockWindow(int32 DockId)
 	case 6: Target = &bTalentsOpen; break;
 	case 7: Target = &bVoxelsOpen; break;
 	case 8: Target = &bMapOpen; break;
+	case 9: Target = &bEventLogOpen; break;
 	default: return;
 	}
 	const bool bOpenNow = *Target;
 	// Все окна взаимоисключающие (как в DU: активно одно окно).
 	const bool bAnyOpen = bMarketOpen || bInventoryOpen || bCraftOpen || bScriptsOpen
-		|| bWorkshopOpen || bOrgOpen || bTalentsOpen || bVoxelsOpen || bMapOpen;
+		|| bWorkshopOpen || bOrgOpen || bTalentsOpen || bVoxelsOpen || bMapOpen || bEventLogOpen;
 	CloseAllWindows();
 	// Повторный клик по открытому окну закрывает его; иначе открываем выбранное.
 	*Target = !(bOpenNow && bAnyOpen);
 	const bool bAny = bMarketOpen || bInventoryOpen || bCraftOpen || bScriptsOpen
-		|| bWorkshopOpen || bOrgOpen || bTalentsOpen || bVoxelsOpen || bMapOpen;
+		|| bWorkshopOpen || bOrgOpen || bTalentsOpen || bVoxelsOpen || bMapOpen || bEventLogOpen;
 	SetMenuCursor(bAny);
 	UE_LOG(LogOUMenu, Log, TEXT("Док: окно %d %s"), DockId, *Target ? TEXT("открыто") : TEXT("закрыто"));
 }
@@ -1864,7 +1923,7 @@ void AOUPlayerMenuController::DrawDock(UCanvas* InCanvas)
 
 	// Кнопки дока: подпись + состояние «открыто» + id.
 	struct FDockBtn { const TCHAR* Label; int32 Id; bool bOpen; };
-	const FDockBtn Btns[9] = {
+	const FDockBtn Btns[10] = {
 		{ TEXT("Рынок"),   0, bMarketOpen },
 		{ TEXT("Трюм"),    1, bInventoryOpen },
 		{ TEXT("Крафт"),   2, bCraftOpen },
@@ -1874,10 +1933,11 @@ void AOUPlayerMenuController::DrawDock(UCanvas* InCanvas)
 		{ TEXT("Персон."), 6, bTalentsOpen },
 		{ TEXT("Воксель"), 7, bVoxelsOpen },
 		{ TEXT("Карта"),   8, bMapOpen },
+		{ TEXT("Лог"),     9, bEventLogOpen },
 	};
 
-	const float BW = 74.f, BH = 30.f, Gap = 6.f;
-	const float TotalW = 9 * BW + 8 * Gap;
+	const float BW = 70.f, BH = 30.f, Gap = 5.f;
+	const float TotalW = 10 * BW + 9 * Gap;
 	const float X0 = (W - TotalW) * 0.5f;
 	const float Y0 = H - BH - 84.f;   // над хотбаром
 
@@ -1887,7 +1947,7 @@ void AOUPlayerMenuController::DrawDock(UCanvas* InCanvas)
 	StrokeBox(InCanvas, FVector2D(X0 - 10, Y0 - 6), FVector2D(TotalW + 20, BH + 12),
 		FLinearColor(0.34f, 0.44f, 0.85f, 0.9f), 1.f);
 
-	for (int32 i = 0; i < 9; ++i)
+	for (int32 i = 0; i < 10; ++i)
 	{
 		const FVector2D BP(X0 + i * (BW + Gap), Y0);
 		const FVector2D BS(BW, BH);
@@ -2159,6 +2219,102 @@ void AOUPlayerMenuController::DrawMap(UCanvas* InCanvas)
 		StrokeBox(InCanvas, BP, BS, bSel ? ColAccent2 : ColPanelBorder, bSel ? 2.f : 1.f);
 		DrawText(InCanvas, Tiny, ZoomName[i], BP + FVector2D(8, 9), bSel ? ColAccent2 : ColText);
 		Buttons.Add({ BP, BS, 5100 + i });
+	}
+}
+
+/** Добавить событие в лог и показать всплывающий тост. */
+void AOUPlayerMenuController::PushEvent(const FString& Text, const FLinearColor& Color)
+{
+	if (Text.IsEmpty())
+	{
+		return;
+	}
+	const float Now = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.f;
+	EventLog.Add({ Text, Color, Now });
+	// Держим лог ограниченным (последние 100 записей).
+	if (EventLog.Num() > 100)
+	{
+		EventLog.RemoveAt(0, EventLog.Num() - 100);
+	}
+	UE_LOG(LogOUMenu, Log, TEXT("Событие: %s"), *Text);
+}
+
+/** Окно лога событий (клавиша `, док). */
+void AOUPlayerMenuController::DrawEventLog(UCanvas* InCanvas)
+{
+	if (!bEventLogOpen || !InCanvas || bMenuOpen)
+	{
+		return;
+	}
+	const float W = InCanvas->SizeX;
+	const float H = InCanvas->SizeY;
+	UFont* Font = GEngine->GetLargeFont();
+	UFont* Small = GEngine->GetMediumFont();
+	UFont* Tiny = GEngine->GetSmallFont();
+	const FLinearColor PanelB(0.34f, 0.44f, 0.85f, 0.9f);
+	const FLinearColor Dim(0.66f, 0.72f, 0.86f, 1.f);
+
+	const float PW = FMath::Min(720.f, W - 80.f);
+	const float PH = FMath::Min(520.f, H - 120.f);
+	const FVector2D P((W - PW) * 0.5f, (H - PH) * 0.5f);
+	GlassPanel(InCanvas, P, FVector2D(PW, PH), PanelB, ColAccent);
+	DrawText(InCanvas, Font, TEXT("ЛОГ СОБЫТИЙ"), P + FVector2D(24, 16), ColAccent);
+	DrawText(InCanvas, Small, TEXT("` — закрыть"), P + FVector2D(PW - 120, 24), Dim);
+
+	const int32 RowH = 20;
+	const int32 MaxRows = static_cast<int32>((PH - 80.f) / RowH);
+	const int32 Start = FMath::Max(0, EventLog.Num() - MaxRows);
+	if (EventLog.Num() == 0)
+	{
+		DrawText(InCanvas, Small, TEXT("(пока пусто — события появятся по ходу игры)"),
+			P + FVector2D(24, 60), Dim);
+	}
+	float Y = P.Y + 60.f;
+	for (int32 i = Start; i < EventLog.Num(); ++i)
+	{
+		const FOUEvent& E = EventLog[i];
+		// Время от начала (мм:сс).
+		const int32 Sec = FMath::Max(0, static_cast<int32>(E.Time));
+		DrawText(InCanvas, Tiny, FString::Printf(TEXT("%02d:%02d"), Sec / 60, Sec % 60),
+			FVector2D(P.X + 20.f, Y), Dim);
+		DrawText(InCanvas, Small, E.Text, FVector2D(P.X + 76.f, Y), E.Color);
+		Y += RowH;
+	}
+}
+
+/** Всплывающие тосты (правый верх) — рисуются в HUD. */
+void AOUPlayerMenuController::DrawToasts(UCanvas* InCanvas)
+{
+	if (!InCanvas || bMenuOpen)
+	{
+		return;
+	}
+	const float W = InCanvas->SizeX;
+	UFont* Small = GEngine->GetMediumFont();
+	const float Now = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.f;
+
+	// Последние 4 события, показываем те, что свежее 4 секунд.
+	float Y = 60.f;
+	int32 Shown = 0;
+	for (int32 i = EventLog.Num() - 1; i >= 0 && Shown < 4; --i)
+	{
+		const FOUEvent& E = EventLog[i];
+		const float Age = Now - E.Time;
+		if (Age > 4.f)
+		{
+			break;
+		}
+		const float Alpha = FMath::Clamp(1.f - Age / 4.f, 0.f, 1.f);
+		const float TW = FMath::Min(340.f, W * 0.4f);
+		const FVector2D TP(W - TW - 16.f, Y);
+		FLinearColor Bg(0.03f, 0.05f, 0.10f, 0.75f * Alpha);
+		FLinearColor Bc = E.Color; Bc.A = Alpha;
+		FillBox(InCanvas, TP, FVector2D(TW, 26.f), Bg);
+		StrokeBox(InCanvas, TP, FVector2D(TW, 26.f), Bc, 1.f);
+		FLinearColor Tc = E.Color; Tc.A = Alpha;
+		DrawText(InCanvas, Small, E.Text, TP + FVector2D(10, 6), Tc);
+		Y += 30.f;
+		++Shown;
 	}
 }
 

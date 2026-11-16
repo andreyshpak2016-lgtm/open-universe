@@ -257,6 +257,9 @@ public:
 	/** Открыть/закрыть окно карты (клавиша Tab). */
 	void ToggleMap();
 
+	/** Открыть/закрыть окно лога событий (клавиша `). */
+	void ToggleEventLog();
+
 	/** Захватить территорию, в которой стоит игрок (клавиша T). */
 	UFUNCTION(BlueprintCallable, Category = "Open Universe|Territory")
 	void CaptureTerritory();
