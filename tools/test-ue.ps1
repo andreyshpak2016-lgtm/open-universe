@@ -95,9 +95,11 @@ if (Test-Path $serverExe) {
 $shotDir = Join-Path $client 'Saved\Screenshots'
 if ($Headless) {
   # Headless: без окна и без рабочего стола. UE сам пишет кадр (-OULateShot),
-  # D3D12 в сессии SSH не стартует — берём DX11.
+  # D3D12 в сессии SSH не стартует — берём DX11. Первый запуск компилирует
+  # шейдеры (несколько минут), поэтому в headless ждём дольше.
+  if ($WaitSec -lt 150) { $WaitSec = 150 }
   $p = Start-Process -FilePath $editor `
-    -ArgumentList "`"$proj`"",'-game','-dx11','-RenderOffscreen','-nosound','-OUAutoConnect','-OUAutoWalk','-OUAutoFire','-OUAutoBuild',("-OUName=" + $Pilot),'-OULateShot','-OUShotAt=20' -PassThru
+    -ArgumentList "`"$proj`"",'-game','-dx11','-RenderOffscreen','-nosound','-OUAutoConnect','-OUAutoWalk','-OUAutoFire','-OUAutoBuild',("-OUName=" + $Pilot),'-OULateShot','-OUShotAt=120' -PassThru
 } else {
   $p = Start-Process -FilePath $editor `
     -ArgumentList "`"$proj`"",'-game','-windowed','-ResX=1280','-ResY=800','-OUAutoConnect','-OUAutoWalk','-OUAutoFire','-OUAutoBuild',("-OUName=" + $Pilot) -PassThru
@@ -110,8 +112,14 @@ $p.Refresh()
 if ($p.HasExited) { Write-Host "client exited early (code $($p.ExitCode))" -ForegroundColor Red }
 if ($Headless) {
   # Кадр от UE: свежий OU_late_*.png в Saved\Screenshots.
-  $late = Get-ChildItem $shotDir -Recurse -Filter 'OU_late_*.png' -ErrorAction SilentlyContinue |
-    Sort-Object LastWriteTime -Descending | Select-Object -First 1
+  $deadline = (Get-Date).AddSeconds(180)
+  $late = $null
+  while ((Get-Date) -lt $deadline) {
+    $late = Get-ChildItem $shotDir -Recurse -Filter 'OU_late_*.png' -ErrorAction SilentlyContinue |
+      Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    if ($late) { break }
+    Start-Sleep -Seconds 5
+  }
   if ($late) {
     Copy-Item $late.FullName (Join-Path $shots 'ue.png') -Force
     Write-Host "screenshot (headless): $($late.Name) -> shots\ue.png" -ForegroundColor Green
