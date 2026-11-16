@@ -292,13 +292,13 @@ public:
 	void OnMarketSell() { MarketQuickTrade(true); }
 	void OnMarketBuy() { MarketQuickTrade(false); }
 
-	/** Радиус воронки копания, см (по умолчанию ~10 м). */
+	/** Радиус воронки копания, см (компактная ямка ~3 м). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Open Universe|Terrain")
-	float DigRadiusCm = 1000.f;
+	float DigRadiusCm = 300.f;
 
-	/** Глубина копания за удар, см (по умолчанию ~8 м). */
+	/** Глубина копания за удар, см (~3 м). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Open Universe|Terrain")
-	float DigDepthCm = 800.f;
+	float DigDepthCm = 300.f;
 
 	/** Таймер/счётчик тестового копания (`-OUAutoDig`). */
 	float DigTimer = 0.f;
