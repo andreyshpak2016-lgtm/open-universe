@@ -141,10 +141,18 @@ $eng = if ($EngineRoot) { " -EngineRoot `"$EngineRoot`"" } else { '' }
 # поэтому окно недоступно — снимаем в headless-режиме (`-RenderOffscreen`), UE сам
 # пишет PNG в Saved\Screenshots (мышь и рабочий стол не нужны).
 $capNames = if ($SkipUE) { '' } else { "'menus','voxels'" }
+# Пересборка UE-модуля: правки клиента (C++) попадают в код, но не в бинарник,
+# пока его не пересоберут. Чтобы кадры были СВЕЖИМИ, собираем модуль перед
+# съёмкой (при -SkipUE не нужно — там UE не используется).
+$engForBuild = if ($EngineRoot) { $EngineRoot } else { 'D:\UE_5.5' }
+$rebuild = if ($SkipUE) { '' } else {
+  "Write-Host '=== rebuild UE module ==='`npowershell -ExecutionPolicy Bypass -File tools/build-client.ps1 -Build -EngineRoot `"$engForBuild`""
+}
 @"
 `$ErrorActionPreference = 'Continue'
 `$env:PATH = "`$env:USERPROFILE\.cargo\bin;C:\Program Files\Git\cmd;C:\Program Files\Git\bin;" + `$env:PATH
 Set-Location '$RemoteDir\open-universe'
+$rebuild
 powershell -ExecutionPolicy Bypass -File tools/test-all.ps1$skip$headless$eng
 `$rc = `$LASTEXITCODE
 `$caps = @($capNames)
