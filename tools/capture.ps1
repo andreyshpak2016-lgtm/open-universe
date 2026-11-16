@@ -63,6 +63,10 @@ $Presets = @(
   [pscustomobject]@{ Name='walk';      Flags=@('-OUAutoConnect','-OUAutoWalk');                        Cats=@('LogOUChar','LogOUGameMode'); Expect=@(); Wait=38; Desc='Пеший персонаж: движение и анимация' }
   [pscustomobject]@{ Name='ship';      Flags=@('-OUAutoConnect','-OUStartInShip');                     Cats=@('LogOUShip'); Expect=@(); Wait=40; Desc='Корабль: старт в корабле, полёт' }
   [pscustomobject]@{ Name='system';    Flags=@('-OUAutoConnect','-OUMoonOrbit');                       Cats=@('LogOUSolar'); Expect=@('Тела системы построены'); Wait=40; Desc='Звёздная система: тела, луна, орбита' }
+  [pscustomobject]@{ Name='orbit1';    Flags=@('-OUAutoConnect','-OUStartInShip','-OUOrbitBody=1');  Cats=@('LogOUSolar'); Expect=@('Небесное тело','Облёт: тело 1'); Wait=44; Desc='Рельеф соседней планеты (тело 1, радиус 260 км)' }
+  [pscustomobject]@{ Name='orbit2';    Flags=@('-OUAutoConnect','-OUStartInShip','-OUOrbitBody=2');  Cats=@('LogOUSolar'); Expect=@('Небесное тело','Облёт: тело 2'); Wait=44; Desc='Рельеф луны (тело 2, радиус 60 км)' }
+  [pscustomobject]@{ Name='orbit3';    Flags=@('-OUAutoConnect','-OUStartInShip','-OUOrbitBody=3');  Cats=@('LogOUSolar'); Expect=@('Облёт: тело 3'); Wait=46; Desc='Газовый гигант (тело 3, без рельефа)' }
+  [pscustomobject]@{ Name='orbit0';    Flags=@('-OUAutoConnect','-OUStartInShip','-OUOrbitBody=0');  Cats=@('LogOUSolar'); Expect=@('Облёт: тело 0'); Wait=46; Desc='Звезда (тело 0, без рельефа)' }
   [pscustomobject]@{ Name='belt';      Flags=@('-OUAutoConnect','-OUStartInShip','-OUBeltOrbit');      Cats=@('LogOUSolar'); Expect=@('Пояс астероидов: камней'); Wait=44; Desc='Пояс астероидов: кольцо камней (генерация системы)' }
   [pscustomobject]@{ Name='combat';    Flags=@('-OUAutoConnect','-OUCombatDemo');                      Cats=@('LogOUShip'); Expect=@('Бой: выстрел'); Wait=40; Desc='Бой: демо-сражение у тела' }
   [pscustomobject]@{ Name='pause';     Flags=@('-OUAutoConnect','-OUPauseMenu');                       Cats=@('LogOUMenu'); Expect=@('ESC'); Wait=38; Desc='Пауза-меню (ESC)' }

@@ -139,6 +139,11 @@ void AOUShipPawn::BeginPlay()
 	Super::BeginPlay();
 
 	State.Id = 1;
+
+	// Диагностика `-OUOrbitBody=<id>`: id тела системы для облёта (0 звезда,
+	// 1 соседняя планета, 2 луна, 3 газовый гигант). -1 — флаг не задан.
+	int32 BodyId = -1;
+
 	// Точка появления — на домашней планете (совпадает с сервером).
 	// Если корабль уже поставлен снаружи (его создал персонаж рядом), не
 	// переносим его снова; иначе ставим на сушу у поверхности.
@@ -180,6 +185,15 @@ void AOUShipPawn::BeginPlay()
 		const FVector SpawnUE = Base + Fwd * 3000.f;   // ~30 м впереди базы
 		State.Position = OUInterop::UEToServer(SpawnUE);
 		SetActorLocation(SpawnUE);
+	}
+	else if (FParse::Value(FCommandLine::Get(), TEXT("OUOrbitBody="), BodyId))
+	{
+		// Диагностика: облёт КОНКРЕТНОГО тела системы, чтобы проверить его
+		// рельеф (планета/луна/газовый гигант/звезда). Список тел приходит от
+		// сервера уже после создания корабля, поэтому здесь только запоминаем
+		// id, а телепорт выполняем в Tick (DiagOrbitBody).
+		DiagOrbitBody = BodyId;
+		UE_LOG(LogTemp, Log, TEXT("Облёт: запрошено тело %d (телепорт в Tick)"), BodyId);
 	}
 	else if (GetActorLocation().IsNearlyZero())
 	{
@@ -935,6 +949,33 @@ void AOUShipPawn::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
 
+	// Диагностика `-OUOrbitBody=<id>`: разовый телепорт к выбранному телу системы
+	// (для снимка его рельефа). Ждём, пока приедет список тел от сервера.
+	if (DiagOrbitBody >= 0 && !bDiagOrbitApplied)
+	{
+		UOUClientNet* NetC = Net ? Net : FindComponentByClass<UOUClientNet>();
+		if (NetC)
+		{
+			for (const FOUSystemBody& B : NetC->SystemBodies)
+			{
+				if (B.Id == DiagOrbitBody && B.Radius > 0.f)
+				{
+					const FVector CenterUE = OUInterop::ServerToUE(B.Center);
+					const float RadiusCm = B.Radius * OUInterop::ServerUnitToCm;
+					const FVector SpawnUE = CenterUE + FVector(RadiusCm * 0.4f, 0.f, RadiusCm * 1.6f);
+					State.Position = OUInterop::UEToServer(SpawnUE);
+					State.Pitch = -0.35f;
+					SetActorLocation(SpawnUE);
+					bDiagOrbitApplied = true;
+					UE_LOG(LogTemp, Log,
+						TEXT("Облёт: тело %d, радиус %.0f м, центр %s — телепорт выполнен"),
+						DiagOrbitBody, B.Radius, *B.Center.ToCompactString());
+					break;
+				}
+			}
+		}
+	}
+
 	// Пока открыто стартовое меню (персонаж/сервер) — корабль стоит на месте и
 	// ввод не отправляется: игрок сначала выбирает персонажа и сервер.
 	if (AOUPlayerMenuController* Menu = GetMenuController())
@@ -1067,7 +1108,8 @@ void AOUShipPawn::Tick(float DeltaSeconds)
 			// реконсилимся — держим корабль на месте для снимка.
 			if (!FParse::Param(FCommandLine::Get(), TEXT("OUMoonOrbit")) &&
 				!FParse::Param(FCommandLine::Get(), TEXT("OUBeltOrbit")) &&
-				!FParse::Param(FCommandLine::Get(), TEXT("OUCombatDemo")))
+				!FParse::Param(FCommandLine::Get(), TEXT("OUCombatDemo")) &&
+				DiagOrbitBody < 0)
 			{
 				// Реконсиляция: принимаем авторитетное состояние своей сущности
 				// и переигрываем ещё не подтверждённые кадры.
