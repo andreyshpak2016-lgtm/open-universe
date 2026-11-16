@@ -248,6 +248,9 @@ public:
 	/** Открыть/закрыть окно рынка (клавиша M). */
 	void ToggleMarket();
 
+	/** Открыть/закрыть окно инвентаря/трюма (клавиша I). */
+	void ToggleInventory();
+
 	/** Захватить территорию, в которой стоит игрок (клавиша T). */
 	UFUNCTION(BlueprintCallable, Category = "Open Universe|Territory")
 	void CaptureTerritory();

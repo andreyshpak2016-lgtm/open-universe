@@ -153,7 +153,7 @@ void AOUPlayerMenuController::SetupInputComponent()
 bool AOUPlayerMenuController::IsAnyUiOpen() const
 {
 	return bMenuOpen || bPauseOpen || bMarketOpen || bScriptsOpen || bWorkshopOpen
-		|| bOrgOpen || bTalentsOpen || bChatInputOpen || bVoxelsOpen;
+		|| bOrgOpen || bTalentsOpen || bChatInputOpen || bVoxelsOpen || bInventoryOpen;
 }
 
 void AOUPlayerMenuController::ResolveNet()
@@ -391,6 +391,12 @@ void AOUPlayerMenuController::OnLeftClick()
 						DisableTutorial();
 					}
 				}
+				return;
+			}
+			// Док окон (как в Dual Universe): 4000+ — открыть/переключить окно.
+			if (B.Id >= 4000 && B.Id < 4100)
+			{
+				ToggleDockWindow(B.Id - 4000);
 				return;
 			}
 			// Производство (крафт): строки рецептов с id 200+ в окне рынка.
@@ -1715,6 +1721,182 @@ void AOUPlayerMenuController::DrawVoxels(UCanvas* InCanvas)
 	}
 
 	DrawText(InCanvas, Tiny, TEXT("C/V — тоже переключить размер"), FVector2D(P.X + 24, P.Y + PH - 26), Dim);
+}
+
+// ==================== Док окон и инвентарь (стиль Dual Universe) ====================
+
+/** Закрыть все игровые окна (кроме паузы и стартового меню). */
+void AOUPlayerMenuController::CloseAllWindows()
+{
+	bMarketOpen = false;
+	bInventoryOpen = false;
+	bScriptsOpen = false;
+	bWorkshopOpen = false;
+	bOrgOpen = false;
+	bTalentsOpen = false;
+	bVoxelsOpen = false;
+}
+
+/** Открыть/переключить окно по id дока: 0 рынок, 1 инвентарь, 2 скрипты,
+ *  3 мастерская, 4 организация, 5 персонаж, 6 воксели. */
+void AOUPlayerMenuController::ToggleDockWindow(int32 DockId)
+{
+	// Определяем целевое окно и состояние «открыто/закрыто».
+	bool* Target = nullptr;
+	switch (DockId)
+	{
+	case 0: Target = &bMarketOpen; break;
+	case 1: Target = &bInventoryOpen; break;
+	case 2: Target = &bScriptsOpen; break;
+	case 3: Target = &bWorkshopOpen; break;
+	case 4: Target = &bOrgOpen; break;
+	case 5: Target = &bTalentsOpen; break;
+	case 6: Target = &bVoxelsOpen; break;
+	default: return;
+	}
+	const bool bOpenNow = *Target;
+	// Все окна взаимоисключающие (как в DU: активно одно окно).
+	const bool bAnyOpen = bMarketOpen || bInventoryOpen || bScriptsOpen || bWorkshopOpen
+		|| bOrgOpen || bTalentsOpen || bVoxelsOpen;
+	CloseAllWindows();
+	// Повторный клик по открытому окну закрывает его; иначе открываем выбранное.
+	*Target = !(bOpenNow && bAnyOpen);
+	const bool bAny = bMarketOpen || bInventoryOpen || bScriptsOpen || bWorkshopOpen
+		|| bOrgOpen || bTalentsOpen || bVoxelsOpen;
+	SetMenuCursor(bAny);
+	UE_LOG(LogOUMenu, Log, TEXT("Док: окно %d %s"), DockId, *Target ? TEXT("открыто") : TEXT("закрыто"));
+}
+
+/** Единая панель-док окон (как в Dual Universe). */
+void AOUPlayerMenuController::DrawDock(UCanvas* InCanvas)
+{
+	if (bMenuOpen || bPauseOpen || !InCanvas)
+	{
+		return;
+	}
+	// В режиме строительства палитра занимает низ — док не рисуем.
+	if (const AOUCharacterPawn* C = Cast<AOUCharacterPawn>(GetPawn()))
+	{
+		if (C->bBuildMenuOpen)
+		{
+			return;
+		}
+	}
+
+	const float W = InCanvas->SizeX;
+	const float H = InCanvas->SizeY;
+	UFont* Tiny = GEngine->GetSmallFont();
+
+	// Кнопки дока: подпись + состояние «открыто» + id.
+	struct FDockBtn { const TCHAR* Label; int32 Id; bool bOpen; };
+	const FDockBtn Btns[7] = {
+		{ TEXT("Рынок"),   0, bMarketOpen },
+		{ TEXT("Трюм"),    1, bInventoryOpen },
+		{ TEXT("Скрипты"), 2, bScriptsOpen },
+		{ TEXT("Мастер."), 3, bWorkshopOpen },
+		{ TEXT("Орг."),    4, bOrgOpen },
+		{ TEXT("Персон."), 5, bTalentsOpen },
+		{ TEXT("Воксель"), 6, bVoxelsOpen },
+	};
+
+	const float BW = 78.f, BH = 30.f, Gap = 6.f;
+	const float TotalW = 7 * BW + 6 * Gap;
+	const float X0 = (W - TotalW) * 0.5f;
+	const float Y0 = H - BH - 84.f;   // над хотбаром
+
+	// Полупрозрачная подложка дока.
+	FillBox(InCanvas, FVector2D(X0 - 10, Y0 - 6), FVector2D(TotalW + 20, BH + 12),
+		FLinearColor(0.03f, 0.05f, 0.10f, 0.55f));
+	StrokeBox(InCanvas, FVector2D(X0 - 10, Y0 - 6), FVector2D(TotalW + 20, BH + 12),
+		FLinearColor(0.34f, 0.44f, 0.85f, 0.9f), 1.f);
+
+	for (int32 i = 0; i < 7; ++i)
+	{
+		const FVector2D BP(X0 + i * (BW + Gap), Y0);
+		const FVector2D BS(BW, BH);
+		FillBox(InCanvas, BP, BS,
+			Btns[i].bOpen ? FLinearColor(0.16f, 0.22f, 0.44f, 0.96f) : FLinearColor(0.05f, 0.07f, 0.16f, 0.88f));
+		StrokeBox(InCanvas, BP, BS, Btns[i].bOpen ? ColAccent2 : ColPanelBorder, Btns[i].bOpen ? 2.f : 1.f);
+		DrawText(InCanvas, Tiny, Btns[i].Label, BP + FVector2D(8, 9),
+			Btns[i].bOpen ? ColAccent2 : ColText);
+		Buttons.Add({ BP, BS, 4000 + i });
+	}
+}
+
+/** Окно инвентаря/контейнера (клавиша I): сетка предметов, объём и масса. */
+void AOUPlayerMenuController::DrawInventory(UCanvas* InCanvas)
+{
+	if (!bInventoryOpen || !InCanvas || bMenuOpen)
+	{
+		return;
+	}
+	ResolveNet();
+
+	const float W = InCanvas->SizeX;
+	const float H = InCanvas->SizeY;
+	UFont* Font = GEngine->GetLargeFont();
+	UFont* Small = GEngine->GetMediumFont();
+	UFont* Tiny = GEngine->GetSmallFont();
+	const FLinearColor PanelB(0.34f, 0.44f, 0.85f, 0.9f);
+	const FLinearColor Dim(0.66f, 0.72f, 0.86f, 1.f);
+
+	const float PW = FMath::Min(760.f, W - 80.f);
+	const float PH = FMath::Min(520.f, H - 120.f);
+	const FVector2D P((W - PW) * 0.5f, (H - PH) * 0.5f);
+	GlassPanel(InCanvas, P, FVector2D(PW, PH), PanelB, ColAccent2);
+	DrawText(InCanvas, Font, TEXT("ИНВЕНТАРЬ  ·  ТРЮМ"), P + FVector2D(24, 16), ColAccent);
+	DrawText(InCanvas, Small, TEXT("I — закрыть"), P + FVector2D(PW - 120, 24), Dim);
+
+	// Объём трюма (шкала) + масса (оценка по количеству предметов).
+	const int64 Used = Net ? Net->CargoUsed : 0;
+	const int64 Max = Net ? Net->CargoMax : 0;
+	const float Frac = Max > 0 ? static_cast<float>(Used) / static_cast<float>(Max) : 0.f;
+	DrawText(InCanvas, Small, FString::Printf(TEXT("Объём  %lld / %lld"), Used, Max),
+		P + FVector2D(24, 56), ColText);
+	Bar(InCanvas, P + FVector2D(24, 80), FVector2D(PW - 48, 12), Frac,
+		Frac > 0.9f ? ColErr : ColAccent2, FLinearColor(0.05f, 0.07f, 0.16f, 1.f));
+
+	// Сетка предметов: 6 колонок, ячейки с названием и количеством.
+	const int32 Cols = 6;
+	const float CellW = (PW - 48.f - (Cols - 1) * 8.f) / Cols;
+	const float CellH = 56.f;
+	const float GX = P.X + 24.f;
+	const float GY = P.Y + 112.f;
+
+	const TArray<FOUInventoryItem>& Items = Net ? Net->InventoryItems : TArray<FOUInventoryItem>();
+	if (Items.Num() == 0)
+	{
+		DrawText(InCanvas, Small, TEXT("(пусто — копайте грунт, ЛКМ)"), FVector2D(GX, GY), Dim);
+	}
+	for (int32 i = 0; i < Items.Num(); ++i)
+	{
+		const int32 R = i / Cols;
+		const int32 C = i % Cols;
+		const FVector2D Cell(GX + C * (CellW + 8.f), GY + R * (CellH + 8.f));
+		FillBox(InCanvas, Cell, FVector2D(CellW, CellH), FLinearColor(0.05f, 0.07f, 0.16f, 0.9f));
+		StrokeBox(InCanvas, Cell, FVector2D(CellW, CellH), ColPanelBorder, 1.f);
+		// Цвет по типу предмета (совпадает с цветом слоя при копании).
+		auto ItemColor = [](int32 It) -> FLinearColor
+		{
+			switch (It)
+			{
+			case 1: return FLinearColor(0.78f, 0.62f, 0.42f);
+			case 2: return FLinearColor(0.60f, 0.85f, 1.00f);
+			case 3: return FLinearColor(0.75f, 0.55f, 1.00f);
+			case 4: return FLinearColor(0.85f, 0.85f, 0.90f);
+			case 5: return FLinearColor(0.4f, 0.9f, 0.5f);
+			default: return FLinearColor(0.6f, 0.7f, 0.9f);
+			}
+		};
+		FillBox(InCanvas, Cell + FVector2D(6, 6), FVector2D(CellW - 12, 20), ItemColor(Items[i].Item));
+		DrawText(InCanvas, Tiny, ItemName(Items[i].Item), Cell + FVector2D(6, 30), ColText);
+		DrawText(InCanvas, Small, FString::Printf(TEXT("×%lld"), Items[i].Qty),
+			Cell + FVector2D(6, 38), ColOk);
+	}
+
+	DrawText(InCanvas, Tiny,
+		TEXT("ЛКМ — перенести стак в базу (склад)   ·   I / док — закрыть"),
+		P + FVector2D(24, PH - 30), Dim);
 }
 
 void AOUPlayerMenuController::DrawOrg(UCanvas* InCanvas)

@@ -20,7 +20,11 @@ void AOUPlayerMenuHUD::DrawHUD()
 		// всегда сверху, а хотбар не перекрывает палитру (см. DrawGameHud).
 		Menu->DrawBuildMenu(Canvas);
 		Menu->DrawGameHud(Canvas);
+		// Док окон (как в Dual Universe) — над игровым HUD.
+		Menu->DrawDock(Canvas);
 		Menu->DrawMarket(Canvas);
+		// Окно инвентаря/трюма (I).
+		Menu->DrawInventory(Canvas);
 		// Окно скриптов (L) — там же, поверх HUD.
 		Menu->DrawScripts(Canvas);
 		// Окно мастерской (K).

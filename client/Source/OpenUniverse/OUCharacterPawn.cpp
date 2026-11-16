@@ -438,6 +438,8 @@ void AOUCharacterPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputCom
 	PlayerInputComponent->BindAction(TEXT("MarketToggle"), IE_Pressed, this, &AOUCharacterPawn::ToggleMarket);
 	PlayerInputComponent->BindAction(TEXT("MarketSell"), IE_Pressed, this, &AOUCharacterPawn::OnMarketSell);
 	PlayerInputComponent->BindAction(TEXT("MarketBuy"), IE_Pressed, this, &AOUCharacterPawn::OnMarketBuy);
+	// Инвентарь/трюм: I — отдельное окно (сетка предметов, объём и масса).
+	PlayerInputComponent->BindAction(TEXT("InventoryToggle"), IE_Pressed, this, &AOUCharacterPawn::ToggleInventory);
 	// Строительство: B открывает/закрывает меню, ЛКМ ставит выбранный блок.
 	PlayerInputComponent->BindAction(TEXT("BuildMode"), IE_Pressed, this, &AOUCharacterPawn::ToggleBuildMenu);
 	PlayerInputComponent->BindAction(TEXT("BuildPlace"), IE_Pressed, this, &AOUCharacterPawn::PlaceBuildBlock);
@@ -1632,6 +1634,27 @@ void AOUCharacterPawn::ToggleMarket()
 	}
 }
 
+void AOUCharacterPawn::ToggleInventory()
+{
+	// Окно инвентаря/трюма (клавиша I): сетка предметов, объём и масса.
+	if (bBuildMenuOpen)
+	{
+		return;
+	}
+	AOUPlayerMenuController* Menu = Cast<AOUPlayerMenuController>(
+		GetController() ? GetController() : nullptr);
+	if (!Menu)
+	{
+		Menu = Cast<AOUPlayerMenuController>(GetWorld() ? GetWorld()->GetFirstPlayerController() : nullptr);
+	}
+	if (Menu)
+	{
+		Menu->bInventoryOpen = !Menu->bInventoryOpen;
+		Menu->SetMenuCursor(Menu->bInventoryOpen);
+		UE_LOG(LogOUChar, Log, TEXT("Инвентарь: %s"), Menu->bInventoryOpen ? TEXT("открыт") : TEXT("закрыт"));
+	}
+}
+
 void AOUCharacterPawn::CaptureTerritory()
 {
 	// Захват: просим сервер объявить текущую зону нашей (клавиша T).
@@ -2536,26 +2559,22 @@ void AOUCharacterPawn::Tick(float DeltaSeconds)
 		if (AOUPlayerMenuController* MM = Cast<AOUPlayerMenuController>(GetController()))
 		{
 			AutoMenuTimer += DeltaSeconds;
-			if (AutoMenuTimer >= 2.5f && AutoMenuCount < 7)
+			if (AutoMenuTimer >= 2.5f && AutoMenuCount < 8)
 			{
 				AutoMenuTimer = 0.f;
 				++AutoMenuCount;
 				// Закрываем все окна, затем открываем одно (проверяем каждое).
-				MM->bMarketOpen = false;
-				MM->bScriptsOpen = false;
-				MM->bWorkshopOpen = false;
-				MM->bOrgOpen = false;
-				MM->bTalentsOpen = false;
-				MM->bVoxelsOpen = false;
+				MM->CloseAllWindows();
 				switch (AutoMenuCount)
 				{
 				case 1: ToggleMarket();          break;
-				case 2: ToggleScripts();         break;
-				case 3: ToggleWorkshop();        break;
-				case 4: ToggleOrg();             break;
-				case 5: ToggleTalents();         break;
-				case 6: ToggleVoxelMenu();       break;
-				case 7: MM->SetMenuCursor(false); break;   // закрыть всё
+				case 2: ToggleInventory();       break;
+				case 3: ToggleScripts();         break;
+				case 4: ToggleWorkshop();        break;
+				case 5: ToggleOrg();             break;
+				case 6: ToggleTalents();         break;
+				case 7: ToggleVoxelMenu();       break;
+				case 8: MM->SetMenuCursor(false); break;   // закрыть всё
 				}
 			}
 		}

@@ -262,6 +262,30 @@ public:
 	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Build")
 	bool bVoxelsOpen = false;
 
+	/**
+	 * Окно инвентаря/контейнера (клавиша I): сетка предметов трюма, объём и
+	 * масса, перенос между трюмом и базой. В духе Dual Universe.
+	 */
+	void DrawInventory(class UCanvas* InCanvas);
+
+	/** Открыто ли окно инвентаря. */
+	UPROPERTY(BlueprintReadOnly, Category = "Open Universe|Inventory")
+	bool bInventoryOpen = false;
+
+	/**
+	 * Единая панель-док окон (как в Dual Universe): ряд кнопок внизу экрана,
+	 * открывающих все окна и переключающих между ними. Рисуется в игровом HUD.
+	 */
+	void DrawDock(class UCanvas* InCanvas);
+
+	/** Закрыть все игровые окна (кроме паузы и стартового меню). */
+	void CloseAllWindows();
+
+	/** Открыть/переключить окно по id дока (см. DrawDock). */
+	void ToggleDockWindow(int32 DockId);
+
+	/** Открыть окно инвентаря по id (для клика по доку). */
+
 	// --- Обучение для новичков (tutorial) ---
 
 	/** Включено ли обучение (по умолчанию да; можно отключить в пауза-меню). */
