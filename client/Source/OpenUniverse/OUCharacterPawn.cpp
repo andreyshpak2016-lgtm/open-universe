@@ -200,7 +200,7 @@ AOUCharacterPawn::AOUCharacterPawn()
 	Camera->SetupAttachment(Capsule);
 	Camera->SetRelativeLocation(FVector(18.f, 0.f, CapsuleHalfHeight * 0.85f));  // у глаз
 	Camera->bUsePawnControlRotation = false;
-	Camera->SetFieldOfView(95.f);   // шире обычного: у поверхности нужен обзор
+	Camera->SetFieldOfView(CameraFov);   // угол обзора настраивается в меню
 
 	// Свою фигурку и оружие владельцу не показываем — вид от первого лица.
 	// (Чужие игроки видят фигурку: её рисует их собственный клиент отдельно.)
@@ -2323,6 +2323,8 @@ void AOUCharacterPawn::Tick(float DeltaSeconds)
 	if (Camera)
 	{
 		Camera->SetRelativeRotation(FRotator(FMath::RadiansToDegrees(ViewPitch), 0.f, 0.f));
+		// Угол обзора — из настроек (меняется в пауза-меню).
+		Camera->SetFieldOfView(CameraFov);
 	}
 
 	// Анимация бега/ходьбы (процедурная, по горизонтальной скорости).

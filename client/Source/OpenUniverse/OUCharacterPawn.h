@@ -90,6 +90,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Open Universe|Input")
 	float MouseSensitivity = 0.0025f;
 
+	/** Угол обзора камеры (FOV), градусы. Настраивается в меню. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Open Universe|Input")
+	float CameraFov = 90.f;
+
 	/** Частота шагов на полной скорости, шагов/с. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Open Universe|Character")
 	float StrideFrequency = 1.5f;

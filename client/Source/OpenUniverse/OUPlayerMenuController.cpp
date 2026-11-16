@@ -424,6 +424,14 @@ void AOUPlayerMenuController::OnLeftClick()
 					{
 						Char->MouseSensitivity = FMath::Clamp(Char->MouseSensitivity + 0.0005f, 0.0005f, 0.02f);
 					}
+					else if (B.Id == 13 && Char)
+					{
+						Char->CameraFov = FMath::Clamp(Char->CameraFov - 5.f, 60.f, 120.f);
+					}
+					else if (B.Id == 14 && Char)
+					{
+						Char->CameraFov = FMath::Clamp(Char->CameraFov + 5.f, 60.f, 120.f);
+					}
 					else if (B.Id == 12)
 					{
 						Screen = EOUMenuScreen::Pause;
@@ -1342,7 +1350,7 @@ void AOUPlayerMenuController::DrawPauseMenu(UCanvas* InCanvas)
 	FillBox(InCanvas, FVector2D(0, 0), FVector2D(W, H), FLinearColor(0.02f, 0.03f, 0.06f, 0.72f));
 
 	const float PanelW = FMath::Min(520.f, W - 80.f);
-	const float PanelH = FMath::Min(420.f, H - 120.f);
+	const float PanelH = FMath::Min(560.f, H - 80.f);
 	const FVector2D PanelPos((W - PanelW) * 0.5f, (H - PanelH) * 0.5f);
 	GlassPanel(InCanvas, PanelPos, FVector2D(PanelW, PanelH), ColPanelBorder, ColAccent);
 
@@ -1353,6 +1361,7 @@ void AOUPlayerMenuController::DrawPauseMenu(UCanvas* InCanvas)
 	{
 		AOUCharacterPawn* Char = Cast<AOUCharacterPawn>(GetPawn());
 		const float Sens = Char ? Char->MouseSensitivity : 0.0025f;
+		const float Fov = Char ? Char->CameraFov : 95.f;
 
 		DrawText(InCanvas, Small, FString::Printf(TEXT("Чувствительность мыши: %.4f"), Sens),
 			FVector2D(PanelPos.X + 28, PanelPos.Y + 88), ColText);
@@ -1373,11 +1382,38 @@ void AOUPlayerMenuController::DrawPauseMenu(UCanvas* InCanvas)
 		DrawText(InCanvas, Font, TEXT("+"), PlusPos + FVector2D(20, 8), ColText);
 		Buttons.Add({ PlusPos, StepSize, 11 });
 
-		// Полоса-индикатор чувствительности (0.005..0.05).
+		// Полоса-индикатор чувствительности (0.0005..0.02).
 		const FVector2D BarPos(SBX + 76, PanelPos.Y + 134);
 		const FVector2D BarSize(SBW - 152, 20);
 		Bar(InCanvas, BarPos, BarSize, (Sens - 0.0005f) / 0.0195f, ColAccent2,
 			FLinearColor(0.05f, 0.07f, 0.16f, 1.f));
+
+		// --- Угол обзора (FOV) ---
+		DrawText(InCanvas, Small, FString::Printf(TEXT("Угол обзора (FOV): %.0f°"), Fov),
+			FVector2D(PanelPos.X + 28, PanelPos.Y + 176), ColText);
+		const FVector2D FovMinus(SBX, PanelPos.Y + 204);
+		const FVector2D FovPlus(SBX + SBW - 64, PanelPos.Y + 204);
+		FillBox(InCanvas, FovMinus, StepSize, FLinearColor(0.10f, 0.13f, 0.28f, 1.f));
+		StrokeBox(InCanvas, FovMinus, StepSize, ColPanelBorder, 1.5f);
+		DrawText(InCanvas, Font, TEXT("-"), FovMinus + FVector2D(22, 8), ColText);
+		Buttons.Add({ FovMinus, StepSize, 13 });
+		FillBox(InCanvas, FovPlus, StepSize, FLinearColor(0.10f, 0.13f, 0.28f, 1.f));
+		StrokeBox(InCanvas, FovPlus, StepSize, ColPanelBorder, 1.5f);
+		DrawText(InCanvas, Font, TEXT("+"), FovPlus + FVector2D(20, 8), ColText);
+		Buttons.Add({ FovPlus, StepSize, 14 });
+		const FVector2D FovBar(SBX + 76, PanelPos.Y + 218);
+		Bar(InCanvas, FovBar, FVector2D(SBW - 152, 20), (Fov - 60.f) / 60.f, ColAccent,
+			FLinearColor(0.05f, 0.07f, 0.16f, 1.f));
+
+		// --- Справка по управлению ---
+		DrawText(InCanvas, Small, TEXT("Управление (кратко):"),
+			FVector2D(PanelPos.X + 28, PanelPos.Y + 252), ColAccent);
+		DrawText(InCanvas, Small, TEXT("W/A/S/D — ходьба, мышь — обзор, ЛКМ — копать/строить"),
+			FVector2D(PanelPos.X + 28, PanelPos.Y + 274), ColMuted);
+		DrawText(InCanvas, Small, TEXT("B — строительство, M — рынок, L — скрипты, K — мастерская"),
+			FVector2D(PanelPos.X + 28, PanelPos.Y + 292), ColMuted);
+		DrawText(InCanvas, Small, TEXT("O — организация, P — персонаж, Tab — карта, Enter — чат"),
+			FVector2D(PanelPos.X + 28, PanelPos.Y + 310), ColMuted);
 
 		// Кнопка «Назад» в паузу.
 		const FVector2D BackPos(SBX, PanelPos.Y + PanelH - 84);
