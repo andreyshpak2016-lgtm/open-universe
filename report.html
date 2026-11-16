@@ -254,6 +254,11 @@ $ cargo run -p ou-script --bin ou-script-demo
       </figure>
     </div>
 
+    <figure class="shot">
+      <img src="assets/ue-spawn-ground.png" alt="Spawn ground on the home planet: natural smooth terrain, no base" />
+      <figcaption data-i18n="rep.fig.spawnground">The spawn area is <b>plain natural terrain</b>: the fixed base and the flattened platform were removed, so the player builds their own base anywhere. The ground is smooth relief (no voxel-cell tiling, no terraces), and the peaceful zone at spawn is kept.</figcaption>
+    </figure>
+
     <h3 data-i18n="rep.h.ue">UE5 client skeleton and protocol verification</h3>
     <p data-i18n="rep.ue.lead">Unreal Engine 5 is installed, the C++ module <b>builds and the editor opens a 3D scene</b>, and the client <b>connects to the Rust server</b>: it receives its own id, sends input at 30 Hz and draws other players. The test harness takes a real Rust server packet and parses it with the same code as the UE5 client.</p>
 
