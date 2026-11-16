@@ -1651,11 +1651,50 @@ void AOUPlayerMenuController::DrawTalents(UCanvas* InCanvas)
 	DrawText(InCanvas, Small, FString::Printf(TEXT("Свободных очков талантов: %d"), Net->TalentPoints),
 		P + FVector2D(24, 160), Net->TalentPoints > 0 ? ColAccent : Dim);
 
-	// Навыки: клик — вложить очко.
+	// Навыки — в виде ДЕРЕВА (как в Dual Universe): корневой узел, от него ветки
+	// к 4 навыкам; клик по узлу вкладывает очко. Ветки нарисованы линиями.
 	static const TCHAR* TName[5] = { TEXT(""), TEXT("Добыча"), TEXT("Производство"), TEXT("Пилот"), TEXT("Инженер") };
 	static const TCHAR* TDesc[5] = { TEXT(""), TEXT("+20% руды за такт копания"),
 		TEXT("крафт даёт больше опыта"), TEXT("+5% макс. скорости"), TEXT("+10% прочности корпуса") };
-	DrawText(InCanvas, Small, TEXT("Навыки (ЛКМ — вложить очко)"), P + FVector2D(24, 194), ColAccent);
+	DrawText(InCanvas, Small, TEXT("Дерево талантов (ЛКМ по узлу — вложить очко)"), P + FVector2D(24, 194), ColAccent);
+
+	// Корневой узел («Пилот-стажёр») слева, ветки — в колонку справа.
+	const FVector2D Root(P.X + 70.f, P.Y + 322.f);
+	const float ColX = P.X + 240.f;
+	const float RowY0 = P.Y + 236.f;
+	const float RowStep = 62.f;
+
+	// Соединительные линии: корень → каждый узел (простая ломаная из отрезков).
+	{
+		auto Line = [&](const FVector2D& A, const FVector2D& B, const FLinearColor& C)
+		{
+			const int32 N = 24;
+			for (int32 i = 0; i <= N; ++i)
+			{
+				const float T = static_cast<float>(i) / N;
+				FillBox(InCanvas, A + (B - A) * T - FVector2D(1.f, 1.f), FVector2D(2.f, 2.f), C);
+			}
+		};
+		const FVector2D RootOut(Root.X + 22.f, Root.Y);
+		const FLinearColor LinkC(0.34f, 0.44f, 0.85f, 0.8f);
+		for (int32 i = 0; i < 4; ++i)
+		{
+			const FVector2D Node(ColX, RowY0 + i * RowStep + 22.f);
+			Line(RootOut, FVector2D(ColX - 6.f, Node.Y), LinkC);
+		}
+	}
+
+	// Корневой узел (круг + подпись).
+	{
+		DrawText(InCanvas, Tiny, TEXT("Пилот-\nстажёр"), Root + FVector2D(-20, -26), ColAccent);
+		for (int32 k = 0; k < 28; ++k)
+		{
+			const float A0 = 6.2831853f * k / 28.f;
+			FillBox(InCanvas, Root + FVector2D(FMath::Cos(A0), FMath::Sin(A0)) * 22.f - FVector2D(1.5f, 1.5f),
+				FVector2D(3, 3), ColAccent2);
+		}
+	}
+
 	for (uint8 In = 1; In <= 4; ++In)
 	{
 		int32 Points = 0;
@@ -1663,13 +1702,24 @@ void AOUPlayerMenuController::DrawTalents(UCanvas* InCanvas)
 		{
 			if (T.Id == (int32)In) { Points = T.Points; break; }
 		}
-		const float RY = P.Y + 222 + (In - 1) * 60.f;
-		FillBox(InCanvas, FVector2D(P.X + 20, RY - 4), FVector2D(PW - 40.f, 52.f), FLinearColor(0.06f, 0.09f, 0.16f, 0.8f));
-		StrokeBox(InCanvas, FVector2D(P.X + 20, RY - 4), FVector2D(PW - 40.f, 52.f), Points > 0 ? ColOk : ColPanelBorder, 1.f);
+		const float RY = RowY0 + (In - 1) * RowStep;
+		// Узел (шестиугольник-квадрат) слева от строки.
+		const FVector2D Node(ColX, RY + 22.f);
+		const FLinearColor NC = Points > 0 ? ColOk : ColPanelBorder;
+		FillBox(InCanvas, Node - FVector2D(14, 14), FVector2D(28, 28), FLinearColor(0.05f, 0.08f, 0.16f, 1.f));
+		StrokeBox(InCanvas, Node - FVector2D(14, 14), FVector2D(28, 28), NC, 2.f);
+		DrawText(InCanvas, Tiny, FString::Printf(TEXT("%d"), Points), Node - FVector2D(5, 7),
+			Points > 0 ? ColOk : Dim);
+
+		// Карточка навыка справа.
+		const FVector2D Card(ColX + 26.f, RY);
+		const FVector2D CardSize(PW - (Card.X - P.X) - 24.f, 46.f);
+		FillBox(InCanvas, Card, CardSize, FLinearColor(0.06f, 0.09f, 0.16f, 0.8f));
+		StrokeBox(InCanvas, Card, CardSize, Points > 0 ? ColOk : ColPanelBorder, 1.f);
 		DrawText(InCanvas, Small, FString::Printf(TEXT("%s   [%d/5]"), TName[In], Points),
-			FVector2D(P.X + 32, RY + 2), Points > 0 ? ColOk : ColText);
-		DrawText(InCanvas, Tiny, TDesc[In], FVector2D(P.X + 32, RY + 24), Dim);
-		Buttons.Add({ FVector2D(P.X + 20, RY - 4), FVector2D(PW - 40.f, 52.f), 900 + (int32)In });
+			Card + FVector2D(10, 4), Points > 0 ? ColOk : ColText);
+		DrawText(InCanvas, Tiny, TDesc[In], Card + FVector2D(10, 26), Dim);
+		Buttons.Add({ Card, CardSize, 900 + (int32)In });
 	}
 }
 
