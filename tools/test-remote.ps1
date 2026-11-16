@@ -140,7 +140,7 @@ $eng = if ($EngineRoot) { " -EngineRoot `"$EngineRoot`"" } else { '' }
 # tools/capture.ps1. По SSH процесс идёт в сессии 0 (без видимого рабочего стола),
 # поэтому окно недоступно — снимаем в headless-режиме (`-RenderOffscreen`), UE сам
 # пишет PNG в Saved\Screenshots (мышь и рабочий стол не нужны).
-$capNames = if ($SkipUE) { '' } else { "'menus','voxels'" }
+$capNames = if ($SkipUE) { '' } else { "'orbit1','orbit2','orbit3','orbit0','belt','menus','voxels'" }
 # Пересборка UE-модуля: правки клиента (C++) попадают в код, но не в бинарник,
 # пока его не пересоберут. Чтобы кадры были СВЕЖИМИ, собираем модуль перед
 # съёмкой (при -SkipUE не нужно — там UE не используется).
