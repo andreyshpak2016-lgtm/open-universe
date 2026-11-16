@@ -282,26 +282,12 @@ double AOUVoxelPlanet::ClientReliefCm(const FVector& DirUE) const
 {
 	// Доп. детали рельефа ТОЛЬКО на клиенте (не входит в общую формулу с сервером,
 	// поэтому сверка бит-в-бит сохраняется). Дают «живую» землю: средние бугры и
-	// мелкие неровности. Обнуляются внутри площадки базы (пол должен быть ровным).
+	// мелкие неровности. Теперь они везде — площадки базы больше нет.
 	if (!bHomePlanet)
 	{
 		return 0.0;
 	}
-	// Внутри площадки и её террас — без деталей (ровный пол).
-	if (PadSquareDistCm(DirUE) < static_cast<double>(PadOuterRadiusCm))
-	{
-		return 0.0;
-	}
 	const FVector D = DirUE.GetSafeNormal();
-	// Мягкое включение за краем площадки, чтобы не было обрыва на границе.
-	const double PadR = static_cast<double>(PadFlatRadius);
-	const double Band = static_cast<double>(PadTerraceBandCm);
-	const double Sq = PadSquareDistCm(DirUE);
-	const double Fade = FMath::Clamp((Sq - (PadR + Band)) / Band, 0.0, 1.0);
-	if (Fade <= 0.0)
-	{
-		return 0.0;
-	}
 	// Три октавы value-noise (клиентские, отдельное семя — не задевают сервер).
 	const double Amp = static_cast<double>(Amplitude);   // см размах рельефа
 	auto N = [&](double Freq, uint32 Seed)
@@ -311,7 +297,7 @@ double AOUVoxelPlanet::ClientReliefCm(const FVector& DirUE) const
 	const double H = (N(90.0, 0x51A1) - 0.5) * 0.012
 		+ (N(240.0, 0x77B2) - 0.5) * 0.006
 		+ (N(700.0, 0x9C3D) - 0.5) * 0.003;
-	return H * Amp * Fade;
+	return H * Amp;
 }
 
 void AOUVoxelPlanet::PadFrame(FVector& OutCenter, FVector& OutUp, FVector& OutT1, FVector& OutT2)
@@ -351,32 +337,11 @@ double AOUVoxelPlanet::PadSquareDistCm(const FVector& DirUE)
 
 double AOUVoxelPlanet::PadFlattenCm(const FVector& DirUE)
 {
-	// Рельеф площадки базы: ВНУТРИ — ровный пол, ПО КРАЮ — воксельные террасы
-	// (ступени по ~1 м), а не гладкий пандус. Так на базу поднимаешься по
-	// ступенькам, как в Dual Universe.
-	//
-	// Возвращает ДОВЕСОК к обычной высоте рельефа (см, относительно радиуса).
-	const double Sq = PadSquareDistCm(DirUE);
-	const double PadR = static_cast<double>(PadFlatRadius);
-	const double Band = static_cast<double>(PadTerraceBandCm);
-	if (Sq > PadR + Band)
-	{
-		return 0.0;                                   // вне площадки и террас
-	}
-	const double Here = AnalyticHeightCm(DirUE);
-	static const double DeckLevel = DeckLevelAboveRadiusCm();
-	if (Sq <= PadR)
-	{
-		return DeckLevel - Here;                      // ровный пол площадки
-	}
-	// --- Воксельные террасы ---
-	// Ступень k отстоит от края площадки на k вокселей и ниже пола на k*1 м.
-	const int32 MaxSteps = FMath::Max(1, FMath::RoundToInt(PadLift / PadVoxelCm));
-	const double StepH = static_cast<double>(PadLift) / MaxSteps;   // ровно ~1 м
-	int32 K = static_cast<int32>(FMath::FloorToDouble((Sq - PadR) / PadVoxelRunCm)) + 1;
-	K = FMath::Clamp(K, 1, MaxSteps);
-	const double Top = DeckLevel - K * StepH;         // абсолютный уровень ступени
-	return Top - Here;
+	// Площадка базы убрана: на её месте — обычный рельеф планеты.
+	// Ни ровного пола, ни воксельных террас (ступеней). Функция оставлена для
+	// совместимости вызывающих мест и всегда возвращает 0.
+	(void)DirUE;
+	return 0.0;
 }
 
 double AOUVoxelPlanet::PadGroundAboveRadiusCm(const FVector& DirUE)
@@ -942,15 +907,9 @@ void AOUVoxelPlanet::RebuildLocal(const FVector& AroundUE)
 	{
 		for (int32 I = 0; I < N; ++I)
 		{
-			// Внутри площадки базы ячейку НЕ рисуем: там свой мелкий воксельный
-			// меш ступеней, а грубая ячейка (~21 м) перекрыла бы его и торчала
-			// бы сквозь ровный пол.
+			// Рельеф везде: площадки базы больше нет, поэтому исключений нет.
 			const int32 A0 = J * (N + 1) + I;
 			const FVector DirA = Verts[A0].GetSafeNormal();
-			if (PadSquareDistCm(DirA) < PadOuterRadiusCm)
-			{
-				continue;
-			}
 			// Центральный квадрат отдаём ПЛОТНОМУ мешу (FineMesh): грубая
 			// ячейка (~21 м) не разрешает яму копания (~10 м). Границы квадрата
 			// совпадают с узлами этой сетки, поэтому стык без швов и нахлёста.
@@ -989,137 +948,14 @@ void AOUVoxelPlanet::RebuildLocal(const FVector& AroundUE)
 
 void AOUVoxelPlanet::BuildPadMesh()
 {
-	if (!PadMesh || !bHomePlanet || Radius <= 0.f)
+	// Площадка базы убрана: отдельного меша ступеней больше нет — весь рельеф
+	// рисуют основные меши планеты (грубый + мелкий), как на всей планете.
+	if (PadMesh)
 	{
-		return;
+		PadMesh->ClearAllMeshSections();
 	}
-	PadMesh->ClearAllMeshSections();
-
-	// Воксельная сетка площадки: квадрат со стороной PadFlatRadius + террасный
-	// пояс. Ячейка = вылет ступени, поэтому границы ступеней ложатся на рёбра
-	// ячеек — ступени получаются ровными квадратными плитками.
-	FVector Center, Up, T1, T2;
-	PadFrame(Center, Up, T1, T2);
-
-	const double R = PadHomeRadiusCm;                 // радиус планеты, см
-	const float Half = PadFlatRadius + PadTerraceBandCm;
-	const float Cell = PadVoxelRunCm;
-	const int32 N = FMath::Clamp(FMath::RoundToInt(2.f * Half / Cell), 8, 512);
-	const float GridHalf = 0.5f * N * Cell;           // ровно по ячейкам
-
-	// Направления узлов сетки (проекция на сферу).
-	auto NodeDir = [&](int32 I, int32 J) -> FVector
-	{
-		const float A = -GridHalf + I * Cell;
-		const float B = -GridHalf + J * Cell;
-		return (Up * static_cast<float>(R) + T1 * A + T2 * B).GetSafeNormal();
-	};
-	// Высота ВЕРХА ячейки — по её центру (ровные плато, без наклонов).
-	auto CellTopCm = [&](int32 I, int32 J) -> double
-	{
-		const float A = -GridHalf + (I + 0.5f) * Cell;
-		const float B = -GridHalf + (J + 0.5f) * Cell;
-		const FVector Dir = (Up * static_cast<float>(R) + T1 * A + T2 * B).GetSafeNormal();
-		return PadGroundAboveRadiusCm(Dir);
-	};
-
-	TArray<FVector> Verts;
-	TArray<int32> Tris;
-	TArray<FVector> Normals;
-	TArray<FVector2D> UVs;
-	TArray<FLinearColor> Colors;
-	TArray<struct FProcMeshTangent> Tangents;
-
-	// Единый цвет площадки (совпадает с плитой базы `AOUSurfaceBase`).
-	const FLinearColor PadColor(0.34f, 0.37f, 0.42f, 1.f);
-
-	auto PushVert = [&](const FVector& P, const FVector& Nrm)
-	{
-		// Один цвет для всей площадки: ступени/плиты должны выглядеть как единое
-		// металлическое поле базы, а не как пятна по рельефу.
-		Verts.Add(P);
-		Normals.Add(Nrm);
-		UVs.Add(FVector2D::ZeroVector);
-		Colors.Add(PadColor);
-		Tangents.Add(FProcMeshTangent(T1.X, T1.Y, T1.Z));
-		return Verts.Num() - 1;
-	};
-
-	// --- Верхние грани ячеек: ровный квадрат на высоте ячейки ---
-	for (int32 J = 0; J < N; ++J)
-	{
-		for (int32 I = 0; I < N; ++I)
-		{
-			const double H = CellTopCm(I, J);
-			const FVector A = NodeDir(I, J) * static_cast<float>(R + H);
-			const FVector B = NodeDir(I + 1, J) * static_cast<float>(R + H);
-			const FVector C = NodeDir(I + 1, J + 1) * static_cast<float>(R + H);
-			const FVector D = NodeDir(I, J + 1) * static_cast<float>(R + H);
-			const FVector Nrm = (NodeDir(I, J) + NodeDir(I + 1, J + 1)).GetSafeNormal();
-			const int32 IA = PushVert(A, Nrm);
-			const int32 IB = PushVert(B, Nrm);
-			const int32 IC = PushVert(C, Nrm);
-			const int32 ID = PushVert(D, Nrm);
-			Tris.Add(IA); Tris.Add(ID); Tris.Add(IB);
-			Tris.Add(IB); Tris.Add(ID); Tris.Add(IC);
-			// Обратная намотка (площадка видна и снизу).
-			Tris.Add(IA); Tris.Add(IB); Tris.Add(ID);
-			Tris.Add(IB); Tris.Add(IC); Tris.Add(ID);
-		}
-	}
-
-	// --- Вертикальные СТЕНКИ между ячейками разной высоты ---
-	const double Tol = 1.0;   // см
-	auto Wall = [&](const FVector& N0, const FVector& N1, double Lo, double Hi)
-	{
-		const FVector P00 = N0 * static_cast<float>(R + Lo);
-		const FVector P10 = N1 * static_cast<float>(R + Lo);
-		const FVector P11 = N1 * static_cast<float>(R + Hi);
-		const FVector P01 = N0 * static_cast<float>(R + Hi);
-		const FVector Nrm = FVector::CrossProduct(N0, N1).GetSafeNormal();
-		const int32 A = PushVert(P00, Nrm);
-		const int32 B = PushVert(P10, Nrm);
-		const int32 C = PushVert(P11, Nrm);
-		const int32 D = PushVert(P01, Nrm);
-		Tris.Add(A); Tris.Add(B); Tris.Add(C);
-		Tris.Add(A); Tris.Add(C); Tris.Add(D);
-		// Обратная сторона.
-		Tris.Add(A); Tris.Add(C); Tris.Add(B);
-		Tris.Add(A); Tris.Add(D); Tris.Add(C);
-	};
-	for (int32 J = 0; J < N; ++J)
-	{
-		for (int32 I = 0; I < N; ++I)
-		{
-			const double H = CellTopCm(I, J);
-			// Сосед справа.
-			if (I + 1 < N)
-			{
-				const double HR = CellTopCm(I + 1, J);
-				if (FMath::Abs(H - HR) > Tol)
-				{
-					Wall(NodeDir(I + 1, J), NodeDir(I + 1, J + 1),
-						FMath::Min(H, HR), FMath::Max(H, HR));
-				}
-			}
-			// Сосед сверху.
-			if (J + 1 < N)
-			{
-				const double HU = CellTopCm(I, J + 1);
-				if (FMath::Abs(H - HU) > Tol)
-				{
-					Wall(NodeDir(I, J + 1), NodeDir(I + 1, J + 1),
-						FMath::Min(H, HU), FMath::Max(H, HU));
-				}
-			}
-		}
-	}
-
-	PadMesh->CreateMeshSection_LinearColor(0, Verts, Tris, Normals, UVs, Colors, Tangents, false);
-	PadMesh->SetMaterial(0, PlanetMaterial);
-	UE_LOG(LogOUPlanet, Log, TEXT("Воксельная площадка базы: сетка %d, ячейка %.0f см, ступень %.0f см, вершин %d"),
-		N, Cell, PadVoxelCm, Verts.Num());
 }
+
 
 void AOUVoxelPlanet::BuildFineMesh(const FVector& AroundUE)
 {
@@ -1235,10 +1071,6 @@ void AOUVoxelPlanet::BuildFineMesh(const FVector& AroundUE)
 	{
 		for (int32 I = 0; I < NV; ++I)
 		{
-			if (PadSquareDistCm(NodeDir(I, J)) < PadOuterRadiusCm)
-			{
-				continue;   // тут свой меш площадки базы
-			}
 			const float Hc = CellTop(I, J);
 			const FVector P00 = CornerDir(I, J) * (Radius + Hc);
 			const FVector P10 = CornerDir(I + 1, J) * (Radius + Hc);
@@ -1287,7 +1119,7 @@ void AOUVoxelPlanet::BuildFineMesh(const FVector& AroundUE)
 	{
 		for (int32 I = 0; I < NV; ++I)
 		{
-			if (!CellDug(I, J) || PadSquareDistCm(NodeDir(I, J)) < PadOuterRadiusCm)
+			if (!CellDug(I, J))
 			{
 				continue;
 			}
