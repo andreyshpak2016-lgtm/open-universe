@@ -18,7 +18,7 @@ param(
   [Parameter(Mandatory = $true)][Alias("Host")][string]$Target,
   [string]$User = $env:USERNAME,
   [int]$Port = 22,
-  [string]$RemoteDir = 'C:\ou-remote',
+  [string]$RemoteDir = 'D:\ou-remote',
   [switch]$SkipUE,
   [string]$EngineRoot = "",
   [switch]$KeepBundle
@@ -33,6 +33,8 @@ $Scp = @('-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=accept-new', '-P', 
 
 function Remote([string]$Cmd) {
   # Не роняем скрипт при ненулевом коде ssh — вернём вывод как текст.
+  # Пути инструментов (cargo/git) добавляются внутри самих удалённых скриптов,
+  # т.к. PATH свежей SSH-сессии может их не знать.
   $prev = $ErrorActionPreference
   $ErrorActionPreference = 'Continue'
   try {
@@ -73,17 +75,20 @@ Write-Host ("      OK: " + ($hello -replace "`n", ' ').Trim()) -ForegroundColor 
 Write-Host "[2/5] Инвентарь удалённого ПК..." -ForegroundColor Cyan
 $invScript = Join-Path $env:TEMP 'ou-inventory.ps1'
 @'
+# В свежеустановленных инструментах PATH SSH-сессии может их не видеть —
+# добавляем явно (cargo/rustup и git for windows).
+$env:PATH = "$env:USERPROFILE\.cargo\bin;C:\Program Files\Git\cmd;C:\Program Files\Git\bin;" + $env:PATH
 $has = @()
 if (Get-Command cargo -ErrorAction SilentlyContinue) { $has += 'cargo' }
 if (Get-Command git -ErrorAction SilentlyContinue)   { $has += 'git' }
 $vs = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
 if (Test-Path $vs) { $has += 'msvc' }
-foreach ($b in @('D:\UE_5.5','C:\Program Files\Epic Games\UE_5.5','D:\Epic Games\UE_5.5')) {
+foreach ($b in @('D:\UE_5.5','C:\Program Files\Epic Games\UE_5.5','D:\Epic Games\UE_5.5','E:\UE_5.5')) {
   if (Test-Path (Join-Path $b 'Engine\Binaries\Win64\UnrealEditor.exe')) { $has += 'ue'; break }
 }
 Write-Output ("OU_INV:" + ($has -join ','))
 '@ | Set-Content $invScript -Encoding UTF8
-& scp @Scp $invScript "${Target}:$RemoteDir-inventory.ps1" 2>&1 | Out-Null
+& scp @Scp $invScript "${SshTarget}:$RemoteDir-inventory.ps1" 2>&1 | Out-Null
 $inv = Remote "powershell -NoProfile -ExecutionPolicy Bypass -File `"$RemoteDir-inventory.ps1`""
 $invLine = ([regex]'OU_INV:(.*)').Match($inv).Groups[1].Value.Trim()
 Write-Host "      установлено: $invLine" -ForegroundColor DarkGray
@@ -106,6 +111,8 @@ Write-Host "[4/5] Разворачиваю репозиторий..." -Foregroun
 $deployScript = Join-Path $env:TEMP 'ou-deploy.ps1'
 @"
 `$ErrorActionPreference = 'Continue'
+# Пути инструментов (в SSH-сессии PATH может быть устаревшим).
+`$env:PATH = "`$env:USERPROFILE\.cargo\bin;C:\Program Files\Git\cmd;C:\Program Files\Git\bin;" + `$env:PATH
 `$dir = '$RemoteDir\open-universe'
 if (-not (Test-Path "`$dir\.git")) {
   git clone '$RemoteDir\ou.bundle' "`$dir" 2>&1 | Out-Null
@@ -128,41 +135,59 @@ Write-Host "[5/5] Запускаю tools/test-all.ps1 на удалённом П
 $runScript = Join-Path $env:TEMP 'ou-run.ps1'
 $skip = if ($SkipUE) { ' -SkipUE' } else { '' }
 $eng = if ($EngineRoot) { " -EngineRoot `"$EngineRoot`"" } else { '' }
-# Скриншоты: если не SkipUE и на удалённом ПК есть движок — после тестов снимем
-# кадры ключевых сценариев через tools/capture.ps1 (без мыши второго ПК).
-$capNames = if ($SkipUE) { '' } else { '"menus","voxels"' }
+# Скриншоты: если не SkipUE — после тестов снимем кадры ключевых сценариев через
+# tools/capture.ps1 (без мыши второго ПК).
+$capNames = if ($SkipUE) { '' } else { "'menus','voxels'" }
 @"
+`$ErrorActionPreference = 'Continue'
+`$env:PATH = "`$env:USERPROFILE\.cargo\bin;C:\Program Files\Git\cmd;C:\Program Files\Git\bin;" + `$env:PATH
 Set-Location '$RemoteDir\open-universe'
 powershell -ExecutionPolicy Bypass -File tools/test-all.ps1$skip$eng
 `$rc = `$LASTEXITCODE
-if (-not [string]::IsNullOrEmpty('$capNames')) {
-  foreach (`$p in @($capNames)) {
+`$caps = @($capNames)
+if (`$caps.Count -gt 0) {
+  foreach (`$p in `$caps) {
     powershell -ExecutionPolicy Bypass -File tools/capture.ps1 -Preset `$p -Window
   }
   # Кадры фича-сценария (смешанные воксели, ядра, коллизия).
   powershell -ExecutionPolicy Bypass -File tools/capture.ps1 -Flag '-OUAutoConnect -OUMix -OUCore -OUCoreKinds -OUWalkInto -OUGhostLog' -Name features -Window
 }
-exit `$rc
+Write-Output ('OU_EXIT:' + `$rc)
 "@ | Set-Content $runScript -Encoding UTF8
-& scp @Scp $runScript "${SshTarget}:$RemoteDir-run.ps1" 2>&1 | Out-Null
-$report = Remote "powershell -NoProfile -ExecutionPolicy Bypass -File `"$RemoteDir-run.ps1`"; echo OU_EXIT:`$LASTEXITCODE"
+& scp @Scp $runScript ("{0}:{1}-run.ps1" -f $SshTarget, ($RemoteDir -replace '\\', '/')) 2>&1 | Out-Null
+$runPath = ($RemoteDir -replace '\\', '/') + '-run.ps1'
+$report = Remote "powershell -NoProfile -ExecutionPolicy Bypass -File $runPath"
 Write-Host $report
-$exitCode = [int](([regex]'OU_EXIT:(\d+)').Match($report).Groups[1].Value)
+$m = ([regex]'OU_EXIT:(\d+)').Match($report)
+$exitCode = if ($m.Success) { [int]$m.Groups[1].Value } else { 1 }
 
 # --- 6. Забрать скриншоты с удалённого ПК ----------------------------------
-$shotsLocal = Join-Path $root 'shots'
+$shotsLocal = Join-Path $root 'shots\remote'
 New-Item -ItemType Directory -Force -Path $shotsLocal | Out-Null
 Write-Host "[+] Забираю скриншоты с удалённого ПК..." -ForegroundColor Cyan
-& scp @Scp -r "${SshTarget}:$RemoteDir/open-universe/shots/*remote*" "$shotsLocal/" 2>&1 | Out-Null
-# Кадры capture.ps1 лежат в каталоге shots на удалённом ПК (capture-*.png).
-& scp @Scp "${SshTarget}:$RemoteDir/open-universe/shots/capture-*.png" "$shotsLocal/" 2>&1 | Out-Null
-$got = @(Get-ChildItem $shotsLocal -Filter 'capture-*.png' -ErrorAction SilentlyContinue)
+# Имя пользователя может быть кириллическим — `scp` при вытягивании спотыкается
+# о разбор аргумента. Надёжнее упаковать каталог в tar на удалённой стороне и
+# распаковать здесь (через cmd /c с редиректом в файл — бинарный поток).
+$tarLocal = Join-Path $env:TEMP 'ou-shots.tar'
+$remoteShotsDir = $RemoteDir + '\open-universe'
+$prev = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+try {
+  Remove-Item $tarLocal -ErrorAction SilentlyContinue
+  cmd /c "ssh -o BatchMode=yes -o ConnectTimeout=10 ""$SshTarget"" ""cd /d $remoteShotsDir && tar -cf - shots"" > ""$tarLocal"" 2>nul"
+  if ((Test-Path $tarLocal) -and (Get-Item $tarLocal).Length -gt 0) {
+    Push-Location $shotsLocal
+    & tar -xf $tarLocal 2>$null
+    Pop-Location
+  }
+} finally { $ErrorActionPreference = $prev }
+$got = @(Get-ChildItem $shotsLocal -Recurse -Filter '*.png' -ErrorAction SilentlyContinue)
 if ($got.Count -gt 0) {
   Write-Host ("      получено кадров: " + $got.Count) -ForegroundColor Green
-  $got | Select-Object -Last 5 | ForEach-Object { Write-Host ("      " + $_.Name) -ForegroundColor DarkGray }
+  $got | Select-Object -Last 8 | ForEach-Object { Write-Host ("      " + $_.Name) -ForegroundColor DarkGray }
 } else {
-  Write-Host "      кадров не получено (возможно, на удалённом ПК нет UE)" -ForegroundColor Yellow
+  Write-Host "      кадров не получено (на удалённом ПК нет UE — снимите на этом)" -ForegroundColor Yellow
 }
+Remove-Item $tarLocal -ErrorAction SilentlyContinue
 
 Remove-Item $invScript, $deployScript, $runScript -ErrorAction SilentlyContinue
 if (-not $KeepBundle) { Remove-Item $bundle -ErrorAction SilentlyContinue }

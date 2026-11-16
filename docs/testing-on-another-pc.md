@@ -269,8 +269,14 @@ Set-Service -Name sshd -StartupType Automatic
 New-NetFirewallRule -Name sshd -DisplayName 'OpenSSH' -Enabled True -Direction Inbound -Protocol TCP -Action Allow -LocalPort 22
 
 # 2. Разрешить вход по ключу этого ПК (без пароля).
-mkdir "$env:USERPROFILE\.ssh" -Force
-Add-Content -Path "$env:USERPROFILE\.ssh\authorized_keys" -Value "<публичный ключ этого ПК>"
+#    ВАЖНО: для учётки-АДМИНИСТРАТОРА Windows sshd читает ТОЛЬКО
+#    C:\ProgramData\ssh\administrators_authorized_keys (личный файл игнорируется).
+$key = "<публичный ключ этого ПК>"
+New-Item -ItemType Directory -Force "$env:USERPROFILE\.ssh" | Out-Null
+Add-Content "$env:USERPROFILE\.ssh\authorized_keys" $key
+Add-Content "$env:ProgramData\ssh\administrators_authorized_keys" $key
+icacls "$env:ProgramData\ssh\administrators_authorized_keys" /inheritance:r /grant "Administrators:F" /grant "SYSTEM:F"
+Restart-Service sshd
 ```
 
 Свой публичный ключ смотрите так:
@@ -285,8 +291,43 @@ Get-Content "$env:USERPROFILE\.ssh\id_ed25519.pub"
 ssh-keygen -t ed25519 -N '""' -f "$env:USERPROFILE\.ssh\id_ed25519"
 ```
 
-> По умолчанию SSH заходит под именем пользователя этого ПК. Если на втором ПК
-> другое имя — укажите `-User Имя`.
+> **SSH-логин — это ИМЯ учётной записи, а не имя компьютера.** Узнать точно:
+> `whoami` → `ПК\пользователь`; логин — то, что стоит **после `\`**. Пример:
+> `fisk2\андрей` → логин `андрей` (`-User андрей`), а не `fisk2`.
+
+### Что нужно установить на втором ПК (по SSH, без мыши)
+
+```powershell
+# Git, Rust и C++ Build Tools (линковщик link.exe — обязателен для Rust-тестов).
+winget install --id Git.Git -e
+winget install --id Rustlang.Rustup -e
+winget install --id Microsoft.VisualStudio.2022.BuildTools -e `
+  --override "--quiet --wait --norestart --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended"
+```
+
+После установки инструменты могут быть не видны в свежей SSH-сессии — скрипт
+`tools/test-remote.ps1` сам добавляет их пути (`%USERPROFILE%\.cargo\bin`,
+`C:\Program Files\Git\cmd`) в PATH удалённых команд.
+
+### Пример рабочего запуска
+
+```powershell
+# Быстрые тесты (ядро + провод + рельеф) на втором ПК:
+powershell -ExecutionPolicy Bypass -File tools/test-remote.ps1 -Target 192.168.0.12 -User андрей -SkipUE
+```
+
+Ожидаемый итог:
+
+```
+  cargo test --workspace     OK    код 0
+  test-client (провод)       OK    код 0
+  test-terrain (рельеф)      OK    код 0
+  test-ue (редактор)         -     пропущено: нет Unreal Engine 5.5
+  test-shipping (упакованная) -    пропущено: нет упакованной сборки
+Удалённый прогон: ВСЁ ЗЕЛЁНОЕ
+```
+
+Кадры с удалённого ПК (если там есть UE) складываются в `shots\remote\`.
 
 ---
 
@@ -294,6 +335,9 @@ ssh-keygen -t ed25519 -N '""' -f "$env:USERPROFILE\.ssh\id_ed25519"
 
 | Симптом | Причина / решение |
 |---|---|
-| `Permission denied (publickey)` в `test-remote` | Ключ не добавлен в `authorized_keys` на втором ПК (см. раздел 6) |
+| `Permission denied (publickey)` в `test-remote` | Ключ не добавлен. Для админ-учётки — обязательно в `C:\ProgramData\ssh\administrators_authorized_keys` (см. раздел 6) |
+| Вход под именем ПК не работает | Логин — это **пользователь** из `whoami` (после `\`), не имя ПК; укажите `-User пользователь` |
 | `Connection refused` / таймаут | На втором ПК не запущен `sshd` или закрыт порт 22 (см. раздел 6) |
+| `linker link.exe not found` | Нет C++ Build Tools: `winget install Microsoft.VisualStudio.2022.BuildTools --override "--add Microsoft.VisualStudio.Workload.VCTools --includeRecommended"` |
 | `test-remote`: «Развёрнут HEAD: (пусто)» | На втором ПК не установлен `git` — `winget install Git.Git` |
+| `scp: invalid user name` при вытягивании кадров | Кириллица в имени пользователя; скрипт уже использует tar-поток вместо `scp -r` |
